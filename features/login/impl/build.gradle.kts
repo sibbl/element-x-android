@@ -77,6 +77,7 @@ dependencies {
     api(projects.features.login.api)
 
     testCommonDependencies(libs, true)
+    add("testNightlyImplementation", libs.androidx.compose.ui.test.manifest)
     testImplementation(projects.features.login.test)
     testImplementation(projects.features.enterprise.test)
     testImplementation(projects.features.preferences.test)

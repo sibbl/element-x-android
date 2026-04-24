@@ -8,6 +8,16 @@
 
 # Element X Android
 
+## What's new in this fork / PR
+
+This fork adds a **companion-only Wear OS implementation** for Element X Android while keeping the phone app as the system of record.
+
+- New additive modules: `:watchbridge-contract`, `:watchbridge`, `:watchbridge-testing`, and `:wearapp`
+- Wear companion foundation for favorites, room + thread reading, text send, dictation, quick reactions, TTS, and voice-message handoff to the phone
+- Companion protocol + transport DTOs for watch ↔ phone communication, plus dispatcher and transport scaffolding
+- Fork-specific docs under `docs/watch-companion/` describing architecture, rollout phases, and touched upstream files
+- Test/build stabilization fixes discovered while wiring the fork, including login nightly test config and stale startchat/push worker tests
+
 Element X Android is the next-generation [Matrix](https://matrix.org/) client provided by [Element](https://element.io/).
 
 Compared to the previous-generation [Element Classic](https://github.com/element-hq/element-android), the application is a total rewrite, using the [Matrix Rust SDK](https://github.com/matrix-org/matrix-rust-sdk) underneath and targeting devices running Android 7+. The UI layer is written using [Jetpack Compose](https://developer.android.com/jetpack/compose), and the navigation is managed using [Appyx](https://github.com/bumble-tech/appyx).

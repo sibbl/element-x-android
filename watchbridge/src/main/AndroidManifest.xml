@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright 2026 New Vector Ltd.
+  ~ Wear OS companion fork.
+  ~
+  ~ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
+  -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        The listener service is declared by the *consumer app* (:app) once it opts in to the
+        watch companion behind the feature flag. This library only exposes the class so the host
+        app can point its manifest at it. See WatchBridgeListenerService.
+    -->
+
+</manifest>

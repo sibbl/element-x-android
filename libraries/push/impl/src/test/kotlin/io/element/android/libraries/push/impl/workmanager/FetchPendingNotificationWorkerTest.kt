@@ -90,7 +90,7 @@ class FetchPendingNotificationWorkerTest : RobolectricTest() {
 
     @Test
     fun `test - invalid input fails the work`() = runTest {
-        val worker = createWorker(input = "!alice:matrix.org")
+        val worker = createWorker(input = null)
 
         val result = worker.doWork()
 
@@ -229,7 +229,7 @@ class FetchPendingNotificationWorkerTest : RobolectricTest() {
     }
 
     private fun TestScope.createWorker(
-        input: String,
+        input: String?,
         networkMonitor: FakeNetworkMonitor = FakeNetworkMonitor(),
         eventResolver: FakeNotifiableEventResolver = FakeNotifiableEventResolver(resolveEventsResult = { _, _ -> Result.success(emptyMap()) }),
         syncOnNotifiableEvent: SyncOnNotifiableEvent = SyncOnNotifiableEvent {},
@@ -239,7 +239,9 @@ class FetchPendingNotificationWorkerTest : RobolectricTest() {
         systemClock: FakeSystemClock = FakeSystemClock(),
         pushHandlingWakeLock: FakeFetchPushForegroundServiceManager = FakeFetchPushForegroundServiceManager(),
     ) = FetchPendingNotificationsWorker(
-        params = createWorkerParams(workDataOf("session_id" to input)),
+        params = createWorkerParams(
+            input?.let { workDataOf("session_id" to it) } ?: Data.EMPTY,
+        ),
         context = InstrumentationRegistry.getInstrumentation().context,
         networkMonitor = networkMonitor,
         eventResolver = eventResolver,

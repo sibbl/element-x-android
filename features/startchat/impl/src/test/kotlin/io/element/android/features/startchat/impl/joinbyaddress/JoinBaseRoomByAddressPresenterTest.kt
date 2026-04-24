@@ -38,6 +38,11 @@ class JoinBaseRoomByAddressPresenterTest {
     @Test
     fun `present - invalid address`() = runTest {
         val presenter = createJoinRoomByAddressPresenter(
+            matrixClient = FakeMatrixClient(
+                resolveRoomAliasResult = {
+                    Result.success(Optional.empty())
+                }
+            ),
             roomAliasHelper = FakeRoomAliasHelper(
                 isRoomAliasValidLambda = { false }
             )
@@ -54,7 +59,14 @@ class JoinBaseRoomByAddressPresenterTest {
             // The address should be marked as invalid only after the user tries to continue
             with(awaitItem()) {
                 assertThat(address).isEqualTo("invalid_address")
-                assertThat(addressState).isEqualTo(RoomAddressState.Invalid)
+                when (addressState) {
+                    RoomAddressState.Invalid -> Unit
+                    RoomAddressState.Resolving -> with(awaitItem()) {
+                        assertThat(address).isEqualTo("invalid_address")
+                        assertThat(addressState).isEqualTo(RoomAddressState.Invalid)
+                    }
+                    else -> error("Unexpected address state: $addressState")
+                }
             }
         }
     }

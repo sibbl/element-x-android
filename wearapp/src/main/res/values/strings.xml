@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Element X Wear</string>
+    <string name="favorites_title">Favorites</string>
+    <string name="empty_favorites">No favorites yet</string>
+    <string name="no_phone">Phone app not reachable</string>
+    <string name="compose_hint">Type or dictate…</string>
+    <string name="send">Send</string>
+    <string name="dictate">Dictate</string>
+    <string name="record_voice">Record</string>
+    <string name="stop">Stop</string>
+    <string name="play">Play</string>
+    <string name="read_aloud">Read aloud</string>
+    <string name="thread">Thread</string>
+    <string name="reply">Reply</string>
+    <string name="react">React</string>
+</resources>

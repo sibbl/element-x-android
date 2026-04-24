@@ -71,6 +71,13 @@ includeProjects(File(rootDir, "features"), ":features")
 includeProjects(File(rootDir, "libraries"), ":libraries")
 includeProjects(File(rootDir, "services"), ":services")
 
+// --- Wear OS companion fork (additive) ---
+// See .agents/skills/ and docs/watch-companion/ for background.
+include(":watchbridge-contract")
+include(":watchbridge")
+include(":watchbridge-testing")
+include(":wearapp")
+
 // Uncomment to include the compound-android module as a local dependency so you can work on it locally.
 // You will also need to clone it in the specified folder.
 // includeBuild("checkouts/compound-android") {
