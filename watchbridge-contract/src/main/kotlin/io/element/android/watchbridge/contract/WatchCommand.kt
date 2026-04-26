@@ -26,7 +26,10 @@ sealed interface WatchCommand : WatchPayload {
 
     @Serializable
     @SerialName("cmd.refreshRooms")
-    data class RefreshRooms(override val requestId: String) : WatchCommand
+    data class RefreshRooms(
+        override val requestId: String,
+        val minimumCount: Int = 30,
+    ) : WatchCommand
 
     @Serializable
     @SerialName("cmd.openRoom")

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Element X Wear</string>
+    <string name="rooms_title">Rooms</string>
     <string name="favorites_title">Favorites</string>
     <string name="empty_favorites">No favorites yet</string>
+    <string name="empty_rooms">No rooms yet</string>
+    <string name="recent_rooms_title">Recent</string>
     <string name="no_phone">Phone app not reachable</string>
     <string name="compose_hint">Type or dictate…</string>
     <string name="send">Send</string>

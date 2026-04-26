@@ -16,12 +16,18 @@ import dev.zacsweers.metro.Multibinds
 import dev.zacsweers.metro.Provides
 import io.element.android.libraries.architecture.NodeFactoriesBindings
 import io.element.android.libraries.di.annotations.ApplicationContext
+import io.element.android.libraries.matrix.api.MatrixClientProvider
+import io.element.android.libraries.sessionstorage.api.SessionStore
+import io.element.android.services.appnavstate.api.AppNavigationStateService
 import io.element.android.libraries.workmanager.api.di.MetroWorkerFactory
 import kotlin.reflect.KClass
 
 @DependencyGraph(AppScope::class)
 interface AppGraph : NodeFactoriesBindings {
     val sessionGraphFactory: SessionGraph.Factory
+    val appNavigationStateService: AppNavigationStateService
+    val matrixClientProvider: MatrixClientProvider
+    val sessionStore: SessionStore
 
     @Multibinds
     val workerProviders:

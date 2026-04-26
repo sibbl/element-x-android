@@ -28,8 +28,11 @@ import kotlinx.coroutines.flow.Flow
  */
 interface ElementXWatchPort {
 
-    /** Favorites flow, driven by the phone-side room-list service. Emits on changes. */
+    /** Favorite rooms first, then recent rooms, driven by the phone-side room-list service. Emits on changes. */
     fun favorites(): Flow<List<WatchFavoriteRoom>>
+
+    /** Ensure the room-list projection has loaded at least [minimumCount] recent rooms when possible. */
+    suspend fun ensureRoomListLoaded(minimumCount: Int) = Unit
 
     /** Room summary + recent timeline slice projection. */
     suspend fun roomSummary(roomId: String): WatchRoomSummary?

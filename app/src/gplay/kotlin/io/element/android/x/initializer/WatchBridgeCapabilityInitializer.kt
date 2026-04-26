@@ -12,6 +12,7 @@ import androidx.startup.Initializer
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.wearable.Wearable
 import io.element.android.watchbridge.contract.WatchProtocol
+import io.element.android.x.watchbridge.ElementXWatchBridgeRuntime
 import timber.log.Timber
 
 private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
@@ -25,6 +26,7 @@ private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
  */
 class WatchBridgeCapabilityInitializer : Initializer<Unit> {
     override fun create(context: Context) {
+        ElementXWatchBridgeRuntime.start(context.applicationContext)
         Wearable.getCapabilityClient(context)
             .addLocalCapability(WatchProtocol.PHONE_CAPABILITY)
             .addOnSuccessListener { Timber.d("WatchBridge phone capability registered") }

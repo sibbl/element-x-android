@@ -84,7 +84,8 @@ class WatchBridgeDispatcher(
             ack(WatchAck.Accepted(cmd.requestId))
             when (cmd) {
                 is WatchCommand.RefreshRooms -> {
-                    // Collection is already live via [start]; nothing else to do here.
+                    port.ensureRoomListLoaded(cmd.minimumCount)
+                    // Collection is live via [start]; loading more triggers the next snapshot.
                     ack(WatchAck.Sent(cmd.requestId))
                 }
                 is WatchCommand.OpenRoom -> openRoom(cmd)
