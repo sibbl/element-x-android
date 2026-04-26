@@ -273,6 +273,8 @@ dependencies {
     if (ModulesConfig.pushProvidersConfig.includeFirebase) {
         "gplayImplementation"(projects.libraries.pushproviders.firebase)
     }
+    "gplayImplementation"(project(":watchbridge"))
+    "gplayImplementation"("com.google.android.gms:play-services-wearable:19.0.0")
     if (ModulesConfig.pushProvidersConfig.includeUnifiedPush) {
         implementation(projects.libraries.pushproviders.unifiedpush)
     }

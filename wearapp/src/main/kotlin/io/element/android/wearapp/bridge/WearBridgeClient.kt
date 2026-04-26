@@ -8,11 +8,14 @@
 package io.element.android.wearapp.bridge
 
 import android.content.Context
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.Node
+import com.google.android.gms.wearable.NodeClient
 import com.google.android.gms.wearable.Wearable
 import io.element.android.watchbridge.contract.WatchAck
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
@@ -36,6 +39,8 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.UUID
 
+private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
+
 /**
  * Watch-side entry point to the companion protocol.
  *
@@ -55,6 +60,7 @@ class WearBridgeClient(private val context: Context) {
     private val dataClient: DataClient by lazy { Wearable.getDataClient(context) }
     private val messageClient: MessageClient by lazy { Wearable.getMessageClient(context) }
     private val capabilityClient: CapabilityClient by lazy { Wearable.getCapabilityClient(context) }
+    private val nodeClient: NodeClient by lazy { Wearable.getNodeClient(context) }
 
     private val _favorites = MutableStateFlow<List<io.element.android.watchbridge.contract.WatchFavoriteRoom>>(emptyList())
     val favorites: StateFlow<List<io.element.android.watchbridge.contract.WatchFavoriteRoom>> = _favorites.asStateFlow()
@@ -68,14 +74,41 @@ class WearBridgeClient(private val context: Context) {
     private val _phoneReachable = MutableStateFlow(false)
     val phoneReachable: StateFlow<Boolean> = _phoneReachable.asStateFlow()
 
+    private val phoneCapabilityListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
+        if (capabilityInfo.name == WatchProtocol.PHONE_CAPABILITY) {
+            Timber.d(
+                "phone capability changed reachable=%s nodes=%s",
+                capabilityInfo.nodes.isNotEmpty(),
+                capabilityInfo.nodes.joinToString { "${it.displayName}/${it.id}/${it.isNearby}" },
+            )
+            scope.launch { probePhoneCapability() }
+        }
+    }
+
     fun start() {
+        capabilityClient.addLocalCapability(WatchProtocol.WATCH_CAPABILITY)
+            .addOnSuccessListener { Timber.d("watch capability registered") }
+            .addOnFailureListener {
+                if (it.isDuplicateCapability()) {
+                    Timber.d("watch capability already registered")
+                } else {
+                    Timber.w(it, "watch capability registration failed")
+                }
+            }
+        capabilityClient.addListener(phoneCapabilityListener, WatchProtocol.PHONE_CAPABILITY)
+            .addOnFailureListener { Timber.w(it, "phone capability listener registration failed") }
         scope.launch { probePhoneCapability() }
         scope.launch { primeFavoritesSnapshot() }
     }
 
     fun stop() {
+        capabilityClient.removeListener(phoneCapabilityListener)
         // Scope teardown left to Application lifecycle; explicit cancel intentionally avoided
         // here so in-flight request UIs keep observing acks on Activity restarts.
+    }
+
+    fun refreshPhoneReachability() {
+        scope.launch { probePhoneCapability() }
     }
 
     /** Called from the app-level `WearableListenerService` on any `DataItem` change. */
@@ -101,17 +134,7 @@ class WearBridgeClient(private val context: Context) {
         val envelope = WatchSyncEnvelope(generatedAtMs = System.currentTimeMillis(), payload = cmd)
         val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope)
         withContext(Dispatchers.IO) {
-            val node = capabilityClient
-                .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
-                .await()
-                .nodes
-                .firstOrNull { it.isNearby }
-                ?: capabilityClient
-                    .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
-                    .await()
-                    .nodes
-                    .firstOrNull()
-                ?: error("phone not reachable")
+            val node = resolvePhoneNode() ?: error("phone not reachable")
             messageClient.sendMessage(node.id, WatchDataPaths.COMMAND, bytes).await()
         }
         return requestId
@@ -134,12 +157,36 @@ class WearBridgeClient(private val context: Context) {
             val caps = capabilityClient
                 .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
                 .await()
-            _phoneReachable.value = caps.nodes.isNotEmpty()
+            val connectedNodes = nodeClient.connectedNodes.await()
+            val nodes = caps.nodes.takeIf { it.isNotEmpty() } ?: connectedNodes
+            Timber.d(
+                "phone reachability probe reachable=%s capabilityNodes=%s connectedNodes=%s",
+                nodes.isNotEmpty(),
+                caps.nodes.joinToString { it.debugLabel() },
+                connectedNodes.joinToString { it.debugLabel() },
+            )
+            _phoneReachable.value = nodes.isNotEmpty()
         }.onFailure {
             _phoneReachable.value = false
             Timber.w(it, "phone capability probe failed")
         }
     }
+
+    private suspend fun resolvePhoneNode(): Node? {
+        val capabilityNodes = capabilityClient
+            .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+            .await()
+            .nodes
+        val nodes = capabilityNodes.takeIf { it.isNotEmpty() } ?: nodeClient.connectedNodes.await()
+        return nodes.nearbyFirst()
+    }
+
+    private fun Iterable<Node>.nearbyFirst(): Node? = firstOrNull { it.isNearby } ?: firstOrNull()
+
+    private fun Node.debugLabel(): String = "$displayName/$id/$isNearby"
+
+    private fun Throwable.isDuplicateCapability(): Boolean =
+        this is ApiException && statusCode == DUPLICATE_CAPABILITY_STATUS_CODE
 
     private fun dispatchIncoming(envelope: WatchSyncEnvelope) {
         if (envelope.protocolVersion < WatchProtocol.MIN_SUPPORTED_VERSION) {

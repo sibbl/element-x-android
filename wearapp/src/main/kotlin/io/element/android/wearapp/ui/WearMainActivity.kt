@@ -14,13 +14,7 @@ import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -61,31 +55,33 @@ class WearMainActivity : ComponentActivity() {
         val bridge = (application as WearApp).bridgeClient
         setContent {
             val nav = rememberSwipeDismissableNavController()
-            SwipeDismissableNavHost(navController = nav, startDestination = "favorites") {
-                composable("favorites") {
-                    FavoritesScreen(
-                        bridge = bridge,
-                        onRoomSelected = { roomId -> nav.navigate("room/$roomId") },
-                    )
-                }
-                composable("room/{roomId}") { entry ->
-                    val roomId = entry.arguments?.getString("roomId") ?: return@composable
-                    RoomScreen(
-                        bridge = bridge,
-                        roomId = roomId,
-                        activity = this@WearMainActivity,
-                        onOpenThread = { rootId -> nav.navigate("thread/$roomId/$rootId") },
-                    )
-                }
-                composable("thread/{roomId}/{rootId}") { entry ->
-                    val roomId = entry.arguments?.getString("roomId") ?: return@composable
-                    val rootId = entry.arguments?.getString("rootId") ?: return@composable
-                    ThreadScreen(
-                        bridge = bridge,
-                        roomId = roomId,
-                        threadRootEventId = rootId,
-                        activity = this@WearMainActivity,
-                    )
+            MaterialTheme {
+                SwipeDismissableNavHost(navController = nav, startDestination = "favorites") {
+                    composable("favorites") {
+                        FavoritesScreen(
+                            bridge = bridge,
+                            onRoomSelected = { roomId -> nav.navigate("room/$roomId") },
+                        )
+                    }
+                    composable("room/{roomId}") { entry ->
+                        val roomId = entry.arguments?.getString("roomId") ?: return@composable
+                        RoomScreen(
+                            bridge = bridge,
+                            roomId = roomId,
+                            activity = this@WearMainActivity,
+                            onOpenThread = { rootId -> nav.navigate("thread/$roomId/$rootId") },
+                        )
+                    }
+                    composable("thread/{roomId}/{rootId}") { entry ->
+                        val roomId = entry.arguments?.getString("roomId") ?: return@composable
+                        val rootId = entry.arguments?.getString("rootId") ?: return@composable
+                        ThreadScreen(
+                            bridge = bridge,
+                            roomId = roomId,
+                            threadRootEventId = rootId,
+                            activity = this@WearMainActivity,
+                        )
+                    }
                 }
             }
         }

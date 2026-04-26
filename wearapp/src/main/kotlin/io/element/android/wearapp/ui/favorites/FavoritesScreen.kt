@@ -8,16 +8,12 @@
 package io.element.android.wearapp.ui.favorites
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -32,20 +28,21 @@ import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeClient
-import kotlinx.coroutines.launch
 
 @Composable
 fun FavoritesScreen(
     bridge: WearBridgeClient,
     onRoomSelected: (String) -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     val rooms by bridge.favorites.collectAsState()
     val reachable by bridge.phoneReachable.collectAsState()
 
-    LaunchedEffect(Unit) {
-        // Ask the phone to push its current favorites snapshot.
-        runCatching { bridge.send { id -> WatchCommand.RefreshRooms(requestId = id) } }
+    LaunchedEffect(reachable) {
+        bridge.refreshPhoneReachability()
+        if (reachable) {
+            // Ask the phone to push its current favorites snapshot.
+            runCatching { bridge.send { id -> WatchCommand.RefreshRooms(requestId = id) } }
+        }
     }
 
     val listState = rememberScalingLazyListState()

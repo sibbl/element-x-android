@@ -34,6 +34,7 @@ import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Text
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.ChannelClient
+import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.Wearable
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchDataPaths
@@ -86,7 +87,9 @@ class VoiceRecorderActivity : ComponentActivity() {
             val capability = Wearable.getCapabilityClient(this@VoiceRecorderActivity)
                 .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
                 .await()
-            val node = capability.nodes.firstOrNull() ?: error("phone not reachable")
+            val connectedNodes = Wearable.getNodeClient(this@VoiceRecorderActivity).connectedNodes.await()
+            val node = (capability.nodes.takeIf { it.isNotEmpty() } ?: connectedNodes).nearbyFirst()
+                ?: error("phone not reachable")
             val channelClient: ChannelClient = Wearable.getChannelClient(this@VoiceRecorderActivity)
             val channel = channelClient.openChannel(node.id, WatchDataPaths.VOICE_DRAFT_CHANNEL).await()
             try {
@@ -112,6 +115,8 @@ class VoiceRecorderActivity : ComponentActivity() {
                 WatchCommand.UploadVoiceDraft(requestId = it, draft = draft)
             }
         }
+
+    private fun Iterable<Node>.nearbyFirst(): Node? = firstOrNull { it.isNearby } ?: firstOrNull()
 }
 
 @Composable

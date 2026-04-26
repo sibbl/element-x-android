@@ -6,6 +6,12 @@ one-line rationale. Keep this file in sync with every PR.
 | File | Risk | Rationale |
 | :--- | :--- | :--- |
 | `settings.gradle.kts` | low | Four `include(…)` lines for new additive modules. |
+| `app/build.gradle.kts` | low | Add GPlay-only dependency on `:watchbridge` so the debug phone APK can advertise and receive Wear Data Layer bridge events. |
+| `app/src/gplay/AndroidManifest.xml` | medium | Add GPlay-only Wear bridge capability metadata and listener service declaration. |
+| `app/src/gplay/kotlin/io/element/android/x/initializer/WatchBridgeCapabilityInitializer.kt` | low | Dynamically registers the phone bridge capability at process start and treats already-registered static capabilities as benign. |
+| `app/src/gplay/res/values/wear.xml` | low | Add the GPlay-only static Wear Data Layer phone capability resource. |
+| `wearapp/src/main/AndroidManifest.xml` | low | Declare the watch capability and use a local launcher icon that parses correctly on Wear OS. |
+| `wearapp/src/main/res/values/wear.xml` | low | Add the static Wear Data Layer watch capability resource. |
 
 ## Planned (Phase 1 — not yet applied)
 
