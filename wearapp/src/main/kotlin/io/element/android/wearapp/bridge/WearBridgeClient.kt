@@ -194,8 +194,14 @@ class WearBridgeClient(private val context: Context) {
             return
         }
         when (val p = envelope.payload) {
-            is WatchSync.FavoritesSnapshot -> _favorites.value = p.rooms
-            is WatchAck -> scope.launch { _acks.emit(p) }
+            is WatchSync.FavoritesSnapshot -> {
+                Timber.d("received favorites snapshot count=%d", p.rooms.size)
+                _favorites.value = p.rooms
+            }
+            is WatchAck -> {
+                Timber.d("received ack=%s requestId=%s", p::class.simpleName, p.requestId)
+                scope.launch { _acks.emit(p) }
+            }
             else -> scope.launch { _syncEvents.emit(p) }
         }
     }

@@ -24,6 +24,7 @@ class ElementXWatchBridgeListenerService : WatchBridgeListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
         if (event.path != WatchDataPaths.COMMAND) return
+        Timber.d("WatchBridge listener received path=%s bytes=%d", event.path, event.data.size)
         val envelope = runCatching { WatchBridgeDispatcher.parse(event.data) }
             .onFailure { Timber.w(it, "Failed to parse watch envelope") }
             .getOrNull() ?: return

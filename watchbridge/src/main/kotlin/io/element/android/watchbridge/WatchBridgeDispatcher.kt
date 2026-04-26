@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
+private const val INITIAL_ROOM_LOAD_COUNT = 30
+
 /**
  * The phone-side command dispatcher.
  *
@@ -46,7 +48,11 @@ class WatchBridgeDispatcher(
     fun start() {
         favoritesJob?.cancel()
         favoritesJob = scope.launch {
+            runCatching {
+                port.ensureRoomListLoaded(INITIAL_ROOM_LOAD_COUNT)
+            }.onFailure { Timber.w(it, "initial room load failed") }
             port.favorites().collectLatest { rooms ->
+                Timber.d("publishing favorites snapshot count=%d", rooms.size)
                 runCatching {
                     transport.publishSync(
                         path = WatchDataPaths.FAVORITES,
