@@ -55,7 +55,11 @@ class WatchBridgeDispatcherTest {
         var sendTextResult: Result<String> = Result.success("\$ev"),
         var sendReactionResult: Result<Unit> = Result.success(Unit),
     ) : ElementXWatchPort {
+        var ensureLoadedCalls: MutableList<Int> = mutableListOf()
         override fun favorites(): Flow<List<WatchFavoriteRoom>> = flowOf(favorites)
+        override suspend fun ensureRoomListLoaded(minimumCount: Int) {
+            ensureLoadedCalls += minimumCount
+        }
         override suspend fun roomSummary(roomId: String): WatchRoomSummary? = summary
         override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = flowOf(timeline)
         override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = flowOf(thread)
@@ -92,6 +96,7 @@ class WatchBridgeDispatcherTest {
         checkNotNull(published) { "favorites snapshot not published" }
         val payload = published.second.payload as WatchSync.FavoritesSnapshot
         assertThat(payload.rooms).hasSize(1)
+        assertThat(port.ensureLoadedCalls).isNotEmpty()
     }
 
     @Test
