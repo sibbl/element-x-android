@@ -55,47 +55,86 @@ import kotlinx.coroutines.tasks.await
 class RecentContactsTileService : TileService() {
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
-        Log.d(TAG, "onTileRequest called")
-        val bridge = (application as WearApp).bridgeClient
-        // Try current in-memory snapshot first — show all favorites.
-        var contacts = bridge.favorites.value
-            .asSequence()
-            .sortedByDescending { it.lastActivityTsMs }
-            .distinctBy { it.roomId }
-            .take(7)
-            .toList()
-
-        // If empty, read directly from the Wear Data Layer (blocking).
-        if (contacts.isEmpty()) {
-            contacts = readFavoritesFromDataLayer()
+        Log.d(TAG, "onTileRequest called, lastClickableId=${requestParams.currentState.lastClickableId}")
+        return try {
+            val bridge = (application as WearApp).bridgeClient
+            // Try current in-memory snapshot first — show all favorites.
+            var contacts = bridge.favorites.value
                 .asSequence()
                 .sortedByDescending { it.lastActivityTsMs }
                 .distinctBy { it.roomId }
                 .take(7)
                 .toList()
-            Log.d(TAG, "tile: read ${contacts.size} contacts from Data Layer fallback")
-        } else {
-            Log.d(TAG, "tile: using ${contacts.size} contacts from in-memory cache")
+
+            // If empty, read directly from the Wear Data Layer (blocking).
+            if (contacts.isEmpty()) {
+                contacts = readFavoritesFromDataLayer()
+                    .asSequence()
+                    .sortedByDescending { it.lastActivityTsMs }
+                    .distinctBy { it.roomId }
+                    .take(7)
+                    .toList()
+                Log.d(TAG, "tile: read ${contacts.size} contacts from Data Layer fallback")
+            } else {
+                Log.d(TAG, "tile: using ${contacts.size} contacts from in-memory cache")
+            }
+
+            // If still empty, trigger a phone refresh so next tile update has data.
+            if (contacts.isEmpty()) {
+                bridge.refreshPhoneReachability()
+            }
+
+            val layout = if (contacts.isEmpty()) {
+                buildEmptyLayout()
+            } else {
+                buildHoneycombLayout(contacts)
+            }
+
+            val tile = TileBuilders.Tile.Builder()
+                .setResourcesVersion("1")
+                .setTileTimeline(Timeline.fromLayoutElement(layout))
+                .setFreshnessIntervalMillis(5 * 60 * 1000L) // refresh every 5 min
+                .build()
+
+            Futures.immediateFuture(tile)
+        } catch (e: Exception) {
+            Log.e(TAG, "onTileRequest FAILED", e)
+            // Return a minimal error tile instead of crashing.
+            val errorLayout = Box.Builder()
+                .setWidth(expand())
+                .setHeight(expand())
+                .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+                .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
+                .addContent(
+                    Text.Builder()
+                        .setText("Error loading tile")
+                        .setFontStyle(FontStyle.Builder().setSize(sp(12f)).setColor(argb(0xFFFF6666.toInt())).build())
+                        .build(),
+                )
+                .build()
+            Futures.immediateFuture(
+                TileBuilders.Tile.Builder()
+                    .setResourcesVersion("1")
+                    .setTileTimeline(Timeline.fromLayoutElement(errorLayout))
+                    .build(),
+            )
         }
+    }
 
-        // If still empty, trigger a phone refresh so next tile update has data.
-        if (contacts.isEmpty()) {
-            bridge.refreshPhoneReachability()
-        }
+    override fun onTileEnterEvent(requestParams: androidx.wear.tiles.EventBuilders.TileEnterEvent) {
+        Log.d(TAG, "onTileEnterEvent — tile became visible")
+    }
 
-        val layout = if (contacts.isEmpty()) {
-            buildEmptyLayout()
-        } else {
-            buildHoneycombLayout(contacts)
-        }
+    override fun onTileLeaveEvent(requestParams: androidx.wear.tiles.EventBuilders.TileLeaveEvent) {
+        Log.d(TAG, "onTileLeaveEvent — tile no longer visible")
+    }
 
-        val tile = TileBuilders.Tile.Builder()
-            .setResourcesVersion("1")
-            .setTileTimeline(Timeline.fromLayoutElement(layout))
-            .setFreshnessIntervalMillis(5 * 60 * 1000L) // refresh every 5 min
-            .build()
+    override fun onTileAddEvent(requestParams: androidx.wear.tiles.EventBuilders.TileAddEvent) {
+        Log.d(TAG, "onTileAddEvent — tile added to carousel")
+    }
 
-        return Futures.immediateFuture(tile)
+    override fun onTileRemoveEvent(requestParams: androidx.wear.tiles.EventBuilders.TileRemoveEvent) {
+        Log.d(TAG, "onTileRemoveEvent — tile removed from carousel")
     }
 
     /**

@@ -40,6 +40,7 @@ import java.util.Locale
 class WearMainActivity : ComponentActivity() {
 
     private var pendingDictationResult: ((String?) -> Unit)? = null
+    private var pendingDeepLink: Pair<String, String?>? = null
 
     private val dictationLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -64,9 +65,21 @@ class WearMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDeepLink = extractDeepLink(intent)
         val bridge = (application as WearApp).bridgeClient
         setContent {
             val nav = rememberSwipeDismissableNavController()
+            // Handle deep-link from notification tap.
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                pendingDeepLink?.let { (roomId, eventId) ->
+                    if (eventId != null) {
+                        nav.navigate("message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}")
+                    } else {
+                        nav.navigate("room?roomId=${Uri.encode(roomId)}")
+                    }
+                    pendingDeepLink = null
+                }
+            }
             MaterialTheme {
                 SwipeDismissableNavHost(navController = nav, startDestination = "favorites") {
                     composable("favorites") {
@@ -162,5 +175,17 @@ class WearMainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // When already running and a notification opens us, store deep link for next recomposition.
+        pendingDeepLink = extractDeepLink(intent)
+    }
+
+    private fun extractDeepLink(intent: Intent?): Pair<String, String?>? {
+        val roomId = intent?.getStringExtra("roomId") ?: return null
+        val eventId = intent.getStringExtra("eventId")?.takeIf { it.isNotBlank() }
+        return roomId to eventId
     }
 }

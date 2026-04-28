@@ -9,7 +9,10 @@
 package io.element.android.libraries.push.impl.notifications.factories
 
 import android.app.Notification
+import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.annotation.ColorInt
@@ -210,6 +213,15 @@ class DefaultNotificationCreator(
             .setContentIntent(openIntent)
             .setLargeIcon(largeIcon)
             .setDeleteIntent(pendingIntentFactory.createDismissRoomPendingIntent(roomInfo.sessionId, roomInfo.roomId))
+            .apply {
+                // Wear OS: include roomId/eventId as notification extras so bridged
+                // notifications carry enough context for the watch companion to deep-link.
+                addExtras(Bundle().apply {
+                    putString("io.element.android.wear.roomId", roomInfo.roomId.value)
+                    putString("io.element.android.wear.eventId", eventId?.value.orEmpty())
+                    putString("io.element.android.wear.roomName", roomInfo.roomDisplayName.orEmpty())
+                })
+            }
             .apply {
                 // Sets priority for 25 and below. For 26 and above, 'priority' is deprecated for
                 // 'importance' which is set in the NotificationChannel. The integers representing

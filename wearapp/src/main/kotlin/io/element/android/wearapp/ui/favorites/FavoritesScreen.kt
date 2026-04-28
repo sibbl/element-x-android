@@ -10,27 +10,36 @@ package io.element.android.wearapp.ui.favorites
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.HorizontalPageIndicator
 import androidx.wear.compose.material.ListHeader
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.PageIndicatorState
 import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
@@ -55,54 +64,112 @@ fun FavoritesScreen(
     LaunchedEffect(reachable, requestedRoomCount) {
         bridge.refreshPhoneReachability()
         if (reachable) {
-            // Ask the phone to push favorites plus the most recent rooms up to the requested count.
             runCatching { bridge.send { id -> WatchCommand.RefreshRooms(requestId = id, minimumCount = requestedRoomCount) } }
         }
     }
 
-    val listState = rememberScalingLazyListState()
-    LaunchedEffect(listState, rooms.size, reachable) {
-        if (!reachable) return@LaunchedEffect
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-            .distinctUntilChanged()
-            .collect { lastVisibleIndex ->
-                if (rooms.isNotEmpty() && lastVisibleIndex >= rooms.size - LOAD_MORE_THRESHOLD) {
-                    requestedRoomCount += ROOM_PAGE_SIZE
-                }
-            }
-    }
-
     val favoriteRooms = rooms.filter { it.isFavorite }
     val recentRooms = rooms.filterNot { it.isFavorite }
+
+    // If no favorites, show All Rooms by default (page 1); otherwise Favorites first (page 0).
+    val initialPage = if (favoriteRooms.isEmpty()) 1 else 0
+    val pagerState = rememberPagerState(initialPage = initialPage) { 2 }
+    val pageIndicatorState = remember {
+        object : PageIndicatorState {
+            override val pageCount: Int get() = 2
+            override val pageOffset: Float get() = pagerState.currentPageOffsetFraction
+            override val selectedPage: Int get() = pagerState.currentPage
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> RoomListPage(
+                    title = stringResource(R.string.favorites_title),
+                    rooms = favoriteRooms,
+                    emptyText = stringResource(R.string.empty_favorites),
+                    reachable = reachable,
+                    isFavoritePage = true,
+                    onRoomSelected = onRoomSelected,
+                    onLongPressRoom = onLongPressRoom,
+                )
+                1 -> RoomListPage(
+                    title = stringResource(R.string.recent_rooms_title),
+                    rooms = recentRooms,
+                    emptyText = stringResource(R.string.empty_rooms),
+                    reachable = reachable,
+                    isFavoritePage = false,
+                    onRoomSelected = onRoomSelected,
+                    onLongPressRoom = onLongPressRoom,
+                    onLoadMore = { requestedRoomCount += ROOM_PAGE_SIZE },
+                )
+            }
+        }
+        HorizontalPageIndicator(
+            pageIndicatorState = pageIndicatorState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun RoomListPage(
+    title: String,
+    rooms: List<WatchFavoriteRoom>,
+    emptyText: String,
+    reachable: Boolean,
+    isFavoritePage: Boolean,
+    onRoomSelected: (String) -> Unit,
+    onLongPressRoom: ((WatchFavoriteRoom) -> Unit)?,
+    onLoadMore: (() -> Unit)? = null,
+) {
+    val listState = rememberScalingLazyListState()
+
+    // Infinite scroll for the All Rooms page.
+    if (onLoadMore != null) {
+        LaunchedEffect(listState, rooms.size) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+                .distinctUntilChanged()
+                .collect { lastVisibleIndex ->
+                    if (rooms.isNotEmpty() && lastVisibleIndex >= rooms.size - LOAD_MORE_THRESHOLD) {
+                        onLoadMore()
+                    }
+                }
+        }
+    }
+
     ScalingLazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        item { ListHeader { Text(text = title) } }
         if (!reachable) {
-            item { Text(androidx.compose.ui.res.stringResource(R.string.no_phone)) }
-        } else if (rooms.isEmpty()) {
-            item { Text(androidx.compose.ui.res.stringResource(R.string.empty_rooms)) }
-        } else {
-            if (favoriteRooms.isNotEmpty()) {
-                item { ListHeader { Text(text = androidx.compose.ui.res.stringResource(R.string.favorites_title)) } }
-                items(favoriteRooms, key = { "favorite-${it.roomId}" }) { room ->
-                    FavoriteRoomChip(
-                        room = room,
-                        onClick = { onRoomSelected(room.roomId) },
-                        onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
-                    )
-                }
+            item {
+                Text(
+                    text = stringResource(R.string.no_phone),
+                    style = MaterialTheme.typography.body2,
+                )
             }
-            if (recentRooms.isNotEmpty()) {
-                item { ListHeader { Text(text = androidx.compose.ui.res.stringResource(R.string.recent_rooms_title)) } }
-                items(recentRooms, key = { "recent-${it.roomId}" }) { room ->
-                    FavoriteRoomChip(
-                        room = room,
-                        onClick = { onRoomSelected(room.roomId) },
-                        onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
-                    )
-                }
+        } else if (rooms.isEmpty()) {
+            item {
+                Text(
+                    text = emptyText,
+                    style = MaterialTheme.typography.body2,
+                )
+            }
+        } else {
+            items(rooms, key = { "${if (isFavoritePage) "fav" else "recent"}-${it.roomId}" }) { room ->
+                FavoriteRoomChip(
+                    room = room,
+                    onClick = { onRoomSelected(room.roomId) },
+                    onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
+                )
             }
         }
     }
