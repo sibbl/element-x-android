@@ -17,13 +17,17 @@ import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.transport.WatchTransport
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 private const val INITIAL_ROOM_LOAD_COUNT = 30
+private const val MAX_AVATAR_SYNC_COUNT = 60
 
 /**
  * The phone-side command dispatcher.
@@ -47,6 +51,12 @@ class WatchBridgeDispatcher(
     private var settingsJob: Job? = null
     private val roomJobs = mutableMapOf<String, Job>()
     private val threadJobs = mutableMapOf<String, Job>()
+    private val publishedAvatarKeys = mutableMapOf<String, String?>()
+    private val latestAvatarKeys = mutableMapOf<String, String?>()
+    private val avatarRetryJobs = mutableMapOf<String, Job>()
+    private val pendingVoiceDraftCommands = ConcurrentHashMap<String, WatchCommand.UploadVoiceDraft>()
+    private val pendingVoiceDraftAudio = ConcurrentHashMap<String, ByteArray>()
+    private val voiceDraftJobs = ConcurrentHashMap<String, Job>()
 
     fun start() {
         favoritesJob?.cancel()
@@ -62,6 +72,7 @@ class WatchBridgeDispatcher(
                         envelope = envelope(WatchSync.FavoritesSnapshot(rooms)),
                     )
                 }.onFailure { Timber.w(it, "publish favorites failed") }
+                publishAvatarUpdates(rooms)
             }
         }
         // Publish settings to the watch whenever they change.
@@ -86,6 +97,16 @@ class WatchBridgeDispatcher(
         settingsJob?.cancel(); settingsJob = null
         roomJobs.values.forEach { it.cancel() }; roomJobs.clear()
         threadJobs.values.forEach { it.cancel() }; threadJobs.clear()
+        avatarRetryJobs.values.forEach { it.cancel() }; avatarRetryJobs.clear()
+        voiceDraftJobs.values.forEach { it.cancel() }; voiceDraftJobs.clear()
+        pendingVoiceDraftCommands.clear()
+        pendingVoiceDraftAudio.clear()
+        latestAvatarKeys.clear()
+    }
+
+    fun onVoiceDraftAudio(draftId: String, audioBytes: ByteArray) {
+        pendingVoiceDraftAudio[draftId] = audioBytes
+        maybeCompleteVoiceDraft(draftId)
     }
 
     /** Entry point for the `WearableListenerService` after parsing an envelope from the watch. */
@@ -116,7 +137,7 @@ class WatchBridgeDispatcher(
                 is WatchCommand.OpenRoom -> openRoom(cmd)
                 is WatchCommand.FetchThread -> fetchThread(cmd)
                 is WatchCommand.SendText -> {
-                    port.sendText(cmd.roomId, cmd.threadRootEventId, cmd.text)
+                    port.sendText(cmd.roomId, cmd.threadRootEventId, cmd.inReplyToEventId, cmd.text)
                         .onSuccess { ack(WatchAck.Sent(cmd.requestId, eventId = it)) }
                         .onFailure { ack(WatchAck.Failed(cmd.requestId, classify(it), it.message)) }
                 }
@@ -126,9 +147,9 @@ class WatchBridgeDispatcher(
                         .onFailure { ack(WatchAck.Failed(cmd.requestId, classify(it), it.message)) }
                 }
                 is WatchCommand.UploadVoiceDraft -> {
+                    pendingVoiceDraftCommands[cmd.draft.draftId] = cmd
                     ack(WatchAck.Pending(cmd.requestId, reason = "awaiting-audio-channel"))
-                    // Actual bytes arrive on the Channel; the channel handler completes the send and
-                    // emits the final ack. See VoiceChannelBridge in the host app integration.
+                    maybeCompleteVoiceDraft(cmd.draft.draftId)
                 }
                 is WatchCommand.RequestPlayback -> {
                     port.playbackDescriptor(cmd.roomId, cmd.eventId)
@@ -147,76 +168,109 @@ class WatchBridgeDispatcher(
         }
     }
 
+    private fun maybeCompleteVoiceDraft(draftId: String) {
+        val command = pendingVoiceDraftCommands[draftId] ?: return
+        val audioBytes = pendingVoiceDraftAudio[draftId] ?: return
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val pendingCommand = pendingVoiceDraftCommands.remove(draftId) ?: command
+                val pendingAudioBytes = pendingVoiceDraftAudio.remove(draftId) ?: audioBytes
+                port.sendVoiceMessage(pendingCommand.draft, pendingAudioBytes)
+                    .onSuccess { eventId ->
+                        ack(WatchAck.Sent(pendingCommand.requestId, eventId = eventId.takeIf { it.isNotBlank() }))
+                    }
+                    .onFailure {
+                        ack(WatchAck.Failed(pendingCommand.requestId, classify(it), it.message))
+                    }
+            } finally {
+                voiceDraftJobs.remove(draftId)
+            }
+        }
+        val existingJob = voiceDraftJobs.putIfAbsent(draftId, job)
+        if (existingJob != null) {
+            job.cancel()
+        } else {
+            job.start()
+        }
+    }
+
     private fun openRoom(cmd: WatchCommand.OpenRoom) {
         roomJobs[cmd.roomId]?.cancel()
         roomJobs[cmd.roomId] = scope.launch {
-            val summary = port.roomSummary(cmd.roomId)
-            if (summary == null) {
-                ack(WatchAck.Failed(cmd.requestId, WatchErrorCode.NOT_FOUND, "room not found"))
-                return@launch
-            }
-            transport.publishSync(
-                path = WatchDataPaths.ROOM_SUMMARY,
-                envelope = envelope(WatchSync.RoomSummary(summary)),
-            )
-            // Publish an initial empty delta so the watch transitions from "loading" to "empty"
-            // quickly if the timeline flow takes time to emit (e.g. encrypted rooms pending key delivery).
-            var hasEmitted = false
-            val initialDeltaJob = launch {
-                delay(3000L)
-                if (!hasEmitted) {
-                    Timber.d("openRoom sending initial empty delta for room=%s", cmd.roomId)
-                    runCatching {
-                        transport.publishSync(
-                            path = WatchDataPaths.roomTimeline(cmd.roomId),
-                            envelope = envelope(
-                                WatchSync.TimelineDelta(
-                                    roomId = cmd.roomId,
-                                    fromTimelineVersion = -1L,
-                                    toTimelineVersion = 0L,
-                                    items = emptyList(),
+            runCatching {
+                val summary = port.roomSummary(cmd.roomId)
+                if (summary == null) {
+                    ack(WatchAck.Failed(cmd.requestId, WatchErrorCode.NOT_FOUND, "room not found"))
+                    return@runCatching
+                }
+                transport.publishSync(
+                    path = WatchDataPaths.ROOM_SUMMARY,
+                    envelope = envelope(WatchSync.RoomSummary(summary)),
+                )
+                latestAvatarKeys[cmd.roomId] = summary.avatarUri
+                publishAvatarUpdate(roomId = cmd.roomId, avatarKey = summary.avatarUri, allowRetry = summary.avatarUri != null)
+                ack(WatchAck.Sent(cmd.requestId))
+
+                // Publish an initial empty delta so the watch transitions from "loading" to "empty"
+                // quickly if the timeline flow takes time to emit (e.g. encrypted rooms pending key delivery).
+                var hasEmitted = false
+                val initialDeltaJob = launch {
+                    delay(3000L)
+                    if (!hasEmitted) {
+                        Timber.d("openRoom sending initial empty delta for room=%s", cmd.roomId)
+                        runCatching {
+                            transport.publishSync(
+                                path = WatchDataPaths.roomTimeline(cmd.roomId),
+                                envelope = envelope(
+                                    WatchSync.TimelineDelta(
+                                        roomId = cmd.roomId,
+                                        fromTimelineVersion = -1L,
+                                        toTimelineVersion = 0L,
+                                        items = emptyList(),
+                                    ),
                                 ),
-                            ),
-                        )
+                            )
+                        }
                     }
                 }
-            }
-            var lastVersion = -1L
-            port.roomTimeline(cmd.roomId, cmd.limit).collectLatest { items ->
-                hasEmitted = true
-                initialDeltaJob.cancel()
-                // Truncate items if the full list would exceed the transport payload limit.
-                // Try the full list first, then progressively smaller subsets.
-                var toPublish = items
-                var published = false
-                while (!published && toPublish.isNotEmpty()) {
-                    val toVersion = summary.timelineVersion
-                    runCatching {
-                        transport.publishSync(
-                            path = WatchDataPaths.roomTimeline(cmd.roomId),
-                            envelope = envelope(
-                                WatchSync.TimelineDelta(
-                                    roomId = cmd.roomId,
-                                    fromTimelineVersion = lastVersion,
-                                    toTimelineVersion = toVersion,
-                                    items = toPublish,
+                var lastVersion = -1L
+                port.roomTimeline(cmd.roomId, cmd.limit).collectLatest { items ->
+                    hasEmitted = true
+                    initialDeltaJob.cancel()
+                    // Truncate items if the full list would exceed the transport payload limit.
+                    // Try the full list first, then progressively smaller subsets.
+                    var toPublish = items
+                    var published = false
+                    while (!published && toPublish.isNotEmpty()) {
+                        val toVersion = summary.timelineVersion
+                        runCatching {
+                            transport.publishSync(
+                                path = WatchDataPaths.roomTimeline(cmd.roomId),
+                                envelope = envelope(
+                                    WatchSync.TimelineDelta(
+                                        roomId = cmd.roomId,
+                                        fromTimelineVersion = lastVersion,
+                                        toTimelineVersion = toVersion,
+                                        items = toPublish,
+                                    ),
                                 ),
-                            ),
-                        )
-                        lastVersion = toVersion
-                        published = true
-                    }.onFailure { e ->
-                        Timber.w(e, "Timeline publish failed for room=%s items=%d, reducing", cmd.roomId, toPublish.size)
-                        // Keep the most recent half of items and retry.
-                        val reduced = toPublish.size / 2
-                        toPublish = if (reduced > 0) toPublish.takeLast(reduced) else emptyList()
+                            )
+                            lastVersion = toVersion
+                            published = true
+                        }.onFailure { e ->
+                            Timber.w(e, "Timeline publish failed for room=%s items=%d, reducing", cmd.roomId, toPublish.size)
+                            val reduced = toPublish.size / 2
+                            toPublish = if (reduced > 0) toPublish.takeLast(reduced) else emptyList()
+                        }
+                    }
+                    if (!published && items.isNotEmpty()) {
+                        Timber.e("Unable to publish any timeline items for room=%s", cmd.roomId)
                     }
                 }
-                if (!published && items.isNotEmpty()) {
-                    Timber.e("Unable to publish any timeline items for room=%s", cmd.roomId)
-                }
+            }.onFailure {
+                Timber.w(it, "openRoom failed for room=%s", cmd.roomId)
+                ack(WatchAck.Failed(cmd.requestId, classify(it), it.message))
             }
-            ack(WatchAck.Sent(cmd.requestId))
         }
     }
 
@@ -224,19 +278,118 @@ class WatchBridgeDispatcher(
         val key = "${cmd.roomId}/${cmd.threadRootEventId}"
         threadJobs[key]?.cancel()
         threadJobs[key] = scope.launch {
-            port.threadTimeline(cmd.roomId, cmd.threadRootEventId, cmd.limit).collectLatest { items ->
-                transport.publishSync(
-                    path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
-                    envelope = envelope(
-                        WatchSync.ThreadDelta(
-                            roomId = cmd.roomId,
-                            threadRootEventId = cmd.threadRootEventId,
-                            items = items,
+            runCatching {
+                ack(WatchAck.Sent(cmd.requestId))
+                var hasEmitted = false
+                val initialDeltaJob = launch {
+                    delay(3_000L)
+                    if (!hasEmitted) {
+                        Timber.d("fetchThread sending initial empty delta for %s/%s", cmd.roomId, cmd.threadRootEventId)
+                        transport.publishSync(
+                            path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
+                            envelope = envelope(
+                                WatchSync.ThreadDelta(
+                                    roomId = cmd.roomId,
+                                    threadRootEventId = cmd.threadRootEventId,
+                                    items = emptyList(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+                port.threadTimeline(cmd.roomId, cmd.threadRootEventId, cmd.limit).collectLatest { items ->
+                    hasEmitted = true
+                    initialDeltaJob.cancel()
+                    transport.publishSync(
+                        path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
+                        envelope = envelope(
+                            WatchSync.ThreadDelta(
+                                roomId = cmd.roomId,
+                                threadRootEventId = cmd.threadRootEventId,
+                                items = items,
+                            ),
                         ),
-                    ),
-                )
+                    )
+                }
+            }.onFailure {
+                Timber.w(it, "fetchThread failed for %s/%s", cmd.roomId, cmd.threadRootEventId)
+                ack(WatchAck.Failed(cmd.requestId, classify(it), it.message))
             }
-            ack(WatchAck.Sent(cmd.requestId))
+        }
+    }
+
+    private suspend fun publishAvatarUpdates(rooms: List<io.element.android.watchbridge.contract.WatchFavoriteRoom>) {
+        val visibleRooms = rooms.take(MAX_AVATAR_SYNC_COUNT)
+        val visibleRoomIds = visibleRooms.map { it.roomId }.toSet()
+        latestAvatarKeys.keys.filterNot { it in visibleRoomIds }.forEach { roomId ->
+            latestAvatarKeys.remove(roomId)
+            avatarRetryJobs.remove(roomId)?.cancel()
+        }
+        visibleRooms.forEach { room ->
+            latestAvatarKeys[room.roomId] = room.avatarUri
+            publishAvatarUpdate(roomId = room.roomId, avatarKey = room.avatarUri, allowRetry = room.avatarUri != null)
+        }
+    }
+
+    private suspend fun publishAvatarUpdate(roomId: String, avatarKey: String?, allowRetry: Boolean) {
+        if (publishedAvatarKeys[roomId] == avatarKey) return
+
+        if (avatarKey == null) {
+            avatarRetryJobs.remove(roomId)?.cancel()
+            runCatching {
+                transport.publishSync(
+                    path = WatchDataPaths.avatar(roomId),
+                    envelope = envelope(WatchSync.AvatarUpdate(roomId = roomId, imageBytes = null)),
+                )
+                publishedAvatarKeys[roomId] = null
+            }.onFailure { Timber.w(it, "publish avatar removal failed for room=%s", roomId) }
+            return
+        }
+
+        val bytes = port.roomAvatarThumbnail(roomId)
+            .onFailure { Timber.w(it, "avatar thumbnail load failed for room=%s", roomId) }
+            .getOrNull()
+
+        if (bytes == null) {
+            if (allowRetry) {
+                scheduleAvatarRetry(roomId = roomId, avatarKey = avatarKey)
+            }
+            return
+        }
+
+        runCatching {
+            transport.publishSync(
+                path = WatchDataPaths.avatar(roomId),
+                envelope = envelope(WatchSync.AvatarUpdate(roomId = roomId, imageBytes = bytes)),
+            )
+            publishedAvatarKeys[roomId] = avatarKey
+        }.onFailure {
+            Timber.w(it, "publish avatar failed for room=%s", roomId)
+            if (allowRetry) {
+                scheduleAvatarRetry(roomId = roomId, avatarKey = avatarKey)
+            }
+        }
+    }
+
+    private fun scheduleAvatarRetry(roomId: String, avatarKey: String) {
+        if (publishedAvatarKeys[roomId] == avatarKey) return
+        if (avatarRetryJobs[roomId]?.isActive == true) return
+
+        avatarRetryJobs[roomId] = scope.launch {
+            try {
+                repeat(4) { attempt ->
+                    delay((attempt + 1) * 1_500L)
+                    if (latestAvatarKeys[roomId] != avatarKey || publishedAvatarKeys[roomId] == avatarKey) {
+                        return@launch
+                    }
+                    publishAvatarUpdate(roomId = roomId, avatarKey = avatarKey, allowRetry = false)
+                    if (publishedAvatarKeys[roomId] == avatarKey) {
+                        return@launch
+                    }
+                }
+            } finally {
+                avatarRetryJobs.remove(roomId)
+            }
         }
     }
 
@@ -256,6 +409,8 @@ class WatchBridgeDispatcher(
 
     private fun classify(t: Throwable): WatchErrorCode = when (t) {
         is IllegalArgumentException -> WatchErrorCode.VALIDATION
+        is NoSuchElementException -> WatchErrorCode.NOT_FOUND
+        is IOException -> WatchErrorCode.NETWORK
         is SecurityException -> WatchErrorCode.PERMISSION_DENIED
         else -> WatchErrorCode.UNKNOWN
     }

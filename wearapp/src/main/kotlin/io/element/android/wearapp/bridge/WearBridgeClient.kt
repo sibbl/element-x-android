@@ -8,8 +8,10 @@
 package io.element.android.wearapp.bridge
 
 import android.content.Context
+import androidx.wear.tiles.TileService
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
@@ -22,25 +24,40 @@ import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchDataPaths
+import io.element.android.watchbridge.contract.WatchErrorCode
 import io.element.android.watchbridge.contract.WatchPayload
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
+import io.element.android.watchbridge.contract.WatchVoiceDraft
+import io.element.android.wearapp.tile.FavoriteContactsTileService
+import io.element.android.wearapp.tile.RecentContactsTileService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import timber.log.Timber
+import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
+private const val MAX_CACHED_TIMELINE_ITEMS = 100
+private const val MAX_CACHED_THREAD_ITEMS = 50
+private const val VOICE_UPLOAD_TIMEOUT_MS = 60_000L
 
 /**
  * Watch-side entry point to the companion protocol.
@@ -57,9 +74,11 @@ private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
 class WearBridgeClient(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val cacheStore = WearBridgeCacheStore(context)
 
     private val dataClient: DataClient by lazy { Wearable.getDataClient(context) }
     private val messageClient: MessageClient by lazy { Wearable.getMessageClient(context) }
+    private val channelClient: ChannelClient by lazy { Wearable.getChannelClient(context) }
     private val capabilityClient: CapabilityClient by lazy { Wearable.getCapabilityClient(context) }
     private val nodeClient: NodeClient by lazy { Wearable.getNodeClient(context) }
 
@@ -78,23 +97,53 @@ class WearBridgeClient(private val context: Context) {
     private val _phoneReachable = MutableStateFlow(false)
     val phoneReachable: StateFlow<Boolean> = _phoneReachable.asStateFlow()
 
+    private val _avatarImages = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
+    val avatarImages: StateFlow<Map<String, ByteArray>> = _avatarImages.asStateFlow()
+
     /** In-memory cache of last-known timeline items per room. Survives navigation. */
-    private val _timelineCache = mutableMapOf<String, List<io.element.android.watchbridge.contract.WatchTimelineItem>>()
+    private val _timelineCache = mutableMapOf<String, CachedTimeline>()
+    /** In-memory cache of last-known thread items per room/root pair. */
+    private val _threadCache = mutableMapOf<String, CachedThreadTimeline>()
     /** In-memory cache of last-known room summary per room. */
     private val _summaryCache = mutableMapOf<String, io.element.android.watchbridge.contract.WatchRoomSummary>()
 
     fun getCachedTimeline(roomId: String): List<io.element.android.watchbridge.contract.WatchTimelineItem> =
-        _timelineCache[roomId].orEmpty()
+        _timelineCache[roomId]?.items.orEmpty()
+
+    fun hasCachedTimelineSnapshot(roomId: String): Boolean =
+        _timelineCache[roomId]?.hasSnapshot == true
 
     fun getCachedSummary(roomId: String): io.element.android.watchbridge.contract.WatchRoomSummary? =
         _summaryCache[roomId]
 
-    fun cacheTimeline(roomId: String, items: List<io.element.android.watchbridge.contract.WatchTimelineItem>) {
-        _timelineCache[roomId] = items
+    fun getCachedThread(
+        roomId: String,
+        threadRootEventId: String,
+    ): List<io.element.android.watchbridge.contract.WatchThreadItem> =
+        _threadCache[threadCacheKey(roomId, threadRootEventId)]?.items.orEmpty()
+
+    fun hasCachedThreadSnapshot(roomId: String, threadRootEventId: String): Boolean =
+        _threadCache[threadCacheKey(roomId, threadRootEventId)]?.hasSnapshot == true
+
+    fun cacheTimeline(
+        roomId: String,
+        items: List<io.element.android.watchbridge.contract.WatchTimelineItem>,
+        hasSnapshot: Boolean = true,
+    ) {
+        _timelineCache[roomId] = CachedTimeline(items = items, hasSnapshot = hasSnapshot)
     }
 
     fun cacheSummary(roomId: String, summary: io.element.android.watchbridge.contract.WatchRoomSummary) {
         _summaryCache[roomId] = summary
+    }
+
+    fun cacheThread(
+        roomId: String,
+        threadRootEventId: String,
+        items: List<io.element.android.watchbridge.contract.WatchThreadItem>,
+        hasSnapshot: Boolean = true,
+    ) {
+        _threadCache[threadCacheKey(roomId, threadRootEventId)] = CachedThreadTimeline(items = items, hasSnapshot = hasSnapshot)
     }
 
     private val phoneCapabilityListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
@@ -121,7 +170,10 @@ class WearBridgeClient(private val context: Context) {
         capabilityClient.addListener(phoneCapabilityListener, WatchProtocol.PHONE_CAPABILITY)
             .addOnFailureListener { Timber.w(it, "phone capability listener registration failed") }
         scope.launch { probePhoneCapability() }
-        scope.launch { primeFavoritesSnapshot() }
+        scope.launch {
+            primeCachedStateFromDisk()
+            primeCachedStateFromDataLayer()
+        }
     }
 
     fun stop() {
@@ -153,26 +205,124 @@ class WearBridgeClient(private val context: Context) {
     /** Send a command to the phone. Returns the `requestId` so callers can observe their own ack. */
     suspend fun send(builder: (String) -> WatchCommand): String {
         val requestId = UUID.randomUUID().toString()
-        val cmd = builder(requestId)
-        val envelope = WatchSyncEnvelope(generatedAtMs = System.currentTimeMillis(), payload = cmd)
+        sendCommand(builder(requestId))
+        return requestId
+    }
+
+    suspend fun sendAwaitTerminalAck(builder: (String) -> WatchCommand): WatchAck = coroutineScope {
+        val requestId = UUID.randomUUID().toString()
+        val ackDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            acks.filter { it.requestId == requestId }
+                .first {
+                    it is WatchAck.Sent ||
+                        it is WatchAck.Failed ||
+                        it is WatchAck.Unsupported ||
+                        it is WatchAck.PayloadReady ||
+                        it is WatchAck.PlaybackReady
+                }
+        }
+        try {
+            sendCommand(builder(requestId))
+            when (val ack = withTimeout(WatchProtocol.DEFAULT_COMMAND_TIMEOUT_MS) { ackDeferred.await() }) {
+                is WatchAck.Failed -> throw WatchCommandException(ack.code, ack.message)
+                is WatchAck.Unsupported -> throw WatchCommandException(WatchErrorCode.FEATURE_DISABLED, "phone/watch versions are incompatible")
+                else -> ack
+            }
+        } catch (failure: Throwable) {
+            ackDeferred.cancel()
+            if (failure is WatchCommandException) throw failure
+            val code = when {
+                failure.message?.contains("phone not reachable", ignoreCase = true) == true -> WatchErrorCode.PHONE_APP_UNAVAILABLE
+                failure is kotlinx.coroutines.TimeoutCancellationException -> WatchErrorCode.TIMEOUT
+                else -> WatchErrorCode.UNKNOWN
+            }
+            throw WatchCommandException(code = code, message = failure.message, cause = failure)
+        }
+    }
+
+    suspend fun uploadVoiceDraftAwaitTerminalAck(
+        draft: WatchVoiceDraft,
+        audioFile: File,
+    ): WatchAck = coroutineScope {
+        val requestId = UUID.randomUUID().toString()
+        val ackDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            acks.filter { it.requestId == requestId }
+                .first {
+                    it is WatchAck.Sent ||
+                        it is WatchAck.Failed ||
+                        it is WatchAck.Unsupported ||
+                        it is WatchAck.PayloadReady
+                }
+        }
+        try {
+            sendCommand(
+                WatchCommand.UploadVoiceDraft(
+                    requestId = requestId,
+                    draft = draft,
+                ),
+            )
+            uploadVoiceDraftBytes(draftId = draft.draftId, audioFile = audioFile)
+            when (val ack = withTimeout(VOICE_UPLOAD_TIMEOUT_MS) { ackDeferred.await() }) {
+                is WatchAck.Failed -> throw WatchCommandException(ack.code, ack.message)
+                is WatchAck.Unsupported -> throw WatchCommandException(WatchErrorCode.FEATURE_DISABLED, "phone/watch versions are incompatible")
+                else -> ack
+            }
+        } catch (failure: Throwable) {
+            ackDeferred.cancel()
+            if (failure is WatchCommandException) throw failure
+            val code = when {
+                failure.message?.contains("phone not reachable", ignoreCase = true) == true -> WatchErrorCode.PHONE_APP_UNAVAILABLE
+                failure is kotlinx.coroutines.TimeoutCancellationException -> WatchErrorCode.TIMEOUT
+                failure is IOException -> WatchErrorCode.UPLOAD_FAILED
+                else -> WatchErrorCode.UNKNOWN
+            }
+            throw WatchCommandException(code = code, message = failure.message, cause = failure)
+        }
+    }
+
+    private suspend fun sendCommand(command: WatchCommand) {
+        val envelope = WatchSyncEnvelope(generatedAtMs = System.currentTimeMillis(), payload = command)
         val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope)
         withContext(Dispatchers.IO) {
             val node = resolvePhoneNode() ?: error("phone not reachable")
             messageClient.sendMessage(node.id, WatchDataPaths.COMMAND, bytes).await()
         }
-        return requestId
     }
 
-    private suspend fun primeFavoritesSnapshot() = withContext(Dispatchers.IO) {
+    private suspend fun uploadVoiceDraftBytes(
+        draftId: String,
+        audioFile: File,
+    ) = withContext(Dispatchers.IO) {
+        val node = resolvePhoneNode() ?: error("phone not reachable")
+        val channel = channelClient.openChannel(node.id, WatchDataPaths.voiceDraftChannel(draftId)).await()
+        try {
+            channelClient.getOutputStream(channel).await().use { output ->
+                audioFile.inputStream().use { input -> input.copyTo(output) }
+                output.flush()
+            }
+        } finally {
+            channelClient.close(channel).await()
+        }
+    }
+
+    private suspend fun primeCachedStateFromDataLayer() = withContext(Dispatchers.IO) {
         runCatching {
-            val items = dataClient.getDataItems(android.net.Uri.parse("wear:${WatchDataPaths.FAVORITES}")).await()
+            val items = dataClient.getDataItems().await()
             for (index in 0 until items.count) {
                 val item = items[index]
                 val bytes = DataMapItem.fromDataItem(item).dataMap.getByteArray("envelope") ?: continue
                 decode(bytes)?.let(::dispatchIncoming)
             }
             items.release()
-        }.onFailure { Timber.w(it, "prime favorites failed") }
+        }.onFailure { Timber.w(it, "prime cached state failed") }
+    }
+
+    private suspend fun primeCachedStateFromDisk() = withContext(Dispatchers.IO) {
+        runCatching {
+            cacheStore.restoreEnvelopes().forEach { envelope ->
+                dispatchIncoming(envelope, persist = false)
+            }
+        }.onFailure { Timber.w(it, "prime disk cache failed") }
     }
 
     private suspend fun probePhoneCapability() = withContext(Dispatchers.IO) {
@@ -211,19 +361,76 @@ class WearBridgeClient(private val context: Context) {
     private fun Throwable.isDuplicateCapability(): Boolean =
         this is ApiException && statusCode == DUPLICATE_CAPABILITY_STATUS_CODE
 
-    private fun dispatchIncoming(envelope: WatchSyncEnvelope) {
+    private fun dispatchIncoming(envelope: WatchSyncEnvelope, persist: Boolean = true) {
         if (envelope.protocolVersion < WatchProtocol.MIN_SUPPORTED_VERSION) {
             Timber.w("dropping unsupported envelope v=%d", envelope.protocolVersion)
             return
+        }
+        if (persist) {
+            scope.launch {
+                runCatching { cacheStore.persist(envelope) }
+                    .onFailure { Timber.w(it, "persist watch cache failed for %s", envelope.payload::class.simpleName) }
+            }
         }
         when (val p = envelope.payload) {
             is WatchSync.FavoritesSnapshot -> {
                 Timber.d("received favorites snapshot count=%d", p.rooms.size)
                 _favorites.value = p.rooms
+                requestTileRefresh()
             }
             is WatchSync.SettingsUpdate -> {
                 Timber.d("received companion settings update")
                 _companionSettings.value = p.settings
+            }
+            is WatchSync.AvatarUpdate -> {
+                Timber.d("received avatar update roomId=%s bytes=%s", p.roomId, p.imageBytes?.size ?: 0)
+                val imageBytes = p.imageBytes
+                _avatarImages.value = _avatarImages.value.toMutableMap().apply {
+                    if (imageBytes == null) remove(p.roomId) else put(p.roomId, imageBytes)
+                }
+                requestTileRefresh()
+            }
+            is WatchSync.RoomSummary -> {
+                _summaryCache[p.summary.roomId] = p.summary
+                scope.launch { _syncEvents.emit(p) }
+            }
+            is WatchSync.TimelineDelta -> {
+                val updatedItems = (getCachedTimeline(p.roomId) + p.items)
+                    .filter { it.eventId !in p.removedEventIds }
+                    .distinctBy { it.eventId }
+                    .sortedBy { it.timestampMs }
+                    .takeLast(MAX_CACHED_TIMELINE_ITEMS)
+                cacheTimeline(roomId = p.roomId, items = updatedItems, hasSnapshot = true)
+                scope.launch { _syncEvents.emit(p) }
+            }
+            is WatchSync.ThreadDelta -> {
+                val updatedItems = (getCachedThread(p.roomId, p.threadRootEventId) + p.items)
+                    .filter { it.eventId !in p.removedEventIds }
+                    .distinctBy { it.eventId }
+                    .sortedBy { it.timestampMs }
+                    .takeLast(MAX_CACHED_THREAD_ITEMS)
+                cacheThread(
+                    roomId = p.roomId,
+                    threadRootEventId = p.threadRootEventId,
+                    items = updatedItems,
+                    hasSnapshot = true,
+                )
+                scope.launch { _syncEvents.emit(p) }
+            }
+            is WatchSync.UnreadUpdate -> {
+                _favorites.value = _favorites.value.map { room ->
+                    if (room.roomId == p.roomId) {
+                        room.copy(unreadCount = p.unreadCount, hasMentions = p.hasMentions)
+                    } else {
+                        room
+                    }
+                }
+                requestTileRefresh()
+                scope.launch { _syncEvents.emit(p) }
+            }
+            is WatchSync.Invalidation -> {
+                applyInvalidation(p)
+                scope.launch { _syncEvents.emit(p) }
             }
             is WatchAck -> {
                 Timber.d("received ack=%s requestId=%s", p::class.simpleName, p.requestId)
@@ -233,7 +440,65 @@ class WearBridgeClient(private val context: Context) {
         }
     }
 
+    private fun applyInvalidation(invalidation: WatchSync.Invalidation) {
+        when (invalidation.scope) {
+            WatchSync.Invalidation.InvalidationScope.FAVORITES -> {
+                _favorites.value = emptyList()
+                requestTileRefresh()
+            }
+            WatchSync.Invalidation.InvalidationScope.ROOM -> invalidation.roomId?.let { roomId ->
+                _summaryCache.remove(roomId)
+                _timelineCache.remove(roomId)
+                _threadCache.keys
+                    .filter { it.startsWith(threadCachePrefix(roomId)) }
+                    .forEach(_threadCache::remove)
+                _avatarImages.value = _avatarImages.value.toMutableMap().apply { remove(roomId) }
+                requestTileRefresh()
+            }
+            WatchSync.Invalidation.InvalidationScope.THREAD -> invalidation.roomId?.let { roomId ->
+                _threadCache.keys
+                    .filter { it.startsWith(threadCachePrefix(roomId)) }
+                    .forEach(_threadCache::remove)
+            }
+            WatchSync.Invalidation.InvalidationScope.ALL -> {
+                _favorites.value = emptyList()
+                _avatarImages.value = emptyMap()
+                _summaryCache.clear()
+                _timelineCache.clear()
+                _threadCache.clear()
+                requestTileRefresh()
+            }
+        }
+    }
+
+    private fun requestTileRefresh() {
+        runCatching {
+            TileService.getUpdater(context).requestUpdate(RecentContactsTileService::class.java)
+            TileService.getUpdater(context).requestUpdate(FavoriteContactsTileService::class.java)
+        }.onFailure { Timber.w(it, "tile refresh request failed") }
+    }
+
     private fun decode(bytes: ByteArray): WatchSyncEnvelope? = runCatching {
         WatchBridgeSerialization.decodeEnvelopeFromBytes(bytes)
     }.onFailure { Timber.w(it, "envelope decode failed") }.getOrNull()
+
+    private fun threadCacheKey(roomId: String, threadRootEventId: String): String = "$roomId/$threadRootEventId"
+
+    private fun threadCachePrefix(roomId: String): String = "$roomId/"
+
+    private data class CachedTimeline(
+        val items: List<io.element.android.watchbridge.contract.WatchTimelineItem>,
+        val hasSnapshot: Boolean,
+    )
+
+    private data class CachedThreadTimeline(
+        val items: List<io.element.android.watchbridge.contract.WatchThreadItem>,
+        val hasSnapshot: Boolean,
+    )
 }
+
+class WatchCommandException(
+    val code: WatchErrorCode,
+    override val message: String? = null,
+    cause: Throwable? = null,
+) : IllegalStateException(message, cause)

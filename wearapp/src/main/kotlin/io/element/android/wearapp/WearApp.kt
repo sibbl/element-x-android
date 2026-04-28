@@ -10,6 +10,7 @@ package io.element.android.wearapp
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import androidx.wear.tiles.TileService
+import io.element.android.wearapp.tile.FavoriteContactsTileService
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.tile.RecentContactsTileService
 import timber.log.Timber
@@ -30,8 +31,9 @@ class WearApp : Application() {
         }
         bridgeClient = WearBridgeClient(this)
         bridgeClient.start()
-        // Request a tile update so our tile refreshes when data becomes available.
+        // Request tile updates so both conversation tiles refresh when data becomes available.
         TileService.getUpdater(this).requestUpdate(RecentContactsTileService::class.java)
+        TileService.getUpdater(this).requestUpdate(FavoriteContactsTileService::class.java)
     }
 
     override fun onTerminate() {

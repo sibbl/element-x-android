@@ -8,6 +8,9 @@
 package io.element.android.watchbridge.contract
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclass
 
 /**
  * Single source of truth for watch <-> phone JSON (de)serialization.
@@ -24,6 +27,36 @@ object WatchBridgeSerialization {
         classDiscriminator = "type"
         encodeDefaults = true
         explicitNulls = false
+        serializersModule = SerializersModule {
+            polymorphic(WatchPayload::class) {
+                subclass(WatchSync.FavoritesSnapshot::class)
+                subclass(WatchSync.RoomSummary::class)
+                subclass(WatchSync.AvatarUpdate::class)
+                subclass(WatchSync.TimelineDelta::class)
+                subclass(WatchSync.ThreadDelta::class)
+                subclass(WatchSync.UnreadUpdate::class)
+                subclass(WatchSync.Invalidation::class)
+                subclass(WatchSync.FullRefresh::class)
+                subclass(WatchSync.SettingsUpdate::class)
+
+                subclass(WatchCommand.RefreshRooms::class)
+                subclass(WatchCommand.OpenRoom::class)
+                subclass(WatchCommand.FetchThread::class)
+                subclass(WatchCommand.SendText::class)
+                subclass(WatchCommand.SendReaction::class)
+                subclass(WatchCommand.UploadVoiceDraft::class)
+                subclass(WatchCommand.RequestPlayback::class)
+                subclass(WatchCommand.MarkAsRead::class)
+
+                subclass(WatchAck.Accepted::class)
+                subclass(WatchAck.Pending::class)
+                subclass(WatchAck.Sent::class)
+                subclass(WatchAck.PayloadReady::class)
+                subclass(WatchAck.PlaybackReady::class)
+                subclass(WatchAck.Failed::class)
+                subclass(WatchAck.Unsupported::class)
+            }
+        }
     }
 
     fun encodeEnvelope(envelope: WatchSyncEnvelope): String =

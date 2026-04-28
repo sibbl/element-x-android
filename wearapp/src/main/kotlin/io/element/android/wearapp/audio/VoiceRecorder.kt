@@ -38,9 +38,24 @@ class VoiceRecorder(private val context: Context) {
 
     fun stop(): File? {
         val r = recorder ?: return null
-        runCatching { r.stop() }
+        val file = output
+        val wasStopped = runCatching { r.stop() }.isSuccess
         r.release()
         recorder = null
-        return output
+        output = null
+        return if (wasStopped) {
+            file
+        } else {
+            file?.delete()
+            null
+        }
+    }
+
+    fun currentAmplitude(): Int = runCatching {
+        recorder?.maxAmplitude ?: 0
+    }.getOrDefault(0)
+
+    fun cancel() {
+        stop()?.delete()
     }
 }

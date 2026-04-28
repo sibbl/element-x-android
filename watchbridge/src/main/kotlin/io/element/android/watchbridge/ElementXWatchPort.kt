@@ -42,7 +42,12 @@ interface ElementXWatchPort {
     fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>>
 
     /** Text / thread reply sending. Returns the matrix eventId once known. */
-    suspend fun sendText(roomId: String, threadRootEventId: String?, text: String): Result<String>
+    suspend fun sendText(
+        roomId: String,
+        threadRootEventId: String?,
+        inReplyToEventId: String?,
+        text: String,
+    ): Result<String>
 
     /** Reaction sending. Implementation must be idempotent for a given `(roomId, eventId, key)`. */
     suspend fun sendReaction(roomId: String, eventId: String, reactionKey: String): Result<Unit>
@@ -55,6 +60,9 @@ interface ElementXWatchPort {
 
     /** Materialize a playback descriptor for an existing voice message event. */
     suspend fun playbackDescriptor(roomId: String, eventId: String): Result<WatchPlaybackDescriptor>
+
+    /** Small circular avatar thumbnail for a room / DM member when available. */
+    suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> = Result.success(null)
 
     /** Mark a room's timeline as read up to `eventId`. */
     suspend fun markAsRead(roomId: String, eventId: String): Result<Unit>

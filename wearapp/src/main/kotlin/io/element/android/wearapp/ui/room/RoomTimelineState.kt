@@ -33,17 +33,18 @@ internal data class RoomTimelineState(
 internal fun rememberRoomTimelineState(
     bridge: WearBridgeClient,
     roomId: String,
+    onOpenFailure: ((Throwable) -> Unit)? = null,
 ): RoomTimelineState {
     var summary by remember(roomId) { mutableStateOf(bridge.getCachedSummary(roomId)) }
     var items by remember(roomId) { mutableStateOf(bridge.getCachedTimeline(roomId)) }
-    var hasReceivedDelta by remember(roomId) { mutableStateOf(bridge.getCachedTimeline(roomId).isNotEmpty()) }
+    var hasReceivedDelta by remember(roomId) { mutableStateOf(bridge.hasCachedTimelineSnapshot(roomId)) }
 
     LaunchedEffect(bridge, roomId) {
         runCatching {
             bridge.send { requestId ->
                 WatchCommand.OpenRoom(requestId = requestId, roomId = roomId)
             }
-        }
+        }.onFailure { onOpenFailure?.invoke(it) }
     }
 
     LaunchedEffect(bridge, roomId) {
@@ -67,7 +68,7 @@ internal fun rememberRoomTimelineState(
                         .sortedBy { it.timestampMs }
                         .takeLast(MAX_TIMELINE_ITEMS)
                     items = updated
-                    bridge.cacheTimeline(roomId, updated)
+                    bridge.cacheTimeline(roomId, updated, hasSnapshot = true)
                 }
             }
     }

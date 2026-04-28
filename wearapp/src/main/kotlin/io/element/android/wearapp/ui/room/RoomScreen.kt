@@ -20,6 +20,7 @@ import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
+import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.launch
 
@@ -30,12 +31,18 @@ fun RoomScreen(
     activity: WearMainActivity,
     onOpenThread: (String) -> Unit,
     onMessageSelected: (String) -> Unit,
+    scrollRequestId: Long? = null,
+    scrollToEventId: String? = null,
+    forceScrollToBottom: Boolean = false,
+    onScrollRequestHandled: (Long) -> Unit = {},
+    onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
     val settings by bridge.companionSettings.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
         roomId = roomId,
+        onOpenFailure = { onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_open_room_failed)) },
     )
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
@@ -50,9 +57,13 @@ fun RoomScreen(
             displayName = displayName,
             items = roomState.items,
             isLoading = !roomState.hasReceivedDelta,
+            scrollRequestId = scrollRequestId,
+            scrollToEventId = scrollToEventId,
+            forceScrollToBottom = forceScrollToBottom,
         ),
         onMessageSelected = onMessageSelected,
         onOpenThread = onOpenThread,
+        onScrollRequestHandled = onScrollRequestHandled,
         onLongPressMessage = { item ->
             when (settings.longPressMessageAction) {
                 WatchLongPressMessageAction.READ_ALOUD -> tts.speak(item.displayText())
@@ -65,14 +76,19 @@ fun RoomScreen(
                     activity.launchDictation { dictated ->
                         if (!dictated.isNullOrBlank()) {
                             scope.launch {
-                                bridge.send {
-                                    WatchCommand.SendText(
-                                        requestId = it,
-                                        roomId = roomId,
-                                        text = dictated,
-                                        source = WatchSendSource.DICTATION,
-                                        clientTsMs = System.currentTimeMillis(),
-                                    )
+                                runCatching {
+                                    bridge.sendAwaitTerminalAck {
+                                        WatchCommand.SendText(
+                                            requestId = it,
+                                            roomId = roomId,
+                                            inReplyToEventId = item.eventId,
+                                            text = dictated,
+                                            source = WatchSendSource.DICTATION,
+                                            clientTsMs = System.currentTimeMillis(),
+                                        )
+                                    }
+                                }.onFailure {
+                                    onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_send_failed))
                                 }
                             }
                         }
@@ -82,6 +98,7 @@ fun RoomScreen(
                     activity.startActivity(
                         Intent(activity, VoiceRecorderActivity::class.java)
                             .putExtra("roomId", roomId)
+                            .putExtra("roomDisplayName", displayName)
                             .putExtra("inReplyToEventId", item.eventId),
                     )
                 }
@@ -97,14 +114,18 @@ fun RoomScreen(
             activity.launchDictation { dictated ->
                 if (!dictated.isNullOrBlank()) {
                     scope.launch {
-                        bridge.send {
-                            WatchCommand.SendText(
-                                requestId = it,
-                                roomId = roomId,
-                                text = dictated,
-                                source = WatchSendSource.DICTATION,
-                                clientTsMs = System.currentTimeMillis(),
-                            )
+                        runCatching {
+                            bridge.sendAwaitTerminalAck {
+                                WatchCommand.SendText(
+                                    requestId = it,
+                                    roomId = roomId,
+                                    text = dictated,
+                                    source = WatchSendSource.DICTATION,
+                                    clientTsMs = System.currentTimeMillis(),
+                                )
+                            }
+                        }.onFailure {
+                            onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_send_failed))
                         }
                     }
                 }
@@ -113,7 +134,8 @@ fun RoomScreen(
         onVoice = {
             activity.startActivity(
                 Intent(activity, VoiceRecorderActivity::class.java)
-                    .putExtra("roomId", roomId),
+                    .putExtra("roomId", roomId)
+                    .putExtra("roomDisplayName", displayName),
             )
         },
     )

@@ -17,6 +17,8 @@ import dev.zacsweers.metro.Provides
 import io.element.android.libraries.architecture.NodeFactoriesBindings
 import io.element.android.libraries.di.annotations.ApplicationContext
 import io.element.android.libraries.matrix.api.MatrixClientProvider
+import io.element.android.libraries.matrix.ui.media.ImageLoaderHolder
+import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
 import io.element.android.libraries.sessionstorage.api.SessionStore
 import io.element.android.services.appnavstate.api.AppNavigationStateService
 import io.element.android.libraries.workmanager.api.di.MetroWorkerFactory
@@ -28,6 +30,8 @@ interface AppGraph : NodeFactoriesBindings {
     val appNavigationStateService: AppNavigationStateService
     val matrixClientProvider: MatrixClientProvider
     val sessionStore: SessionStore
+    val imageLoaderHolder: ImageLoaderHolder
+    val notificationBitmapLoader: NotificationBitmapLoader
 
     @Multibinds
     val workerProviders:

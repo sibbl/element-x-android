@@ -54,6 +54,7 @@ sealed interface WatchCommand : WatchPayload {
         override val requestId: String,
         val roomId: String,
         val threadRootEventId: String? = null,
+        val inReplyToEventId: String? = null,
         val text: String,
         val source: WatchSendSource = WatchSendSource.KEYBOARD,
         val clientTsMs: Long,
@@ -98,6 +99,7 @@ data class WatchVoiceDraft(
     val draftId: String,
     val roomId: String,
     val threadRootEventId: String? = null,
+    val inReplyToEventId: String? = null,
     /** Opaque content URI on the watch (not transferred; only the bytes are). */
     val tempAudioUri: String,
     val durationMs: Long,

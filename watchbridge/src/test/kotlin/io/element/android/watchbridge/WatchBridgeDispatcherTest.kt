@@ -26,14 +26,17 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import java.util.ArrayDeque
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WatchBridgeDispatcherTest {
 
-    private class RecordingTransport : WatchTransport {
+    private open class RecordingTransport : WatchTransport {
         val publications = mutableListOf<Pair<String, WatchSyncEnvelope>>()
         val messages = mutableListOf<Pair<String, WatchSyncEnvelope>>()
         override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
@@ -54,8 +57,11 @@ class WatchBridgeDispatcherTest {
         private val thread: List<WatchThreadItem> = emptyList(),
         var sendTextResult: Result<String> = Result.success("\$ev"),
         var sendReactionResult: Result<Unit> = Result.success(Unit),
+        var sendVoiceResult: Result<String> = Result.success(""),
+        val avatarThumbnailResults: ArrayDeque<Result<ByteArray?>> = ArrayDeque(),
     ) : ElementXWatchPort {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
+        val voiceDraftCalls = mutableListOf<Pair<WatchVoiceDraft, ByteArray>>()
         override fun favorites(): Flow<List<WatchFavoriteRoom>> = flowOf(favorites)
         override suspend fun ensureRoomListLoaded(minimumCount: Int) {
             ensureLoadedCalls += minimumCount
@@ -63,9 +69,17 @@ class WatchBridgeDispatcherTest {
         override suspend fun roomSummary(roomId: String): WatchRoomSummary? = summary
         override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = flowOf(timeline)
         override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = flowOf(thread)
-        override suspend fun sendText(roomId: String, threadRootEventId: String?, text: String) = sendTextResult
+        override suspend fun sendText(
+            roomId: String,
+            threadRootEventId: String?,
+            inReplyToEventId: String?,
+            text: String,
+        ) = sendTextResult
         override suspend fun sendReaction(roomId: String, eventId: String, reactionKey: String) = sendReactionResult
-        override suspend fun sendVoiceMessage(draft: WatchVoiceDraft, audioBytes: ByteArray) = Result.success("\$v")
+        override suspend fun sendVoiceMessage(draft: WatchVoiceDraft, audioBytes: ByteArray): Result<String> {
+            voiceDraftCalls += draft to audioBytes
+            return sendVoiceResult
+        }
         override suspend fun playbackDescriptor(roomId: String, eventId: String) =
             Result.success(
                 WatchPlaybackDescriptor(
@@ -76,6 +90,8 @@ class WatchBridgeDispatcherTest {
                     mimeType = "audio/ogg",
                 ),
             )
+        override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> =
+            if (avatarThumbnailResults.isEmpty()) Result.success(null) else avatarThumbnailResults.removeFirst()
         override suspend fun markAsRead(roomId: String, eventId: String) = Result.success(Unit)
     }
 
@@ -130,7 +146,12 @@ class WatchBridgeDispatcherTest {
         val transport = RecordingTransport()
         var calls = 0
         val port = object : ElementXWatchPort by StubPort() {
-            override suspend fun sendText(roomId: String, threadRootEventId: String?, text: String): Result<String> {
+            override suspend fun sendText(
+                roomId: String,
+                threadRootEventId: String?,
+                inReplyToEventId: String?,
+                text: String,
+            ): Result<String> {
                 calls += 1
                 return Result.success("\$ev")
             }
@@ -146,5 +167,223 @@ class WatchBridgeDispatcherTest {
         advanceUntilIdle()
 
         assertThat(calls).isEqualTo(1)
+    }
+
+    @Test
+    fun `send text command forwards reply target`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        var capturedReplyEventId: String? = null
+        val port = object : ElementXWatchPort by StubPort() {
+            override suspend fun sendText(
+                roomId: String,
+                threadRootEventId: String?,
+                inReplyToEventId: String?,
+                text: String,
+            ): Result<String> {
+                capturedReplyEventId = inReplyToEventId
+                return Result.success("\$ev")
+            }
+        }
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.SendText(
+                    requestId = "reply-1",
+                    roomId = "!a:s",
+                    inReplyToEventId = "\$root:server",
+                    text = "reply body",
+                    clientTsMs = 0L,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(capturedReplyEventId).isEqualTo("\$root:server")
+    }
+
+    @Test
+    fun `open room publish failure returns failed ack instead of crashing`() = runTest(StandardTestDispatcher()) {
+        val transport = object : RecordingTransport() {
+            override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+                throw IllegalStateException("boom")
+            }
+        }
+        val port = StubPort(
+            summary = WatchRoomSummary(
+                roomId = "!a:s",
+                displayName = "Room",
+                kind = WatchRoomKind.GROUP,
+                isEncrypted = false,
+                canSendMessages = true,
+                timelineVersion = 1L,
+                lastSyncTsMs = 0L,
+            ),
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.OpenRoom(requestId = "r-open", roomId = "!a:s"),
+            ),
+        )
+        advanceUntilIdle()
+
+        val failedAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Failed>()
+            .singleOrNull { it.requestId == "r-open" }
+        assertThat(failedAck).isNotNull()
+    }
+
+    @Test
+    fun `fetch thread publish failure returns failed ack instead of crashing`() = runTest(StandardTestDispatcher()) {
+        val transport = object : RecordingTransport() {
+            override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+                throw IllegalStateException("boom")
+            }
+        }
+        val port = StubPort(
+            thread = listOf(
+                WatchThreadItem(
+                    eventId = "ev",
+                    threadRootEventId = "root",
+                    roomId = "!a:s",
+                    senderId = "@a:s",
+                    senderDisplayName = "Alice",
+                    timestampMs = 1L,
+                    kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.TEXT,
+                    bodyText = "hello",
+                ),
+            ),
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.FetchThread(requestId = "r-thread", roomId = "!a:s", threadRootEventId = "root"),
+            ),
+        )
+        advanceUntilIdle()
+
+        val failedAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Failed>()
+            .singleOrNull { it.requestId == "r-thread" }
+        assertThat(failedAck).isNotNull()
+    }
+
+    @Test
+    fun `avatar publication retries when thumbnail is temporarily unavailable`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort(
+            favorites = listOf(
+                WatchFavoriteRoom(
+                    roomId = "!a:s",
+                    displayName = "Alice",
+                    avatarUri = "mxc://server/avatar",
+                    kind = WatchRoomKind.DM,
+                ),
+            ),
+            avatarThumbnailResults = ArrayDeque<Result<ByteArray?>>().apply {
+                add(Result.success(null))
+                add(Result.success(byteArrayOf(7, 8, 9)))
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.start()
+        runCurrent()
+
+        assertThat(
+            transport.publications.none { (it.second.payload as? WatchSync.AvatarUpdate)?.imageBytes != null },
+        ).isTrue()
+
+        advanceTimeBy(1_500L)
+        runCurrent()
+
+        val avatarPayload = transport.publications
+            .map { it.second.payload }
+            .filterIsInstance<WatchSync.AvatarUpdate>()
+            .singleOrNull { it.roomId == "!a:s" }
+
+        assertThat(avatarPayload).isNotNull()
+        assertThat(avatarPayload!!.imageBytes?.toList()).containsExactly(7.toByte(), 8.toByte(), 9.toByte()).inOrder()
+    }
+
+    @Test
+    fun `voice draft completes when command arrives before audio`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort(sendVoiceResult = Result.success(""))
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+        val draft = WatchVoiceDraft(
+            draftId = "draft-1",
+            roomId = "!a:s",
+            tempAudioUri = "file:///tmp/draft-1.ogg",
+            durationMs = 1_000L,
+            mimeType = "audio/ogg",
+            sampleRateHz = 16_000,
+            channelCount = 1,
+            sizeBytes = 3L,
+        )
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.UploadVoiceDraft(requestId = "voice-1", draft = draft),
+            ),
+        )
+        dispatcher.onVoiceDraftAudio("draft-1", byteArrayOf(1, 2, 3))
+        advanceUntilIdle()
+
+        assertThat(port.voiceDraftCalls).hasSize(1)
+        assertThat(port.voiceDraftCalls.single().first).isEqualTo(draft)
+        assertThat(port.voiceDraftCalls.single().second.toList()).containsExactly(1.toByte(), 2.toByte(), 3.toByte()).inOrder()
+
+        val pendingAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Pending>()
+            .singleOrNull { it.requestId == "voice-1" }
+        val sentAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Sent>()
+            .singleOrNull { it.requestId == "voice-1" }
+
+        assertThat(pendingAck).isNotNull()
+        assertThat(sentAck).isNotNull()
+        assertThat(sentAck!!.eventId).isNull()
+    }
+
+    @Test
+    fun `voice draft completes when audio arrives before command`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort(sendVoiceResult = Result.success(""))
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+        val draft = WatchVoiceDraft(
+            draftId = "draft-2",
+            roomId = "!a:s",
+            tempAudioUri = "file:///tmp/draft-2.ogg",
+            durationMs = 1_200L,
+            mimeType = "audio/ogg",
+            sampleRateHz = 16_000,
+            channelCount = 1,
+            sizeBytes = 4L,
+        )
+
+        dispatcher.onVoiceDraftAudio("draft-2", byteArrayOf(4, 5, 6, 7))
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.UploadVoiceDraft(requestId = "voice-2", draft = draft),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(port.voiceDraftCalls).hasSize(1)
+        assertThat(port.voiceDraftCalls.single().first).isEqualTo(draft)
+        assertThat(port.voiceDraftCalls.single().second.toList()).containsExactly(4.toByte(), 5.toByte(), 6.toByte(), 7.toByte()).inOrder()
     }
 }

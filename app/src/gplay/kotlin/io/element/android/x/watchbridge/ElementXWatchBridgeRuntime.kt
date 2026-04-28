@@ -8,12 +8,17 @@
 package io.element.android.x.watchbridge
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Bitmap.CompressFormat
+import coil3.ImageLoader
+import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.di.DependencyInjectionGraphOwner
 import io.element.android.libraries.matrix.api.MatrixClient
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.SessionId
 import io.element.android.libraries.matrix.api.core.ThreadId
+import io.element.android.libraries.matrix.api.media.AudioInfo
 import io.element.android.libraries.matrix.api.room.CreateTimelineParams
 import io.element.android.libraries.matrix.api.room.CurrentUserMembership
 import io.element.android.libraries.matrix.api.room.JoinedRoom
@@ -44,6 +49,8 @@ import io.element.android.libraries.matrix.api.timeline.item.event.UnableToDecry
 import io.element.android.libraries.matrix.api.timeline.item.event.VideoMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.toEventOrTransactionId
+import io.element.android.libraries.matrix.ui.model.getAvatarData
+import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
 import io.element.android.services.appnavstate.api.currentSessionId
 import io.element.android.watchbridge.ElementXWatchPort
 import io.element.android.watchbridge.WatchBridgeDispatcher
@@ -75,6 +82,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
@@ -82,6 +91,7 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val ROOM_LIST_PAGE_SIZE = 30
 private const val MAX_ROOM_LIST_COUNT = 200
 private const val MAX_LOAD_MORE_ATTEMPTS = 8
+private const val WATCH_AVATAR_SIZE_PX = 64L
 
 /** Process-wide runtime that keeps the Wear bridge attached to the current Matrix session. */
 object ElementXWatchBridgeRuntime {
@@ -100,18 +110,37 @@ object ElementXWatchBridgeRuntime {
 
     fun start(context: Context) {
         val appContext = context.applicationContext
-        scope.launch { getOrCreateDispatcher(appContext) }
+        scope.launch {
+            runCatching { getOrCreateDispatcher(appContext) }
+                .onFailure { Timber.e(it, "WatchBridge startup failed") }
+        }
     }
 
     fun dispatch(context: Context, envelope: io.element.android.watchbridge.contract.WatchSyncEnvelope) {
         val appContext = context.applicationContext
         scope.launch {
-            val dispatcher = getOrCreateDispatcher(appContext)
-            if (dispatcher == null) {
-                Timber.w("WatchBridge command ignored because no logged-in Matrix session is available")
-            } else {
-                dispatcher.onEnvelope(envelope)
-            }
+            runCatching {
+                val dispatcher = getOrCreateDispatcher(appContext)
+                if (dispatcher == null) {
+                    Timber.w("WatchBridge command ignored because no logged-in Matrix session is available")
+                } else {
+                    dispatcher.onEnvelope(envelope)
+                }
+            }.onFailure { Timber.e(it, "WatchBridge dispatch failed") }
+        }
+    }
+
+    fun dispatchVoiceDraftAudio(context: Context, draftId: String, audioBytes: ByteArray) {
+        val appContext = context.applicationContext
+        scope.launch {
+            runCatching {
+                val dispatcher = getOrCreateDispatcher(appContext)
+                if (dispatcher == null) {
+                    Timber.w("WatchBridge voice draft ignored because no logged-in Matrix session is available")
+                } else {
+                    dispatcher.onVoiceDraftAudio(draftId, audioBytes)
+                }
+            }.onFailure { Timber.e(it, "WatchBridge voice draft dispatch failed") }
         }
     }
 
@@ -141,7 +170,12 @@ object ElementXWatchBridgeRuntime {
             return@withLock null
         }
         val dispatcher = WatchBridgeDispatcher(
-            port = MatrixRoomListWatchPort(client),
+            port = MatrixRoomListWatchPort(
+                context = context,
+                client = client,
+                imageLoader = graph.imageLoaderHolder.get(client),
+                notificationBitmapLoader = graph.notificationBitmapLoader,
+            ),
             transport = PlayServicesWatchTransport(context),
             scope = client.sessionCoroutineScope,
             settingsStore = settingsStore(context),
@@ -167,7 +201,10 @@ object ElementXWatchBridgeRuntime {
 }
 
 private class MatrixRoomListWatchPort(
+    private val context: Context,
     private val client: MatrixClient,
+    private val imageLoader: ImageLoader,
+    private val notificationBitmapLoader: NotificationBitmapLoader,
 ) : ElementXWatchPort {
     private val roomList = client.roomListService.createRoomList(
         pageSize = ROOM_LIST_PAGE_SIZE,
@@ -178,7 +215,7 @@ private class MatrixRoomListWatchPort(
 
     override fun favorites(): Flow<List<WatchFavoriteRoom>> = roomList.summaries
         .onEach { summaries -> subscribeToVisibleRooms(summaries, ROOM_LIST_PAGE_SIZE) }
-        .map { summaries -> summaries.toWatchRooms() }
+        .map { summaries -> summaries.toWatchRooms { joinedRoom(it) } }
         .distinctUntilChanged()
 
     override suspend fun ensureRoomListLoaded(minimumCount: Int) {
@@ -201,7 +238,7 @@ private class MatrixRoomListWatchPort(
         return WatchRoomSummary(
             roomId = roomId,
             displayName = info.name ?: info.canonicalAlias?.value ?: roomId,
-            avatarUri = info.avatarUrl?.mxcToHttpThumbnail(64),
+            avatarUri = room.avatarUri(),
             kind = info.watchKind(),
             isEncrypted = info.isEncrypted == true,
             canSendMessages = true,
@@ -243,14 +280,37 @@ private class MatrixRoomListWatchPort(
         }
     }
 
-    override suspend fun sendText(roomId: String, threadRootEventId: String?, text: String): Result<String> {
+    override suspend fun sendText(
+        roomId: String,
+        threadRootEventId: String?,
+        inReplyToEventId: String?,
+        text: String,
+    ): Result<String> {
         val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
         return if (threadRootEventId == null) {
-            room.liveTimeline.sendMessage(text, htmlBody = null, intentionalMentions = emptyList()).map { "" }
+            if (inReplyToEventId == null) {
+                room.liveTimeline.sendMessage(text, htmlBody = null, intentionalMentions = emptyList()).map { "" }
+            } else {
+                room.liveTimeline.replyMessage(
+                    repliedToEventId = EventId(inReplyToEventId),
+                    body = text,
+                    htmlBody = null,
+                    intentionalMentions = emptyList(),
+                ).map { "" }
+            }
         } else {
             val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
             try {
-                timeline.sendMessage(text, htmlBody = null, intentionalMentions = emptyList()).map { "" }
+                if (inReplyToEventId == null) {
+                    timeline.sendMessage(text, htmlBody = null, intentionalMentions = emptyList()).map { "" }
+                } else {
+                    timeline.replyMessage(
+                        repliedToEventId = EventId(inReplyToEventId),
+                        body = text,
+                        htmlBody = null,
+                        intentionalMentions = emptyList(),
+                    ).map { "" }
+                }
             } finally {
                 timeline.close()
             }
@@ -263,11 +323,68 @@ private class MatrixRoomListWatchPort(
     }
 
     override suspend fun sendVoiceMessage(draft: WatchVoiceDraft, audioBytes: ByteArray): Result<String> {
-        return Result.failure(UnsupportedOperationException("watch voice upload is not wired yet"))
+        return runCatching {
+            require(audioBytes.isNotEmpty()) { "voice draft is empty" }
+            val room = joinedRoom(draft.roomId) ?: throw NoSuchElementException("room not found")
+            val audioFile = File.createTempFile("watch_voice_${draft.draftId}_", ".ogg", context.cacheDir).apply {
+                writeBytes(audioBytes)
+            }
+            val audioInfo = AudioInfo(
+                duration = draft.durationMs.takeIf { it > 0L }?.milliseconds,
+                size = draft.sizeBytes.takeIf { it > 0L } ?: audioBytes.size.toLong(),
+                mimetype = draft.mimeType,
+            )
+            val waveform = draft.waveform
+                .ifEmpty { listOf(32, 48, 64, 52, 36) }
+                .map { (it.coerceIn(0, 100) / 100f) }
+
+            val threadRootEventId = draft.threadRootEventId
+            val sendResult = if (threadRootEventId == null) {
+                room.liveTimeline.sendVoiceMessage(
+                    file = audioFile,
+                    audioInfo = audioInfo,
+                    waveform = waveform,
+                    inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
+                )
+            } else {
+                val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
+                try {
+                    timeline.sendVoiceMessage(
+                        file = audioFile,
+                        audioInfo = audioInfo,
+                        waveform = waveform,
+                        inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
+                    )
+                } finally {
+                    timeline.close()
+                }
+            }
+
+            sendResult
+                .map { "" }
+                .onFailure {
+                    audioFile.delete()
+                }
+                .getOrThrow()
+        }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { Result.failure(it) },
+        )
     }
 
     override suspend fun playbackDescriptor(roomId: String, eventId: String): Result<WatchPlaybackDescriptor> {
         return Result.failure(UnsupportedOperationException("watch playback is not wired yet"))
+    }
+
+    override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> {
+        val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
+        val avatarData = room.avatarData() ?: return Result.success(null)
+        val bitmap = notificationBitmapLoader.getRoomBitmap(
+            avatarData = avatarData,
+            imageLoader = imageLoader,
+            targetSize = WATCH_AVATAR_SIZE_PX,
+        ) ?: return Result.success(null)
+        return Result.success(bitmap.toPngByteArray())
     }
 
     override suspend fun markAsRead(roomId: String, eventId: String): Result<Unit> {
@@ -303,22 +420,35 @@ private class MatrixRoomListWatchPort(
     }
 }
 
-private fun List<RoomSummary>.toWatchRooms(): List<WatchFavoriteRoom> {
+private suspend fun List<RoomSummary>.toWatchRooms(resolveJoinedRoom: suspend (String) -> JoinedRoom?): List<WatchFavoriteRoom> {
     val rooms = filter { it.isWatchVisibleRoom() }
-    return rooms.filter { it.info.isFavorite }.map { it.toWatchRoom() } +
-        rooms.filterNot { it.info.isFavorite }.map { it.toWatchRoom() }
+    val favorites = mutableListOf<WatchFavoriteRoom>()
+    val recents = mutableListOf<WatchFavoriteRoom>()
+    rooms.forEach { summary ->
+        val projected = summary.toWatchRoom(resolveJoinedRoom)
+        if (summary.info.isFavorite) {
+            favorites += projected
+        } else {
+            recents += projected
+        }
+    }
+    return favorites + recents
 }
 
 private fun RoomSummary.isWatchVisibleRoom(): Boolean {
     return info.currentUserMembership == CurrentUserMembership.JOINED && !info.isSpace
 }
 
-private fun RoomSummary.toWatchRoom(): WatchFavoriteRoom {
+private suspend fun RoomSummary.toWatchRoom(resolveJoinedRoom: suspend (String) -> JoinedRoom?): WatchFavoriteRoom {
     val unreadCount = max(info.numUnreadMessages, info.numUnreadNotifications).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    val avatarUri = when {
+        info.isDm -> resolveJoinedRoom(roomId.value)?.avatarUri() ?: info.avatarUrl?.mxcToHttpThumbnail(64)
+        else -> info.avatarUrl?.mxcToHttpThumbnail(64)
+    }
     return WatchFavoriteRoom(
         roomId = roomId.value,
         displayName = info.name ?: info.canonicalAlias?.value ?: roomId.value,
-        avatarUri = info.avatarUrl?.mxcToHttpThumbnail(64),
+        avatarUri = avatarUri,
         kind = info.watchKind(),
         unreadCount = unreadCount,
         hasMentions = info.numUnreadMentions > 0,
@@ -457,6 +587,19 @@ private fun EventContent.voiceMeta(): WatchVoiceMeta? {
 private fun ProfileDetails.displayName(): String? = when (this) {
     is ProfileDetails.Ready -> displayName
     else -> null
+}
+
+private suspend fun JoinedRoom.avatarData() = if (isOneToOne) {
+    getDirectRoomMember()?.getAvatarData(AvatarSize.UserListItem)
+} else {
+    info().getAvatarData(AvatarSize.RoomListItem)
+}
+
+private suspend fun JoinedRoom.avatarUri(): String? = avatarData()?.url?.mxcToHttpThumbnail(64)
+
+private fun Bitmap.toPngByteArray(): ByteArray = ByteArrayOutputStream().use { output ->
+    compress(CompressFormat.PNG, 100, output)
+    output.toByteArray()
 }
 
 /**

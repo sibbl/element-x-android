@@ -31,6 +31,13 @@ sealed interface WatchSync : WatchPayload {
     ) : WatchSync
 
     @Serializable
+    @SerialName("sync.avatar")
+    data class AvatarUpdate(
+        val roomId: String,
+        val imageBytes: ByteArray? = null,
+    ) : WatchSync
+
+    @Serializable
     @SerialName("sync.timelineDelta")
     data class TimelineDelta(
         val roomId: String,

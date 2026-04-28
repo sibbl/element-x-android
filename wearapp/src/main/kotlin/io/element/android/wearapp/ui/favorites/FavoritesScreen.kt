@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +47,7 @@ import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.common.AvatarBadge
+import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val ROOM_PAGE_SIZE = 30
@@ -56,15 +58,22 @@ fun FavoritesScreen(
     bridge: WearBridgeClient,
     onRoomSelected: (String) -> Unit,
     onLongPressRoom: ((WatchFavoriteRoom) -> Unit)? = null,
+    onError: ((String) -> Unit)? = null,
 ) {
     val rooms by bridge.favorites.collectAsState()
+    val avatarImages by bridge.avatarImages.collectAsState()
     val reachable by bridge.phoneReachable.collectAsState()
     var requestedRoomCount by remember { mutableIntStateOf(ROOM_PAGE_SIZE) }
+    val context = LocalContext.current
 
     LaunchedEffect(reachable, requestedRoomCount) {
         bridge.refreshPhoneReachability()
         if (reachable) {
-            runCatching { bridge.send { id -> WatchCommand.RefreshRooms(requestId = id, minimumCount = requestedRoomCount) } }
+            runCatching {
+                bridge.send { id -> WatchCommand.RefreshRooms(requestId = id, minimumCount = requestedRoomCount) }
+            }.onFailure {
+                onError?.invoke(context.watchCommandErrorMessage(it, R.string.watch_error_refresh_failed))
+            }
         }
     }
 
@@ -91,6 +100,7 @@ fun FavoritesScreen(
                     emptyText = stringResource(R.string.empty_favorites),
                     reachable = reachable,
                     isFavoritePage = true,
+                    avatarImages = avatarImages,
                     onRoomSelected = onRoomSelected,
                     onLongPressRoom = onLongPressRoom,
                 )
@@ -100,6 +110,7 @@ fun FavoritesScreen(
                     emptyText = stringResource(R.string.empty_rooms),
                     reachable = reachable,
                     isFavoritePage = false,
+                    avatarImages = avatarImages,
                     onRoomSelected = onRoomSelected,
                     onLongPressRoom = onLongPressRoom,
                     onLoadMore = { requestedRoomCount += ROOM_PAGE_SIZE },
@@ -122,6 +133,7 @@ private fun RoomListPage(
     emptyText: String,
     reachable: Boolean,
     isFavoritePage: Boolean,
+    avatarImages: Map<String, ByteArray>,
     onRoomSelected: (String) -> Unit,
     onLongPressRoom: ((WatchFavoriteRoom) -> Unit)?,
     onLoadMore: (() -> Unit)? = null,
@@ -167,6 +179,7 @@ private fun RoomListPage(
             items(rooms, key = { "${if (isFavoritePage) "fav" else "recent"}-${it.roomId}" }) { room ->
                 FavoriteRoomChip(
                     room = room,
+                    avatarBytes = avatarImages[room.roomId],
                     onClick = { onRoomSelected(room.roomId) },
                     onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
                 )
@@ -179,6 +192,7 @@ private fun RoomListPage(
 @Composable
 private fun FavoriteRoomChip(
     room: WatchFavoriteRoom,
+    avatarBytes: ByteArray?,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
 ) {
@@ -209,6 +223,7 @@ private fun FavoriteRoomChip(
             AvatarBadge(
                 displayName = room.displayName,
                 avatarUrl = room.avatarUri,
+                avatarBytes = avatarBytes,
                 modifier = Modifier.size(28.dp),
             )
         },

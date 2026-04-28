@@ -8,47 +8,66 @@
 package io.element.android.wearapp.ui.voice
 
 import android.Manifest
-import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.CircularProgressIndicator
+import androidx.wear.compose.material.CompactChip
+import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import com.google.android.gms.wearable.CapabilityClient
-import com.google.android.gms.wearable.ChannelClient
-import com.google.android.gms.wearable.Node
-import com.google.android.gms.wearable.Wearable
-import io.element.android.watchbridge.contract.WatchCommand
-import io.element.android.watchbridge.contract.WatchDataPaths
-import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchVoiceDraft
 import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.audio.VoiceRecorder
-import kotlinx.coroutines.Dispatchers
+import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import kotlin.math.PI
+import kotlin.math.ln
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Dedicated screen for recording a voice message and handing it off to the phone via the
@@ -59,114 +78,323 @@ import java.util.UUID
  */
 class VoiceRecorderActivity : ComponentActivity() {
 
+    private var hasRecordPermission by mutableStateOf(false)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* result handled via state polling in Compose */ }
+    ) { granted ->
+        hasRecordPermission = granted
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val roomId = intent.getStringExtra("roomId") ?: run { finish(); return }
+        val threadRootEventId = intent.getStringExtra("threadRootEventId")
+        val inReplyToEventId = intent.getStringExtra("inReplyToEventId")
+        val roomDisplayNameExtra = intent.getStringExtra("roomDisplayName")
+        val bridge = (application as WearApp).bridgeClient
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        hasRecordPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!hasRecordPermission) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
 
         setContent {
+            val favoriteRooms by bridge.favorites.collectAsState()
+            val roomDisplayName = roomDisplayNameExtra
+                ?.takeIf { it.isNotBlank() }
+                ?: bridge.getCachedSummary(roomId)?.displayName
+                ?: favoriteRooms.firstOrNull { it.roomId == roomId }?.displayName
+                ?: stringResource(R.string.screen_room_loading_title)
+
             VoiceRecorderUi(
+                bridge = bridge,
                 roomId = roomId,
+                roomDisplayName = roomDisplayName,
+                threadRootEventId = threadRootEventId,
+                inReplyToEventId = inReplyToEventId,
+                hasRecordPermission = hasRecordPermission,
+                onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
                 onDone = { finish() },
-                sendToPhone = { file, durationMs -> uploadToPhone(roomId, file, durationMs) },
             )
         }
     }
-
-    private suspend fun uploadToPhone(roomId: String, file: File, durationMs: Long) =
-        withContext(Dispatchers.IO) {
-            val capability = Wearable.getCapabilityClient(this@VoiceRecorderActivity)
-                .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
-                .await()
-            val connectedNodes = Wearable.getNodeClient(this@VoiceRecorderActivity).connectedNodes.await()
-            val node = (capability.nodes.takeIf { it.isNotEmpty() } ?: connectedNodes).nearbyFirst()
-                ?: error("phone not reachable")
-            val channelClient: ChannelClient = Wearable.getChannelClient(this@VoiceRecorderActivity)
-            val channel = channelClient.openChannel(node.id, WatchDataPaths.VOICE_DRAFT_CHANNEL).await()
-            try {
-                val out = channelClient.getOutputStream(channel).await()
-                file.inputStream().use { input -> input.copyTo(out) }
-                out.flush()
-                out.close()
-            } finally {
-                channelClient.close(channel).await()
-            }
-
-            val draft = WatchVoiceDraft(
-                draftId = UUID.randomUUID().toString(),
-                roomId = roomId,
-                tempAudioUri = file.toURI().toString(),
-                durationMs = durationMs,
-                mimeType = "audio/ogg",
-                sampleRateHz = 16_000,
-                channelCount = 1,
-                sizeBytes = file.length(),
-            )
-            (application as WearApp).bridgeClient.send {
-                WatchCommand.UploadVoiceDraft(requestId = it, draft = draft)
-            }
-        }
-
-    private fun Iterable<Node>.nearbyFirst(): Node? = firstOrNull { it.isNearby } ?: firstOrNull()
 }
 
 @Composable
 private fun VoiceRecorderUi(
+    bridge: WearBridgeClient,
     roomId: String,
+    roomDisplayName: String,
+    threadRootEventId: String?,
+    inReplyToEventId: String?,
+    hasRecordPermission: Boolean,
+    onRequestPermission: () -> Unit,
     onDone: () -> Unit,
-    sendToPhone: suspend (File, Long) -> Unit,
 ) {
     val context = LocalContext.current
     val recorder = remember { VoiceRecorder(context) }
-    var startedAt by remember { mutableStateOf<Long?>(null) }
-    var recording by remember { mutableStateOf<File?>(null) }
+    val scope = rememberCoroutineScope()
+    var recordingStartedAt by remember { mutableStateOf<Long?>(null) }
+    var elapsedMs by remember { mutableStateOf(0L) }
     var sending by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val waveform = remember { mutableStateListOf<Int>() }
+
+    DisposableEffect(recorder) {
+        onDispose {
+            recorder.cancel()
+        }
+    }
+
+    LaunchedEffect(recordingStartedAt) {
+        val startedAt = recordingStartedAt ?: return@LaunchedEffect
+        while (recordingStartedAt != null) {
+            elapsedMs = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
+            waveform += recorder.currentAmplitude().toWaveformLevel()
+            while (waveform.size > 96) {
+                waveform.removeAt(0)
+            }
+            delay(90L)
+        }
+    }
+
+    fun resetRecordingState() {
+        recordingStartedAt = null
+        elapsedMs = 0L
+        waveform.clear()
+    }
+
+    fun cancelRecording() {
+        recorder.cancel()
+        sending = false
+        errorMessage = null
+        resetRecordingState()
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(roomId)
-        Chip(
-            label = {
-                Text(
-                    if (startedAt != null) stringResource(R.string.stop)
-                    else stringResource(R.string.record_voice),
-                )
-            },
-            onClick = {
-                if (startedAt == null) {
-                    recorder.start()
-                    startedAt = System.currentTimeMillis()
-                } else {
-                    recording = recorder.stop()
-                }
-            },
-            colors = ChipDefaults.primaryChipColors(),
+        Text(
+            text = roomDisplayName,
+            style = MaterialTheme.typography.title3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
-        val file = recording
-        val started = startedAt
-        if (file != null && started != null && !sending) {
-            Chip(
-                label = { Text(stringResource(R.string.send)) },
-                onClick = {},
-                colors = ChipDefaults.primaryChipColors(),
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.screen_voice_recorder_title),
+            style = MaterialTheme.typography.caption2,
+            color = MaterialTheme.colors.onBackground.copy(alpha = 0.72f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        errorMessage?.let { message ->
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = message,
+                color = MaterialTheme.colors.error,
+                style = MaterialTheme.typography.caption2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
-            LaunchedEffect(file) {
-                sending = true
-                runCatching { sendToPhone(file, System.currentTimeMillis() - started) }
-                sending = false
-                onDone()
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        when {
+            sending -> {
+                CircularProgressIndicator(modifier = Modifier.size(42.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = stringResource(R.string.screen_voice_recorder_sending),
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            !hasRecordPermission -> {
+                Text(
+                    text = stringResource(R.string.screen_voice_recorder_permission),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.screen_voice_recorder_action_record)) },
+                    onClick = onRequestPermission,
+                    colors = ChipDefaults.primaryChipColors(),
+                )
+            }
+
+            recordingStartedAt != null -> {
+                Text(
+                    text = stringResource(R.string.screen_voice_recorder_recording),
+                    style = MaterialTheme.typography.caption1,
+                    color = MaterialTheme.colors.primary,
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                RecordingVisualizer(levels = waveform.takeLast(7))
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = elapsedMs.formatAsDuration(),
+                    style = MaterialTheme.typography.title2,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                CompactChip(
+                    label = { Text(stringResource(R.string.screen_voice_recorder_action_cancel)) },
+                    onClick = { cancelRecording() },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.screen_voice_recorder_action_send)) },
+                    onClick = {
+                        val file = recorder.stop()
+                        val durationMs = elapsedMs.coerceAtLeast(1L)
+                        val capturedWaveform = waveform.toList().compressWaveform()
+                        resetRecordingState()
+                        if (file == null) {
+                            errorMessage = context.watchCommandErrorMessage(
+                                IllegalStateException("missing recording"),
+                                R.string.watch_error_voice_send_failed,
+                            )
+                            return@Chip
+                        }
+                        scope.launch {
+                            sending = true
+                            errorMessage = null
+                            runCatching {
+                                bridge.uploadVoiceDraftAwaitTerminalAck(
+                                    draft = WatchVoiceDraft(
+                                        draftId = UUID.randomUUID().toString(),
+                                        roomId = roomId,
+                                        threadRootEventId = threadRootEventId,
+                                        inReplyToEventId = inReplyToEventId,
+                                        tempAudioUri = file.toURI().toString(),
+                                        durationMs = durationMs,
+                                        mimeType = "audio/ogg",
+                                        sampleRateHz = 16_000,
+                                        channelCount = 1,
+                                        sizeBytes = file.length(),
+                                        waveform = capturedWaveform,
+                                    ),
+                                    audioFile = file,
+                                )
+                            }.onSuccess {
+                                onDone()
+                            }.onFailure {
+                                errorMessage = context.watchCommandErrorMessage(it, R.string.watch_error_voice_send_failed)
+                            }
+                            sending = false
+                            file.delete()
+                        }
+                    },
+                    colors = ChipDefaults.primaryChipColors(),
+                )
+            }
+
+            else -> {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.screen_voice_recorder_action_record)) },
+                    onClick = {
+                        if (!hasRecordPermission) {
+                            onRequestPermission()
+                            return@Chip
+                        }
+                        runCatching {
+                            recorder.start()
+                        }.onSuccess {
+                            errorMessage = null
+                            waveform.clear()
+                            elapsedMs = 0L
+                            recordingStartedAt = System.currentTimeMillis()
+                        }.onFailure {
+                            errorMessage = context.watchCommandErrorMessage(it, R.string.watch_error_voice_send_failed)
+                        }
+                    },
+                    colors = ChipDefaults.primaryChipColors(),
+                )
             }
         }
     }
+}
+
+@Composable
+private fun RecordingVisualizer(levels: List<Int>) {
+    val infiniteTransition = rememberInfiniteTransition(label = "voice-recorder-pulse")
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "voice-recorder-pulse-alpha",
+    )
+    val bars = if (levels.isNotEmpty()) {
+        levels.takeLast(7)
+    } else {
+        List(7) { index ->
+            val wave = (sin((pulse + (index * 0.12f)) * PI) * 0.5f) + 0.5f
+            (25 + (wave * 60)).roundToInt()
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(16.dp)
+                .background(MaterialTheme.colors.primary.copy(alpha = pulse), CircleShape),
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            bars.forEach { level ->
+                val barHeight = (16 + (level.coerceIn(0, 100) * 0.34f)).dp
+                Box(
+                    modifier = Modifier
+                        .width(8.dp)
+                        .height(barHeight)
+                        .background(
+                            color = MaterialTheme.colors.primary.copy(alpha = 0.35f + (level.coerceIn(0, 100) / 100f * 0.65f)),
+                            shape = CircleShape,
+                        ),
+                )
+            }
+        }
+    }
+}
+
+private fun Int.toWaveformLevel(): Int {
+    if (this <= 0) return 0
+    val normalized = (ln(toFloat() + 1f) / ln(32768f)).coerceIn(0f, 1f)
+    return (normalized * 100f).roundToInt()
+}
+
+private fun List<Int>.compressWaveform(targetSize: Int = 48): List<Int> {
+    if (isEmpty()) return emptyList()
+    if (size <= targetSize) return this
+    val bucketSize = size / targetSize.toFloat()
+    return List(targetSize) { index ->
+        val start = (index * bucketSize).toInt()
+        val end = (((index + 1) * bucketSize).toInt()).coerceAtMost(size)
+        subList(start, end).maxOrNull() ?: 0
+    }
+}
+
+private fun Long.formatAsDuration(): String {
+    val totalSeconds = (this / 1000L).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "%d:%02d".format(minutes, seconds)
 }

@@ -51,6 +51,7 @@ class WatchBridgeSerializationTest {
             requestId = "req-1",
             roomId = "!room:server",
             threadRootEventId = "\$root:server",
+            inReplyToEventId = "\$reply:server",
             text = "hello from watch",
             source = WatchSendSource.DICTATION,
             clientTsMs = 12345L,
@@ -58,9 +59,11 @@ class WatchBridgeSerializationTest {
         val envelope = WatchSyncEnvelope(generatedAtMs = 0L, payload = cmd)
 
         val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+        val decodedCmd = decoded.payload as WatchCommand.SendText
 
         assertThat(decoded.payload).isInstanceOf(WatchCommand.SendText::class.java)
-        assertThat((decoded.payload as WatchCommand.SendText).requestId).isEqualTo("req-1")
+        assertThat(decodedCmd.requestId).isEqualTo("req-1")
+        assertThat(decodedCmd.inReplyToEventId).isEqualTo("\$reply:server")
     }
 
     @Test

@@ -8,7 +8,16 @@
 package io.element.android.wearapp.tile
 
 import android.content.ComponentName
-import android.util.Log
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Typeface
+import androidx.annotation.StringRes
 import androidx.wear.protolayout.ActionBuilders
 import androidx.wear.protolayout.ColorBuilders.argb
 import androidx.wear.protolayout.DimensionBuilders.dp
@@ -17,355 +26,402 @@ import androidx.wear.protolayout.DimensionBuilders.sp
 import androidx.wear.protolayout.DimensionBuilders.wrap
 import androidx.wear.protolayout.LayoutElementBuilders.Box
 import androidx.wear.protolayout.LayoutElementBuilders.Column
-import androidx.wear.protolayout.LayoutElementBuilders.FontStyle
+import androidx.wear.protolayout.LayoutElementBuilders.CONTENT_SCALE_MODE_CROP
 import androidx.wear.protolayout.LayoutElementBuilders.FONT_WEIGHT_BOLD
-import androidx.wear.protolayout.LayoutElementBuilders.FONT_WEIGHT_MEDIUM
+import androidx.wear.protolayout.LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER
+import androidx.wear.protolayout.LayoutElementBuilders.Image
 import androidx.wear.protolayout.LayoutElementBuilders.LayoutElement
 import androidx.wear.protolayout.LayoutElementBuilders.Row
 import androidx.wear.protolayout.LayoutElementBuilders.Spacer
-import androidx.wear.protolayout.LayoutElementBuilders.Text
-import androidx.wear.protolayout.LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER
 import androidx.wear.protolayout.LayoutElementBuilders.VERTICAL_ALIGN_CENTER
 import androidx.wear.protolayout.ModifiersBuilders.Background
 import androidx.wear.protolayout.ModifiersBuilders.Clickable
 import androidx.wear.protolayout.ModifiersBuilders.Corner
 import androidx.wear.protolayout.ModifiersBuilders.Modifiers
+import androidx.wear.protolayout.ResourceBuilders
 import androidx.wear.protolayout.TimelineBuilders.Timeline
 import androidx.wear.tiles.RequestBuilders
-import androidx.wear.tiles.ResourceBuilders
 import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
-import com.google.android.gms.wearable.DataMapItem
-import com.google.android.gms.wearable.Wearable
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
-import io.element.android.watchbridge.contract.WatchBridgeSerialization
-import io.element.android.watchbridge.contract.WatchSync
-import io.element.android.wearapp.WearApp
+import io.element.android.wearapp.R
+import io.element.android.wearapp.bridge.WearBridgeCacheStore
 import io.element.android.wearapp.ui.common.toInitials
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.tasks.await
+import timber.log.Timber
+import java.io.ByteArrayOutputStream
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+private const val MAX_TILE_ROOMS = 7
+private const val AVATAR_SIZE_DP = 40f
+private const val AVATAR_GAP_DP = 4f
+private const val TILE_BACKGROUND_RADIUS_DP = 100f
+private const val TITLE_SPACING_DP = 6f
+
+enum class ConversationTileMode(
+    @StringRes val labelRes: Int,
+    @StringRes val emptyRes: Int,
+    @StringRes val unavailableRes: Int,
+    val resourceKey: String,
+) {
+    RECENT(
+        labelRes = R.string.tile_recent_conversations_label,
+        emptyRes = R.string.tile_recent_conversations_empty,
+        unavailableRes = R.string.tile_recent_conversations_unavailable,
+        resourceKey = "recent-conversations",
+    ) {
+        override fun matches(room: WatchFavoriteRoom): Boolean = !room.isFavorite
+    },
+    FAVORITES(
+        labelRes = R.string.tile_favorite_conversations_label,
+        emptyRes = R.string.tile_favorite_conversations_empty,
+        unavailableRes = R.string.tile_favorite_conversations_unavailable,
+        resourceKey = "favorite-conversations",
+    ) {
+        override fun matches(room: WatchFavoriteRoom): Boolean = room.isFavorite
+    };
+
+    abstract fun matches(room: WatchFavoriteRoom): Boolean
+}
 
 /**
- * Wear OS Tile that shows recent DM contacts in a honeycomb-like grid on the watch face carousel.
- * Tapping any contact avatar opens the main app.
+ * Cached, avatar-first tile implementation.
+ *
+ * The tile reads the latest room and avatar state from the Wear app cache so it can render even
+ * while the bridge is reconnecting. The layout intentionally avoids scroll-dependent content: it
+ * is just a honeycomb of conversations.
  */
-class RecentContactsTileService : TileService() {
+abstract class ConversationTileServiceBase : TileService() {
+    protected abstract val tileMode: ConversationTileMode
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
-        Log.d(TAG, "onTileRequest called, lastClickableId=${requestParams.currentState.lastClickableId}")
-        return try {
-            val bridge = (application as WearApp).bridgeClient
-            // Try current in-memory snapshot first — show all favorites.
-            var contacts = bridge.favorites.value
-                .asSequence()
-                .sortedByDescending { it.lastActivityTsMs }
-                .distinctBy { it.roomId }
-                .take(7)
-                .toList()
+        val tile = runCatching {
+            val snapshot = readTileSnapshot()
 
-            // If empty, read directly from the Wear Data Layer (blocking).
-            if (contacts.isEmpty()) {
-                contacts = readFavoritesFromDataLayer()
-                    .asSequence()
-                    .sortedByDescending { it.lastActivityTsMs }
-                    .distinctBy { it.roomId }
-                    .take(7)
-                    .toList()
-                Log.d(TAG, "tile: read ${contacts.size} contacts from Data Layer fallback")
-            } else {
-                Log.d(TAG, "tile: using ${contacts.size} contacts from in-memory cache")
-            }
-
-            // If still empty, trigger a phone refresh so next tile update has data.
-            if (contacts.isEmpty()) {
-                bridge.refreshPhoneReachability()
-            }
-
-            val layout = if (contacts.isEmpty()) {
-                buildEmptyLayout()
-            } else {
-                buildHoneycombLayout(contacts)
-            }
-
-            val tile = TileBuilders.Tile.Builder()
-                .setResourcesVersion("1")
-                .setTileTimeline(Timeline.fromLayoutElement(layout))
-                .setFreshnessIntervalMillis(5 * 60 * 1000L) // refresh every 5 min
+            TileBuilders.Tile.Builder()
+                .setResourcesVersion(snapshot.resourcesVersion)
+                .setFreshnessIntervalMillis(60_000L)
+                .setTileTimeline(Timeline.fromLayoutElement(buildLayout(snapshot.rooms)))
                 .build()
-
-            Futures.immediateFuture(tile)
-        } catch (e: Exception) {
-            Log.e(TAG, "onTileRequest FAILED", e)
-            // Return a minimal error tile instead of crashing.
-            val errorLayout = Box.Builder()
-                .setWidth(expand())
-                .setHeight(expand())
-                .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
-                .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
-                .addContent(
-                    Text.Builder()
-                        .setText("Error loading tile")
-                        .setFontStyle(FontStyle.Builder().setSize(sp(12f)).setColor(argb(0xFFFF6666.toInt())).build())
-                        .build(),
-                )
+        }.onFailure {
+            Timber.e(it, "tile request failed")
+        }.getOrElse {
+            TileBuilders.Tile.Builder()
+                .setResourcesVersion("conversation-tile-v4-fallback")
+                .setTileTimeline(Timeline.fromLayoutElement(buildFallbackLayout()))
                 .build()
-            Futures.immediateFuture(
-                TileBuilders.Tile.Builder()
-                    .setResourcesVersion("1")
-                    .setTileTimeline(Timeline.fromLayoutElement(errorLayout))
-                    .build(),
-            )
         }
-    }
 
-    override fun onTileEnterEvent(requestParams: androidx.wear.tiles.EventBuilders.TileEnterEvent) {
-        Log.d(TAG, "onTileEnterEvent — tile became visible")
-    }
-
-    override fun onTileLeaveEvent(requestParams: androidx.wear.tiles.EventBuilders.TileLeaveEvent) {
-        Log.d(TAG, "onTileLeaveEvent — tile no longer visible")
+        return Futures.immediateFuture(tile)
     }
 
     override fun onTileAddEvent(requestParams: androidx.wear.tiles.EventBuilders.TileAddEvent) {
-        Log.d(TAG, "onTileAddEvent — tile added to carousel")
+        Timber.d("tile added")
+        TileService.getUpdater(this).requestUpdate(javaClass)
     }
 
-    override fun onTileRemoveEvent(requestParams: androidx.wear.tiles.EventBuilders.TileRemoveEvent) {
-        Log.d(TAG, "onTileRemoveEvent — tile removed from carousel")
-    }
-
-    /**
-     * Directly reads the favorites DataItem from the Wear Data Layer.
-     * This is a blocking call, used when the in-memory cache hasn't been populated yet.
-     */
-    private fun readFavoritesFromDataLayer(): List<WatchFavoriteRoom> {
-        return try {
-            val dataClient = Wearable.getDataClient(this)
-            val items = runBlocking {
-                dataClient.getDataItems(android.net.Uri.parse("wear:${WatchDataPaths.FAVORITES}")).await()
-            }
-            val result = mutableListOf<WatchFavoriteRoom>()
-            for (index in 0 until items.count) {
-                val item = items[index]
-                val bytes = DataMapItem.fromDataItem(item).dataMap.getByteArray("envelope") ?: continue
-                val envelope = WatchBridgeSerialization.decodeEnvelopeFromBytes(bytes)
-                val payload = envelope.payload
-                if (payload is WatchSync.FavoritesSnapshot) {
-                    result.addAll(payload.rooms)
-                }
-            }
-            items.release()
-            result
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to read favorites from Data Layer", e)
-            emptyList()
-        }
+    override fun onTileEnterEvent(requestParams: androidx.wear.tiles.EventBuilders.TileEnterEvent) {
+        Timber.d("tile entered")
+        TileService.getUpdater(this).requestUpdate(javaClass)
     }
 
     @Suppress("RETURN_TYPE_MISMATCH_ON_OVERRIDE")
-    override fun onTileResourcesRequest(
-        requestParams: RequestBuilders.ResourcesRequest,
-    ): ListenableFuture<ResourceBuilders.Resources> {
+    override fun onTileResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> {
+        val snapshot = runCatching { readTileSnapshot() }
+            .onFailure { Timber.e(it, "tile resources request failed") }
+            .getOrDefault(TileSnapshot())
+
+        val resourcesBuilder = ResourceBuilders.Resources.Builder()
+            .setVersion(snapshot.resourcesVersion)
+
+        val avatarSizePx = avatarSizePx()
+        snapshot.rooms.forEach { room ->
+            resourcesBuilder.addIdToImageMapping(
+                avatarResourceId(room.roomId),
+                ResourceBuilders.ImageResource.Builder()
+                    .setInlineResource(
+                        ResourceBuilders.InlineImageResource.Builder()
+                            .setData(renderAvatarPng(room = room, avatarBytes = snapshot.avatarBytes[room.roomId], sizePx = avatarSizePx))
+                            .setFormat(ResourceBuilders.IMAGE_FORMAT_UNDEFINED)
+                            .setWidthPx(avatarSizePx)
+                            .setHeightPx(avatarSizePx)
+                            .build(),
+                    )
+                    .build(),
+            )
+        }
+
         return Futures.immediateFuture(
-            ResourceBuilders.Resources.Builder()
-                .setVersion("1")
-                .build(),
+            resourcesBuilder.build(),
         )
+    }
+
+    private fun buildLayout(rooms: List<WatchFavoriteRoom>): LayoutElement {
+        return if (rooms.isEmpty()) buildEmptyLayout() else buildRoomsLayout(rooms)
+    }
+
+    private fun buildRoomsLayout(rooms: List<WatchFavoriteRoom>): LayoutElement {
+        val rowSizes = honeycombRows(rooms.size)
+        var cursor = 0
+        val column = Column.Builder()
+            .setWidth(expand())
+            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+
+        column.addContent(titleText(getString(tileMode.labelRes)))
+        column.addContent(Spacer.Builder().setHeight(dp(TITLE_SPACING_DP)).build())
+
+        rowSizes.forEachIndexed { index, rowSize ->
+            if (index > 0) {
+                column.addContent(Spacer.Builder().setHeight(dp(AVATAR_GAP_DP)).build())
+            }
+            val rowRooms = rooms.subList(cursor, cursor + rowSize)
+            cursor += rowSize
+            column.addContent(avatarRow(rowRooms))
+        }
+
+        return container(column.build())
     }
 
     private fun buildEmptyLayout(): LayoutElement {
-        val launchAppClickable = Clickable.Builder()
-            .setOnClick(
-                ActionBuilders.LaunchAction.Builder()
-                    .setAndroidActivity(
-                        ActionBuilders.AndroidActivity.Builder()
-                            .setPackageName(packageName)
-                            .setClassName(
-                                ComponentName(packageName, "io.element.android.wearapp.ui.WearMainActivity").className,
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
-            .build()
-
-        return Box.Builder()
-            .setWidth(expand())
-            .setHeight(expand())
-            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
-            .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
-            .setModifiers(
-                Modifiers.Builder()
-                    .setClickable(launchAppClickable)
-                    .setBackground(
-                        Background.Builder()
-                            .setColor(argb(0xFF1B1B1B.toInt()))
-                            .build(),
-                    )
-                    .build(),
-            )
-            .addContent(
-                Column.Builder()
-                    .setWidth(wrap())
-                    .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
-                    .addContent(
-                        Text.Builder()
-                            .setText("Recent contacts")
-                            .setFontStyle(
-                                FontStyle.Builder()
-                                    .setSize(sp(14f))
-                                    .setColor(argb(0xFFCCCCCC.toInt()))
-                                    .setWeight(FONT_WEIGHT_MEDIUM)
-                                    .build(),
-                            )
-                            .build(),
-                    )
-                    .addContent(Spacer.Builder().setHeight(dp(8f)).build())
-                    .addContent(
-                        Text.Builder()
-                            .setText("Open app to sync")
-                            .setFontStyle(
-                                FontStyle.Builder()
-                                    .setSize(sp(12f))
-                                    .setColor(argb(0xFF999999.toInt()))
-                                    .build(),
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
-            .build()
-    }
-
-    private fun buildHoneycombLayout(contacts: List<WatchFavoriteRoom>): LayoutElement {
-        val launchAppClickable = Clickable.Builder()
-            .setOnClick(
-                ActionBuilders.LaunchAction.Builder()
-                    .setAndroidActivity(
-                        ActionBuilders.AndroidActivity.Builder()
-                            .setPackageName(packageName)
-                            .setClassName(
-                                ComponentName(packageName, "io.element.android.wearapp.ui.WearMainActivity").className,
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
-            .build()
-
-        val column = Column.Builder()
-            .setWidth(wrap())
-            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
-            .setModifiers(
-                Modifiers.Builder()
-                    .setClickable(launchAppClickable)
-                    .build(),
-            )
-
-        // Title
-        column.addContent(
-            Text.Builder()
-                .setText("Recent contacts")
-                .setFontStyle(
-                    FontStyle.Builder()
-                        .setSize(sp(14f))
-                        .setColor(argb(0xFFCCCCCC.toInt()))
-                        .setWeight(FONT_WEIGHT_MEDIUM)
-                        .build(),
-                )
+        return container(
+            content = Column.Builder()
+                .setWidth(expand())
+                .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+                .addContent(titleText(getString(tileMode.labelRes)))
+                .addContent(Spacer.Builder().setHeight(dp(TITLE_SPACING_DP)).build())
+                .addContent(textBody(getString(tileMode.emptyRes)))
                 .build(),
+            clickable = openAppClickable(),
         )
+    }
 
-        column.addContent(Spacer.Builder().setHeight(dp(8f)).build())
+    private fun buildFallbackLayout(): LayoutElement {
+        return container(
+            content = Column.Builder()
+                .setWidth(expand())
+                .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+                .addContent(titleText(getString(tileMode.labelRes)))
+                .addContent(Spacer.Builder().setHeight(dp(TITLE_SPACING_DP)).build())
+                .addContent(textBody(getString(tileMode.unavailableRes)))
+                .build(),
+            clickable = openAppClickable(),
+        )
+    }
 
-        // Honeycomb rows: 2 / 3 / 2
-        val row1 = contacts.take(2)
-        val row2 = contacts.drop(2).take(3)
-        val row3 = contacts.drop(5).take(2)
-
-        if (row1.isNotEmpty()) {
-            column.addContent(buildContactRow(row1))
-            column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
-        }
-        if (row2.isNotEmpty()) {
-            column.addContent(buildContactRow(row2))
-            column.addContent(Spacer.Builder().setHeight(dp(4f)).build())
-        }
-        if (row3.isNotEmpty()) {
-            column.addContent(buildContactRow(row3))
-        }
+    private fun container(
+        content: LayoutElement,
+        clickable: Clickable? = null,
+    ): LayoutElement {
+        val modifiers = Modifiers.Builder()
+            .setBackground(
+                Background.Builder()
+                    .setColor(argb(0xFF101317.toInt()))
+                    .setCorner(Corner.Builder().setRadius(dp(TILE_BACKGROUND_RADIUS_DP)).build())
+                    .build(),
+            )
+        clickable?.let(modifiers::setClickable)
 
         return Box.Builder()
             .setWidth(expand())
             .setHeight(expand())
             .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
             .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
-            .setModifiers(
-                Modifiers.Builder()
-                    .setClickable(launchAppClickable)
-                    .setBackground(
-                        Background.Builder()
-                            .setColor(argb(0xFF1B1B1B.toInt()))
-                            .build(),
-                    )
-                    .build(),
-            )
-            .addContent(column.build())
+            .setModifiers(modifiers.build())
+            .addContent(content)
             .build()
     }
 
-    private fun buildContactRow(contacts: List<WatchFavoriteRoom>): LayoutElement {
+    private fun titleText(text: String): LayoutElement {
+        return androidx.wear.protolayout.LayoutElementBuilders.Text.Builder()
+            .setText(text)
+            .setMaxLines(1)
+            .setFontStyle(
+                androidx.wear.protolayout.LayoutElementBuilders.FontStyle.Builder()
+                    .setSize(sp(12f))
+                    .setWeight(FONT_WEIGHT_BOLD)
+                    .setColor(argb(0xFFE8EEF5.toInt()))
+                    .build(),
+            )
+            .build()
+    }
+
+    private fun textBody(text: String): LayoutElement {
+        return androidx.wear.protolayout.LayoutElementBuilders.Text.Builder()
+            .setText(text)
+            .setMaxLines(2)
+            .setFontStyle(
+                androidx.wear.protolayout.LayoutElementBuilders.FontStyle.Builder()
+                    .setSize(sp(12f))
+                    .setColor(argb(0xFFB8C1CC.toInt()))
+                    .build(),
+            )
+            .build()
+    }
+
+    private fun avatarRow(rowRooms: List<WatchFavoriteRoom>): LayoutElement {
         val row = Row.Builder()
             .setWidth(wrap())
-
-        contacts.forEachIndexed { index, contact ->
+            .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
+        rowRooms.forEachIndexed { index, room ->
             if (index > 0) {
-                row.addContent(Spacer.Builder().setWidth(dp(6f)).build())
+                row.addContent(Spacer.Builder().setWidth(dp(AVATAR_GAP_DP)).build())
             }
-            row.addContent(buildContactBadge(contact))
+            row.addContent(avatarImage(room))
         }
-
-        return row.build()
+        return Box.Builder()
+            .setWidth(expand())
+            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+            .addContent(row.build())
+            .build()
     }
 
-    private fun buildContactBadge(contact: WatchFavoriteRoom): LayoutElement {
-        val color = avatarPalette(contact.displayName)
-        val initials = contact.displayName.toInitials()
-
-        return Box.Builder()
-            .setWidth(dp(42f))
-            .setHeight(dp(42f))
+    private fun avatarImage(room: WatchFavoriteRoom): LayoutElement {
+        return Image.Builder()
+            .setResourceId(avatarResourceId(room.roomId))
+            .setWidth(dp(AVATAR_SIZE_DP))
+            .setHeight(dp(AVATAR_SIZE_DP))
+            .setContentScaleMode(CONTENT_SCALE_MODE_CROP)
             .setModifiers(
                 Modifiers.Builder()
-                    .setBackground(
-                        Background.Builder()
-                            .setColor(argb(color))
-                            .setCorner(Corner.Builder().setRadius(dp(21f)).build())
-                            .build(),
-                    )
+                    .setClickable(openRoomClickable(room.roomId))
                     .build(),
             )
-            .addContent(
-                Text.Builder()
-                    .setText(initials)
-                    .setFontStyle(
-                        FontStyle.Builder()
-                            .setSize(sp(14f))
-                            .setColor(argb(0xFFFFFFFF.toInt()))
-                            .setWeight(FONT_WEIGHT_BOLD)
+            .build()
+    }
+
+    private fun openRoomClickable(roomId: String): Clickable {
+        return Clickable.Builder()
+            .setOnClick(
+                ActionBuilders.LaunchAction.Builder()
+                    .setAndroidActivity(
+                        ActionBuilders.AndroidActivity.Builder()
+                            .setPackageName(packageName)
+                            .setClassName(ComponentName(packageName, "io.element.android.wearapp.ui.WearMainActivity").className)
+                            .addKeyToExtraMapping("roomId", ActionBuilders.stringExtra(roomId))
                             .build(),
                     )
                     .build(),
             )
             .build()
+    }
+
+    private fun openAppClickable(): Clickable {
+        return Clickable.Builder()
+            .setOnClick(
+                ActionBuilders.LaunchAction.Builder()
+                    .setAndroidActivity(
+                        ActionBuilders.AndroidActivity.Builder()
+                            .setPackageName(packageName)
+                            .setClassName(ComponentName(packageName, "io.element.android.wearapp.ui.WearMainActivity").className)
+                            .build(),
+                    )
+                    .build(),
+            )
+            .build()
+    }
+
+    private fun readTileSnapshot(): TileSnapshot = runBlocking {
+        val cacheStore = WearBridgeCacheStore(this@ConversationTileServiceBase)
+        val rooms = cacheStore.readFavorites()
+            .filter(tileMode::matches)
+            .sortedByDescending { it.lastActivityTsMs }
+            .distinctBy { it.roomId }
+            .take(MAX_TILE_ROOMS)
+        val avatarBytes = cacheStore.readAvatars(rooms.map { it.roomId })
+        TileSnapshot(
+            rooms = rooms,
+            avatarBytes = avatarBytes,
+            resourcesVersion = buildResourcesVersion(rooms, avatarBytes),
+        )
+    }
+
+    private fun buildResourcesVersion(
+        rooms: List<WatchFavoriteRoom>,
+        avatarBytes: Map<String, ByteArray>,
+    ): String {
+        val seed = rooms.joinToString(separator = "|") { room ->
+            val avatarHash = avatarBytes[room.roomId]?.contentHashCode() ?: 0
+            "${room.roomId}:${room.lastActivityTsMs}:$avatarHash"
+        }
+        return "${tileMode.resourceKey}-v4-${seed.hashCode().toUInt().toString(16)}"
+    }
+
+    private fun renderAvatarPng(room: WatchFavoriteRoom, avatarBytes: ByteArray?, sizePx: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val bounds = RectF(0f, 0f, sizePx.toFloat(), sizePx.toFloat())
+        val decodedAvatar = avatarBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+
+        if (decodedAvatar != null) {
+            val shader = BitmapShader(decodedAvatar, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            val matrix = Matrix()
+            val scale = max(sizePx / decodedAvatar.width.toFloat(), sizePx / decodedAvatar.height.toFloat())
+            val dx = (sizePx - decodedAvatar.width * scale) / 2f
+            val dy = (sizePx - decodedAvatar.height * scale) / 2f
+            matrix.setScale(scale, scale)
+            matrix.postTranslate(dx, dy)
+            shader.setLocalMatrix(matrix)
+            canvas.drawOval(bounds, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.shader = shader })
+        } else {
+            canvas.drawOval(
+                bounds,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = avatarPalette(room.displayName) },
+            )
+            drawInitials(canvas = canvas, room = room, sizePx = sizePx)
+        }
+
+        val borderWidth = sizePx * 0.04f
+        val inset = borderWidth / 2f
+        canvas.drawOval(
+            RectF(inset, inset, sizePx - inset, sizePx - inset),
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0x30FFFFFF
+                style = Paint.Style.STROKE
+                strokeWidth = borderWidth
+            },
+        )
+
+        return bitmap.toPngByteArray()
+    }
+
+    private fun drawInitials(canvas: Canvas, room: WatchFavoriteRoom, sizePx: Int) {
+        val initials = room.displayName.toInitials()
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt()
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = sizePx * if (initials.length > 1) 0.38f else 0.48f
+        }
+        val baseline = sizePx / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+        canvas.drawText(initials, sizePx / 2f, baseline, textPaint)
+    }
+
+    private fun avatarSizePx(): Int = (AVATAR_SIZE_DP * resources.displayMetrics.density)
+        .roundToInt()
+        .coerceAtLeast(56)
+
+    private fun honeycombRows(count: Int): List<Int> = when (count.coerceIn(0, MAX_TILE_ROOMS)) {
+        0 -> emptyList()
+        1 -> listOf(1)
+        2 -> listOf(2)
+        3 -> listOf(1, 2)
+        4 -> listOf(1, 2, 1)
+        5 -> listOf(2, 1, 2)
+        6 -> listOf(2, 2, 2)
+        else -> listOf(2, 3, 2)
+    }
+
+    private fun avatarResourceId(roomId: String): String = "avatar_${roomId.hashCode().toUInt().toString(16)}"
+
+    private fun Bitmap.toPngByteArray(): ByteArray = ByteArrayOutputStream().use { output ->
+        compress(Bitmap.CompressFormat.PNG, 100, output)
+        output.toByteArray()
     }
 
     companion object {
-        private const val TAG = "RecentContactsTile"
-
         private val PALETTE = intArrayOf(
             0xFF5B8DEF.toInt(),
             0xFF8E64FF.toInt(),
@@ -381,4 +437,14 @@ class RecentContactsTileService : TileService() {
             return PALETTE[index]
         }
     }
+
+    private data class TileSnapshot(
+        val rooms: List<WatchFavoriteRoom> = emptyList(),
+        val avatarBytes: Map<String, ByteArray> = emptyMap(),
+        val resourcesVersion: String = "conversation-tile-v4-empty",
+    )
+}
+
+class RecentContactsTileService : ConversationTileServiceBase() {
+    override val tileMode: ConversationTileMode = ConversationTileMode.RECENT
 }

@@ -7,8 +7,10 @@
 
 package io.element.android.wearapp.ui.common
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,10 +32,14 @@ import coil3.compose.AsyncImage
 internal fun AvatarBadge(
     displayName: String,
     avatarUrl: String?,
+    avatarBytes: ByteArray? = null,
     modifier: Modifier = Modifier,
 ) {
     val fallbackColor = remember(displayName) { avatarPalette(displayName) }
     val loadableAvatar = remember(avatarUrl) { avatarModelOrNull(avatarUrl) }
+    val decodedAvatar = remember(avatarBytes) {
+        avatarBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
 
     Box(
         modifier = modifier
@@ -41,7 +48,14 @@ internal fun AvatarBadge(
             .border(width = androidx.compose.ui.unit.Dp.Hairline, color = Color.White.copy(alpha = 0.18f), shape = CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (loadableAvatar != null) {
+        if (decodedAvatar != null) {
+            Image(
+                bitmap = decodedAvatar,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (loadableAvatar != null) {
             AsyncImage(
                 model = loadableAvatar,
                 contentDescription = null,

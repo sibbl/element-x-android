@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -60,30 +61,67 @@ internal fun RoomView(
     onVoice: (() -> Unit)?,
     onReact: (() -> Unit)? = null,
     onLongPressMessage: ((WatchTimelineItem) -> Unit)? = null,
+    onScrollRequestHandled: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberScalingLazyListState()
-    var didInitialScroll by remember(state.timelineKey) { mutableStateOf(false) }
+    val totalItemCount = listState.layoutInfo.totalItemsCount
+    val lastEventId = state.items.lastOrNull()?.eventId
+    var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
+    var lastAutoScrolledEventId by remember(state.timelineKey) { mutableStateOf<String?>(null) }
+    var lastHandledScrollRequestId by remember(state.timelineKey) { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
-
-    // Scroll to the last item as soon as items arrive. Use initialCenterItemIndex-style positioning.
-    LaunchedEffect(state.items.size) {
-        if (state.items.isNotEmpty() && !didInitialScroll) {
-            // +1 for the header item, +1 for potential loading item
-            val totalItemCount = listState.layoutInfo.totalItemsCount
-            if (totalItemCount > 0) {
-                listState.scrollToItem(totalItemCount - 1)
-            }
-            didInitialScroll = true
-        }
-    }
 
     val isAtBottom by remember {
         derivedStateOf {
-            val info = listState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val totalItems = info.totalItemsCount
-            totalItems <= 1 || lastVisible >= totalItems - 2
+            isAtBottom(listState)
+        }
+    }
+
+    LaunchedEffect(listState, state.timelineKey) {
+        snapshotFlow { isAtBottom(listState) }
+            .collect { atBottom ->
+                shouldStickToBottom = atBottom
+            }
+    }
+
+    LaunchedEffect(
+        state.timelineKey,
+        state.scrollRequestId,
+        state.scrollToEventId,
+        state.forceScrollToBottom,
+        totalItemCount,
+    ) {
+        val requestId = state.scrollRequestId
+        if (requestId == null || requestId == lastHandledScrollRequestId || totalItemCount <= 0) return@LaunchedEffect
+
+        if (state.forceScrollToBottom) {
+            listState.animateScrollToItem(totalItemCount - 1)
+            shouldStickToBottom = true
+            lastAutoScrolledEventId = lastEventId
+        } else {
+            val targetIndex = timelineListIndexForEvent(state.items, state.scrollToEventId)
+            if (targetIndex != null) {
+                listState.animateScrollToItem(targetIndex)
+                shouldStickToBottom = false
+            }
+        }
+        lastHandledScrollRequestId = requestId
+        onScrollRequestHandled?.invoke(requestId)
+    }
+
+    LaunchedEffect(state.timelineKey, lastEventId, totalItemCount) {
+        if (lastEventId == null || totalItemCount <= 0) return@LaunchedEffect
+
+        val initialScroll = lastAutoScrolledEventId == null
+        val hasNewBottomItem = lastEventId != lastAutoScrolledEventId
+        if (shouldStickToBottom && (initialScroll || hasNewBottomItem)) {
+            if (initialScroll) {
+                listState.scrollToItem(totalItemCount - 1)
+            } else {
+                listState.animateScrollToItem(totalItemCount - 1)
+            }
+            lastAutoScrolledEventId = lastEventId
         }
     }
 
@@ -109,6 +147,14 @@ internal fun RoomView(
                     item {
                         Text(
                             text = stringResource(R.string.screen_room_loading_messages),
+                            style = MaterialTheme.typography.body2,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                        )
+                    }
+                } else if (state.items.isEmpty()) {
+                    item {
+                        Text(
+                            text = state.emptyText ?: stringResource(R.string.screen_room_empty_messages),
                             style = MaterialTheme.typography.body2,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                         )
@@ -144,6 +190,7 @@ internal fun RoomView(
                         scope.launch {
                             val total = listState.layoutInfo.totalItemsCount
                             if (total > 0) listState.animateScrollToItem(total - 1)
+                            shouldStickToBottom = true
                         }
                     },
                     colors = ButtonDefaults.primaryButtonColors(),
@@ -171,6 +218,10 @@ internal data class RoomViewState(
     val items: List<WatchTimelineItem>,
     val composerContextLabel: String? = null,
     val isLoading: Boolean = true,
+    val emptyText: String? = null,
+    val scrollRequestId: Long? = null,
+    val scrollToEventId: String? = null,
+    val forceScrollToBottom: Boolean = false,
 )
 
 @Composable
@@ -204,4 +255,28 @@ private fun dayLabel(timestampMs: Long): String {
         sameYear && todayDoy - thenDoy < 7 -> SimpleDateFormat("EEEE", Locale.getDefault()).format(Date(timestampMs))
         else -> SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(timestampMs))
     }
+}
+
+private fun isAtBottom(listState: androidx.wear.compose.foundation.lazy.ScalingLazyListState): Boolean {
+    val info = listState.layoutInfo
+    val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+    val totalItems = info.totalItemsCount
+    return totalItems <= 1 || lastVisible >= totalItems - 2
+}
+
+private fun timelineListIndexForEvent(items: List<WatchTimelineItem>, eventId: String?): Int? {
+    if (eventId == null) return null
+    var displayIndex = 1 // header
+    items.forEachIndexed { index, item ->
+        val previous = items.getOrNull(index - 1)
+        val showDayDivider = previous == null || !isSameDay(previous.timestampMs, item.timestampMs)
+        if (showDayDivider && index > 0) {
+            displayIndex += 1
+        }
+        if (item.eventId == eventId) {
+            return displayIndex
+        }
+        displayIndex += 1
+    }
+    return null
 }

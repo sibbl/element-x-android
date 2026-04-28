@@ -18,6 +18,7 @@ import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
+import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.launch
 
@@ -28,11 +29,14 @@ fun MessageDetailScreen(
     eventId: String,
     activity: WearMainActivity,
     onOpenThread: (String) -> Unit,
+    onReplySent: (sourceEventId: String, sourceWasLastMessage: Boolean) -> Unit = { _, _ -> },
+    onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
         roomId = roomId,
+        onOpenFailure = { onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_open_room_failed)) },
     )
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
@@ -52,14 +56,23 @@ fun MessageDetailScreen(
                 activity.launchDictation { dictated ->
                     if (!dictated.isNullOrBlank()) {
                         scope.launch {
-                            bridge.send {
-                                WatchCommand.SendText(
-                                    requestId = it,
-                                    roomId = roomId,
-                                    text = dictated,
-                                    source = WatchSendSource.DICTATION,
-                                    clientTsMs = System.currentTimeMillis(),
+                            runCatching {
+                                bridge.sendAwaitTerminalAck {
+                                    WatchCommand.SendText(
+                                        requestId = it,
+                                        roomId = roomId,
+                                        inReplyToEventId = item.eventId,
+                                        text = dictated,
+                                        source = WatchSendSource.DICTATION,
+                                        clientTsMs = System.currentTimeMillis(),
+                                    )
+                                }
+                                onReplySent(
+                                    item.eventId,
+                                    item.eventId == roomState.items.lastOrNull()?.eventId,
                                 )
+                            }.onFailure {
+                                onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_send_failed))
                             }
                         }
                     }
@@ -70,6 +83,7 @@ fun MessageDetailScreen(
             activity.startActivity(
                 Intent(activity, VoiceRecorderActivity::class.java)
                     .putExtra("roomId", roomId)
+                    .putExtra("roomDisplayName", roomName)
                     .putExtra("inReplyToEventId", item?.eventId),
             )
         },
@@ -84,7 +98,7 @@ fun MessageDetailScreen(
             val target = item ?: return@MessageDetailView
             scope.launch {
                 runCatching {
-                    bridge.send { requestId ->
+                    bridge.sendAwaitTerminalAck { requestId ->
                         WatchCommand.SendReaction(
                             requestId = requestId,
                             roomId = roomId,
@@ -92,6 +106,8 @@ fun MessageDetailScreen(
                             reactionKey = reactionKey,
                         )
                     }
+                }.onFailure {
+                    onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_reaction_failed))
                 }
             }
         },

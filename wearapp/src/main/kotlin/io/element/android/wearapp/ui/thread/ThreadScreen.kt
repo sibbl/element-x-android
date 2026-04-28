@@ -26,6 +26,7 @@ import io.element.android.wearapp.R
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
+import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.room.RoomView
 import io.element.android.wearapp.ui.room.RoomViewState
 import io.element.android.wearapp.ui.room.displayText
@@ -40,8 +41,14 @@ fun ThreadScreen(
     threadRootEventId: String,
     activity: WearMainActivity,
     onMessageSelected: (String) -> Unit = {},
+    onError: (String) -> Unit = {},
 ) {
-    var items by remember(roomId, threadRootEventId) { mutableStateOf<List<WatchThreadItem>>(emptyList()) }
+    var items by remember(roomId, threadRootEventId) {
+        mutableStateOf(bridge.getCachedThread(roomId, threadRootEventId))
+    }
+    var hasReceivedDelta by remember(roomId, threadRootEventId) {
+        mutableStateOf(bridge.hasCachedThreadSnapshot(roomId, threadRootEventId))
+    }
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
 
@@ -49,21 +56,33 @@ fun ThreadScreen(
     val roomDisplayName = favorites.firstOrNull { it.roomId == roomId }?.displayName ?: ""
 
     LaunchedEffect(roomId, threadRootEventId) {
-        bridge.send {
-            WatchCommand.FetchThread(
-                requestId = it,
-                roomId = roomId,
-                threadRootEventId = threadRootEventId,
-            )
+        runCatching {
+            bridge.send {
+                WatchCommand.FetchThread(
+                    requestId = it,
+                    roomId = roomId,
+                    threadRootEventId = threadRootEventId,
+                )
+            }
+        }.onFailure {
+            onError(activity.watchCommandErrorMessage(it, R.string.watch_error_open_thread_failed))
         }
         bridge.syncEvents.filterIsInstance<WatchSync.ThreadDelta>()
             .collect { delta ->
                 if (delta.roomId == roomId && delta.threadRootEventId == threadRootEventId) {
-                    items = (items + delta.items)
+                    hasReceivedDelta = true
+                    val updated = (items + delta.items)
                         .filter { it.eventId !in delta.removedEventIds }
                         .distinctBy { it.eventId }
                         .sortedBy { it.timestampMs }
                         .takeLast(50)
+                    items = updated
+                    bridge.cacheThread(
+                        roomId = roomId,
+                        threadRootEventId = threadRootEventId,
+                        items = updated,
+                        hasSnapshot = true,
+                    )
                 }
             }
     }
@@ -80,7 +99,8 @@ fun ThreadScreen(
             displayName = header,
             items = timelineItems,
             composerContextLabel = null,
-            isLoading = timelineItems.isEmpty(),
+            isLoading = !hasReceivedDelta,
+            emptyText = stringResource(R.string.screen_thread_empty_messages),
         ),
         onMessageSelected = onMessageSelected,
         // No nested-thread navigation inside a thread.
@@ -95,15 +115,19 @@ fun ThreadScreen(
             activity.launchDictation { dictated ->
                 if (!dictated.isNullOrBlank()) {
                     scope.launch {
-                        bridge.send {
-                            WatchCommand.SendText(
-                                requestId = it,
-                                roomId = roomId,
-                                threadRootEventId = threadRootEventId,
-                                text = dictated,
-                                source = WatchSendSource.DICTATION,
-                                clientTsMs = System.currentTimeMillis(),
-                            )
+                        runCatching {
+                            bridge.sendAwaitTerminalAck {
+                                WatchCommand.SendText(
+                                    requestId = it,
+                                    roomId = roomId,
+                                    threadRootEventId = threadRootEventId,
+                                    text = dictated,
+                                    source = WatchSendSource.DICTATION,
+                                    clientTsMs = System.currentTimeMillis(),
+                                )
+                            }
+                        }.onFailure {
+                            onError(activity.watchCommandErrorMessage(it, R.string.watch_error_send_failed))
                         }
                     }
                 }
@@ -113,6 +137,7 @@ fun ThreadScreen(
             activity.startActivity(
                 Intent(activity, VoiceRecorderActivity::class.java)
                     .putExtra("roomId", roomId)
+                    .putExtra("roomDisplayName", roomDisplayName)
                     .putExtra("threadRootEventId", threadRootEventId),
             )
         },
