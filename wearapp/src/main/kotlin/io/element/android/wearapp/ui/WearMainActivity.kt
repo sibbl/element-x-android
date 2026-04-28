@@ -9,19 +9,31 @@ package io.element.android.wearapp.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import io.element.android.watchbridge.contract.WatchCommand
+import io.element.android.watchbridge.contract.WatchLongPressConversationAction
+import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.WearApp
+import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.ui.favorites.FavoritesScreen
+import io.element.android.wearapp.ui.room.MessageDetailScreen
 import io.element.android.wearapp.ui.room.RoomScreen
 import io.element.android.wearapp.ui.thread.ThreadScreen
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 /** Top-level watch activity. Pure Compose for Wear; Swipe-to-dismiss navigation. */
@@ -58,23 +70,88 @@ class WearMainActivity : ComponentActivity() {
             MaterialTheme {
                 SwipeDismissableNavHost(navController = nav, startDestination = "favorites") {
                     composable("favorites") {
+                        val settings by bridge.companionSettings.collectAsState()
+                        val scope = rememberCoroutineScope()
+                        val tts = remember { WearTextToSpeech(this@WearMainActivity) }
                         FavoritesScreen(
                             bridge = bridge,
-                            onRoomSelected = { roomId -> nav.navigate("room/$roomId") },
+                            onRoomSelected = { roomId ->
+                                nav.navigate("room?roomId=${Uri.encode(roomId)}")
+                            },
+                            onLongPressRoom = { room ->
+                                when (settings.longPressConversationAction) {
+                                    WatchLongPressConversationAction.READ_LATEST -> {
+                                        room.lastPreviewText?.let { tts.speak(it) }
+                                    }
+                                    WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> {
+                                        nav.navigate("room?roomId=${Uri.encode(room.roomId)}")
+                                    }
+                                    WatchLongPressConversationAction.QUICK_REPLY_TEXT -> {
+                                        launchDictation { dictated ->
+                                            if (!dictated.isNullOrBlank()) {
+                                                scope.launch {
+                                                    bridge.send {
+                                                        WatchCommand.SendText(
+                                                            requestId = it,
+                                                            roomId = room.roomId,
+                                                            text = dictated,
+                                                            source = WatchSendSource.DICTATION,
+                                                            clientTsMs = System.currentTimeMillis(),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    WatchLongPressConversationAction.QUICK_REPLY_VOICE -> {
+                                        startActivity(
+                                            Intent(this@WearMainActivity, VoiceRecorderActivity::class.java)
+                                                .putExtra("roomId", room.roomId),
+                                        )
+                                    }
+                                    WatchLongPressConversationAction.OPEN_LATEST -> {
+                                        nav.navigate("room?roomId=${Uri.encode(room.roomId)}")
+                                    }
+                                }
+                            },
                         )
                     }
-                    composable("room/{roomId}") { entry ->
-                        val roomId = entry.arguments?.getString("roomId") ?: return@composable
+                    composable("room?roomId={roomId}") { entry ->
+                        val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
                         RoomScreen(
                             bridge = bridge,
                             roomId = roomId,
                             activity = this@WearMainActivity,
-                            onOpenThread = { rootId -> nav.navigate("thread/$roomId/$rootId") },
+                            onOpenThread = { rootId ->
+                                nav.navigate(
+                                    "thread?roomId=${Uri.encode(roomId)}&rootId=${Uri.encode(rootId)}",
+                                )
+                            },
+                            onMessageSelected = { eventId ->
+                                nav.navigate(
+                                    "message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}",
+                                )
+                            },
                         )
                     }
-                    composable("thread/{roomId}/{rootId}") { entry ->
-                        val roomId = entry.arguments?.getString("roomId") ?: return@composable
-                        val rootId = entry.arguments?.getString("rootId") ?: return@composable
+                    composable("message?roomId={roomId}&eventId={eventId}") { entry ->
+                        val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                        val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                        MessageDetailScreen(
+                            bridge = bridge,
+                            roomId = roomId,
+                            eventId = eventId,
+                            activity = this@WearMainActivity,
+                            onOpenThread = { rootId ->
+                                nav.navigate(
+                                    "thread?roomId=${Uri.encode(roomId)}&rootId=${Uri.encode(rootId)}",
+                                )
+                            },
+                        )
+                    }
+                    composable("thread?roomId={roomId}&rootId={rootId}") { entry ->
+                        val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                        val rootId = entry.arguments?.getString("rootId")?.let(Uri::decode) ?: return@composable
                         ThreadScreen(
                             bridge = bridge,
                             roomId = roomId,

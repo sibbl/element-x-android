@@ -7,34 +7,29 @@
 
 package io.element.android.wearapp.ui.thread
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchCommand
+import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchThreadItem
+import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
+import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
-import io.element.android.wearapp.ui.common.ComposerBar
+import io.element.android.wearapp.ui.room.RoomView
+import io.element.android.wearapp.ui.room.RoomViewState
+import io.element.android.wearapp.ui.room.displayText
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
@@ -44,77 +39,102 @@ fun ThreadScreen(
     roomId: String,
     threadRootEventId: String,
     activity: WearMainActivity,
+    onMessageSelected: (String) -> Unit = {},
 ) {
-    var items by remember { mutableStateOf<List<WatchThreadItem>>(emptyList()) }
+    var items by remember(roomId, threadRootEventId) { mutableStateOf<List<WatchThreadItem>>(emptyList()) }
     val scope = rememberCoroutineScope()
+    val tts = remember { WearTextToSpeech(activity) }
+
+    val favorites by bridge.favorites.collectAsState()
+    val roomDisplayName = favorites.firstOrNull { it.roomId == roomId }?.displayName ?: ""
 
     LaunchedEffect(roomId, threadRootEventId) {
         bridge.send {
-            WatchCommand.FetchThread(requestId = it, roomId = roomId, threadRootEventId = threadRootEventId)
+            WatchCommand.FetchThread(
+                requestId = it,
+                roomId = roomId,
+                threadRootEventId = threadRootEventId,
+            )
         }
         bridge.syncEvents.filterIsInstance<WatchSync.ThreadDelta>()
             .collect { delta ->
                 if (delta.roomId == roomId && delta.threadRootEventId == threadRootEventId) {
-                    val merged = (items + delta.items)
+                    items = (items + delta.items)
                         .filter { it.eventId !in delta.removedEventIds }
                         .distinctBy { it.eventId }
                         .sortedBy { it.timestampMs }
                         .takeLast(50)
-                    items = merged
                 }
             }
     }
 
-    val listState = rememberScalingLazyListState()
-    Column(modifier = Modifier.fillMaxSize()) {
-        ScalingLazyColumn(
-            state = listState,
-            modifier = Modifier.padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            item { ListHeader { Text(stringResource(R.string.thread)) } }
-            items(count = items.size, key = { idx -> items[idx].eventId }) { idx ->
-                val item = items[idx]
-                Chip(
-                    label = { Text("${item.senderDisplayName ?: item.senderId}: ${item.bodyText ?: "[${item.kind}]"}") },
-                    onClick = {},
-                    colors = if (item.isOwn) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
-                )
+    val timelineItems = items.map { it.toTimelineItem() }
+    val header = buildString {
+        append(stringResource(R.string.thread))
+        if (roomDisplayName.isNotBlank()) append(" · ").append(roomDisplayName)
+    }
+
+    RoomView(
+        state = RoomViewState(
+            timelineKey = "$roomId/$threadRootEventId",
+            displayName = header,
+            items = timelineItems,
+            composerContextLabel = null,
+            isLoading = timelineItems.isEmpty(),
+        ),
+        onMessageSelected = onMessageSelected,
+        // No nested-thread navigation inside a thread.
+        onOpenThread = null,
+        onLongPressMessage = { item -> tts.speak(item.displayText()) },
+        onReact = {
+            timelineItems.lastOrNull()?.let { lastItem ->
+                onMessageSelected(lastItem.eventId)
             }
-        }
-        ComposerBar(
-            onSend = { text ->
-                scope.launch {
-                    bridge.send {
-                        WatchCommand.SendText(
-                            requestId = it,
-                            roomId = roomId,
-                            threadRootEventId = threadRootEventId,
-                            text = text,
-                            clientTsMs = System.currentTimeMillis(),
-                        )
-                    }
-                }
-            },
-            onDictate = {
-                activity.launchDictation { dictated ->
-                    if (!dictated.isNullOrBlank()) {
-                        scope.launch {
-                            bridge.send {
-                                WatchCommand.SendText(
-                                    requestId = it,
-                                    roomId = roomId,
-                                    threadRootEventId = threadRootEventId,
-                                    text = dictated,
-                                    source = io.element.android.watchbridge.contract.WatchSendSource.DICTATION,
-                                    clientTsMs = System.currentTimeMillis(),
-                                )
-                            }
+        },
+        onReply = {
+            activity.launchDictation { dictated ->
+                if (!dictated.isNullOrBlank()) {
+                    scope.launch {
+                        bridge.send {
+                            WatchCommand.SendText(
+                                requestId = it,
+                                roomId = roomId,
+                                threadRootEventId = threadRootEventId,
+                                text = dictated,
+                                source = WatchSendSource.DICTATION,
+                                clientTsMs = System.currentTimeMillis(),
+                            )
                         }
                     }
                 }
-            },
-            onVoice = null,
-        )
-    }
+            }
+        },
+        onVoice = {
+            activity.startActivity(
+                Intent(activity, VoiceRecorderActivity::class.java)
+                    .putExtra("roomId", roomId)
+                    .putExtra("threadRootEventId", threadRootEventId),
+            )
+        },
+    )
 }
+
+private fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimelineItem(
+    eventId = eventId,
+    roomId = roomId,
+    senderId = senderId,
+    senderDisplayName = senderDisplayName,
+    timestampMs = timestampMs,
+    kind = kind,
+    bodyText = bodyText,
+    formattedText = null,
+    isOwn = isOwn,
+    isEdited = false,
+    hasThread = false,
+    threadRootEventId = threadRootEventId,
+    threadReplyCount = 0,
+    reactions = reactions,
+    voiceMessageMeta = voiceMessageMeta,
+    readableByTts = true,
+    threadLastReplyText = null,
+)

@@ -47,6 +47,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.toEventOrTran
 import io.element.android.services.appnavstate.api.currentSessionId
 import io.element.android.watchbridge.ElementXWatchPort
 import io.element.android.watchbridge.WatchBridgeDispatcher
+import io.element.android.watchbridge.WatchCompanionSettingsStore
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchPlaybackDescriptor
 import io.element.android.watchbridge.contract.WatchReactionSummary
@@ -87,6 +88,15 @@ object ElementXWatchBridgeRuntime {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()
     private var activeBridge: ActiveBridge? = null
+    private var _settingsStore: WatchCompanionSettingsStore? = null
+
+    /** Lazily initialized settings store. Safe to access from any thread. */
+    fun settingsStore(context: Context): WatchCompanionSettingsStore {
+        _settingsStore?.let { return it }
+        return synchronized(this) {
+            _settingsStore ?: WatchCompanionSettingsStore(context.applicationContext).also { _settingsStore = it }
+        }
+    }
 
     fun start(context: Context) {
         val appContext = context.applicationContext
@@ -106,19 +116,35 @@ object ElementXWatchBridgeRuntime {
     }
 
     private suspend fun getOrCreateDispatcher(context: Context): WatchBridgeDispatcher? = mutex.withLock {
+        Timber.d("WatchBridge initializing dispatcher")
         val graph = ((context.applicationContext as? DependencyInjectionGraphOwner)?.graph as? AppGraph)
-            ?: return@withLock null
-        val sessionId = graph.activeSessionId() ?: return@withLock null
+        if (graph == null) {
+            Timber.e("WatchBridge graph is null")
+            return@withLock null
+        }
+        val sessionId = graph.activeSessionId()
+        if (sessionId == null) {
+            Timber.e("WatchBridge sessionId is null")
+            return@withLock null
+        }
         activeBridge?.takeIf { it.sessionId == sessionId }?.let { return@withLock it.dispatcher }
 
         activeBridge?.dispatcher?.stop()
-        val client = graph.matrixClientProvider.getOrRestore(sessionId)
-            .onFailure { Timber.w(it, "Unable to restore Matrix session for WatchBridge") }
-            .getOrNull() ?: return@withLock null
+        val clientResult = graph.matrixClientProvider.getOrRestore(sessionId)
+        if (clientResult.isFailure) {
+            Timber.e(clientResult.exceptionOrNull(), "WatchBridge matrix client restoration failed")
+            return@withLock null
+        }
+        val client = clientResult.getOrNull()
+        if (client == null) {
+            Timber.e("WatchBridge matrix client is null after restore")
+            return@withLock null
+        }
         val dispatcher = WatchBridgeDispatcher(
             port = MatrixRoomListWatchPort(client),
             transport = PlayServicesWatchTransport(context),
             scope = client.sessionCoroutineScope,
+            settingsStore = settingsStore(context),
         )
         dispatcher.start()
         activeBridge = ActiveBridge(sessionId, dispatcher)
@@ -175,7 +201,7 @@ private class MatrixRoomListWatchPort(
         return WatchRoomSummary(
             roomId = roomId,
             displayName = info.name ?: info.canonicalAlias?.value ?: roomId,
-            avatarUri = info.avatarUrl,
+            avatarUri = info.avatarUrl?.mxcToHttpThumbnail(64),
             kind = info.watchKind(),
             isEncrypted = info.isEncrypted == true,
             canSendMessages = true,
@@ -187,6 +213,11 @@ private class MatrixRoomListWatchPort(
     override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = flow {
         val room = joinedRoom(roomId) ?: return@flow
         room.subscribeToSync()
+        // Kick off backward pagination to ensure items are loaded (especially for encrypted rooms
+        // where the live timeline may initially be empty until decryption completes).
+        val timeline = room.liveTimeline
+        runCatching { timeline.paginate(io.element.android.libraries.matrix.api.timeline.Timeline.PaginationDirection.BACKWARDS) }
+            .onFailure { Timber.d(it, "WatchBridge initial back-paginate for room=%s", roomId) }
         emitAll(
             room.liveTimeline.timelineItems.map { items ->
                 items.toWatchTimelineItems(roomId)
@@ -287,7 +318,7 @@ private fun RoomSummary.toWatchRoom(): WatchFavoriteRoom {
     return WatchFavoriteRoom(
         roomId = roomId.value,
         displayName = info.name ?: info.canonicalAlias?.value ?: roomId.value,
-        avatarUri = info.avatarUrl,
+        avatarUri = info.avatarUrl?.mxcToHttpThumbnail(64),
         kind = info.watchKind(),
         unreadCount = unreadCount,
         hasMentions = info.numUnreadMentions > 0,
@@ -313,7 +344,7 @@ private fun List<MatrixTimelineItem>.toWatchTimelineItems(roomId: String): List<
 
 private fun List<MatrixTimelineItem>.toWatchThreadItems(roomId: String, threadRootEventId: String): List<WatchThreadItem> = mapNotNull { item ->
     val event = (item as? MatrixTimelineItem.Event)?.event ?: return@mapNotNull null
-    val eventId = event.eventId?.value ?: event.transactionId?.value ?: return@mapNotNull null
+    val eventId = event.eventId?.value ?: return@mapNotNull null
     WatchThreadItem(
         eventId = eventId,
         threadRootEventId = threadRootEventId,
@@ -330,7 +361,7 @@ private fun List<MatrixTimelineItem>.toWatchThreadItems(roomId: String, threadRo
 }
 
 private fun EventTimelineItem.toWatchTimelineItem(roomId: String): WatchTimelineItem? {
-    val eventId = eventId?.value ?: transactionId?.value ?: return null
+    val eventId = eventId?.value ?: return null
     val threadInfo = threadInfo()
     val threadRootEventId = when (threadInfo) {
         is EventThreadInfo.ThreadRoot -> this.eventId?.value
@@ -344,8 +375,8 @@ private fun EventTimelineItem.toWatchTimelineItem(roomId: String): WatchTimeline
         senderDisplayName = senderProfile.displayName(),
         timestampMs = timestamp,
         kind = content.watchKind(),
-        bodyText = content.previewText(),
-        formattedText = (content as? MessageContent)?.type?.formattedBody(),
+        bodyText = content.previewText()?.take(300),
+        formattedText = (content as? MessageContent)?.type?.formattedBody()?.take(500),
         isOwn = isOwn,
         isEdited = (content as? MessageContent)?.isEdited == true,
         hasThread = threadInfo is EventThreadInfo.ThreadRoot,
@@ -419,10 +450,39 @@ private fun EventContent.voiceMeta(): WatchVoiceMeta? {
         waveform = waveform,
         mimeType = voice.info?.mimetype ?: "audio/ogg",
         sizeBytes = voice.info?.size ?: 0L,
+        audioUrl = voice.source.safeUrl.mxcToHttpDownload(),
     )
 }
 
 private fun ProfileDetails.displayName(): String? = when (this) {
     is ProfileDetails.Ready -> displayName
     else -> null
+}
+
+/**
+ * Convert an `mxc://server/mediaid` URL to a standard Matrix thumbnail HTTP URL.
+ * Returns the original URL unchanged if it's not an mxc:// URL.
+ */
+private fun String.mxcToHttpThumbnail(size: Int): String {
+    if (!startsWith("mxc://")) return this
+    val path = removePrefix("mxc://")
+    val parts = path.split("/", limit = 2)
+    if (parts.size < 2) return this
+    val server = parts[0]
+    val mediaId = parts[1]
+    return "https://$server/_matrix/media/v3/thumbnail/$server/$mediaId?width=$size&height=$size&method=crop"
+}
+
+/**
+ * Convert an `mxc://server/mediaid` URL to a standard Matrix download HTTP URL.
+ * Returns null if it's not an mxc:// URL.
+ */
+private fun String.mxcToHttpDownload(): String? {
+    if (!startsWith("mxc://")) return null
+    val path = removePrefix("mxc://")
+    val parts = path.split("/", limit = 2)
+    if (parts.size < 2) return null
+    val server = parts[0]
+    val mediaId = parts[1]
+    return "https://$server/_matrix/media/v3/download/$server/$mediaId"
 }

@@ -17,6 +17,7 @@ object WatchDataPaths {
     const val ACK: String = "${WatchProtocol.DATA_PATH_PREFIX}/ack"
     const val VOICE_DRAFT_CHANNEL: String = "${WatchProtocol.DATA_PATH_PREFIX}/voice/draft"
     const val VOICE_PLAYBACK_CHANNEL: String = "${WatchProtocol.DATA_PATH_PREFIX}/voice/playback"
+    const val SETTINGS: String = "${WatchProtocol.DATA_PATH_PREFIX}/settings"
 
     fun roomTimeline(roomId: String): String = "$ROOM_TIMELINE/$roomId"
     fun thread(roomId: String, threadRootEventId: String): String = "$THREAD/$roomId/$threadRootEventId"

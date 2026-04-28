@@ -7,41 +7,21 @@
 
 package io.element.android.wearapp.ui.room
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import android.content.Intent
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchCommand
-import io.element.android.watchbridge.contract.WatchSync
+import io.element.android.watchbridge.contract.WatchLongPressMessageAction
+import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.watchbridge.contract.WatchTimelineItem
-import io.element.android.watchbridge.contract.WatchTimelineItemKind
-import io.element.android.wearapp.R
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
-import io.element.android.wearapp.ui.common.ComposerBar
-import kotlinx.coroutines.flow.filterIsInstance
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.launch
-
-private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "🎉", "🙏", "👀")
 
 @Composable
 fun RoomScreen(
@@ -49,125 +29,92 @@ fun RoomScreen(
     roomId: String,
     activity: WearMainActivity,
     onOpenThread: (String) -> Unit,
+    onMessageSelected: (String) -> Unit,
 ) {
-    var items by remember { mutableStateOf<List<WatchTimelineItem>>(emptyList()) }
+    val favoriteRooms by bridge.favorites.collectAsState()
+    val settings by bridge.companionSettings.collectAsState()
+    val roomState = rememberRoomTimelineState(
+        bridge = bridge,
+        roomId = roomId,
+    )
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
+    val fallbackRoom = favoriteRooms.firstOrNull { it.roomId == roomId }
+    val displayName = roomState.summary?.displayName
+        ?: fallbackRoom?.displayName
+        ?: ""
 
-    LaunchedEffect(roomId) {
-        bridge.send { id -> WatchCommand.OpenRoom(requestId = id, roomId = roomId) }
-        bridge.syncEvents.filterIsInstance<WatchSync.TimelineDelta>()
-            .collect { delta ->
-                if (delta.roomId == roomId) {
-                    val merged = (items + delta.items)
-                        .filter { it.eventId !in delta.removedEventIds }
-                        .distinctBy { it.eventId }
-                        .sortedBy { it.timestampMs }
-                        .takeLast(100)
-                    items = merged
+    RoomView(
+        state = RoomViewState(
+            timelineKey = roomId,
+            displayName = displayName,
+            items = roomState.items,
+            isLoading = !roomState.hasReceivedDelta,
+        ),
+        onMessageSelected = onMessageSelected,
+        onOpenThread = onOpenThread,
+        onLongPressMessage = { item ->
+            when (settings.longPressMessageAction) {
+                WatchLongPressMessageAction.READ_ALOUD -> tts.speak(item.displayText())
+                WatchLongPressMessageAction.CREATE_THREAD -> {
+                    val rootId = item.threadRootEventId ?: item.eventId
+                    onOpenThread(rootId)
                 }
-            }
-    }
-
-    val listState = rememberScalingLazyListState()
-    Column(modifier = Modifier.fillMaxSize()) {
-        ScalingLazyColumn(
-            state = listState,
-            modifier = Modifier.padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            item { ListHeader { Text(roomId) } }
-            items(count = items.size, key = { idx -> items[idx].eventId }) { idx ->
-                TimelineItemRow(
-                    item = items[idx],
-                    onOpenThread = onOpenThread,
-                    onReact = { ev, key ->
-                        scope.launch {
-                            bridge.send {
-                                WatchCommand.SendReaction(requestId = it, roomId = roomId, eventId = ev, reactionKey = key)
-                            }
-                        }
-                    },
-                    onReadAloud = { text -> tts.speak(text) },
-                )
-            }
-        }
-        ComposerBar(
-            onSend = { text ->
-                scope.launch {
-                    bridge.send {
-                        WatchCommand.SendText(
-                            requestId = it,
-                            roomId = roomId,
-                            text = text,
-                            clientTsMs = System.currentTimeMillis(),
-                        )
-                    }
-                }
-            },
-            onDictate = {
-                activity.launchDictation { dictated ->
-                    if (!dictated.isNullOrBlank()) {
-                        scope.launch {
-                            bridge.send {
-                                WatchCommand.SendText(
-                                    requestId = it,
-                                    roomId = roomId,
-                                    text = dictated,
-                                    source = io.element.android.watchbridge.contract.WatchSendSource.DICTATION,
-                                    clientTsMs = System.currentTimeMillis(),
-                                )
+                WatchLongPressMessageAction.REPLY_EMOJI -> onMessageSelected(item.eventId)
+                WatchLongPressMessageAction.REPLY_TEXT -> {
+                    activity.launchDictation { dictated ->
+                        if (!dictated.isNullOrBlank()) {
+                            scope.launch {
+                                bridge.send {
+                                    WatchCommand.SendText(
+                                        requestId = it,
+                                        roomId = roomId,
+                                        text = dictated,
+                                        source = WatchSendSource.DICTATION,
+                                        clientTsMs = System.currentTimeMillis(),
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            },
-            onVoice = {
-                activity.startActivity(
-                    android.content.Intent(activity, io.element.android.wearapp.ui.voice.VoiceRecorderActivity::class.java)
-                        .putExtra("roomId", roomId),
-                )
-            },
-        )
-    }
-}
-
-@Composable
-private fun TimelineItemRow(
-    item: WatchTimelineItem,
-    onOpenThread: (String) -> Unit,
-    onReact: (eventId: String, reactionKey: String) -> Unit,
-    onReadAloud: (String) -> Unit,
-) {
-    val line = "${item.senderDisplayName ?: item.senderId}: ${item.bodyText ?: "[${item.kind}]"}"
-    Chip(
-        label = { Text(line) },
-        onClick = {
-            if (item.kind == WatchTimelineItemKind.TEXT && item.bodyText != null) onReadAloud(item.bodyText!!)
-        },
-        secondaryLabel = {
-            val parts = buildList {
-                if (item.hasThread) add(stringResource(R.string.thread) + " (${item.threadReplyCount})")
-                item.reactions.forEach { add("${it.key} ${it.count}") }
+                WatchLongPressMessageAction.REPLY_VOICE -> {
+                    activity.startActivity(
+                        Intent(activity, VoiceRecorderActivity::class.java)
+                            .putExtra("roomId", roomId)
+                            .putExtra("inReplyToEventId", item.eventId),
+                    )
+                }
             }
-            if (parts.isNotEmpty()) Text(parts.joinToString(" · "))
         },
-        colors = if (item.isOwn) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
-    )
-    if (item.hasThread && item.threadRootEventId != null) {
-        Chip(
-            label = { Text(stringResource(R.string.thread)) },
-            onClick = { onOpenThread(item.threadRootEventId!!) },
-            colors = ChipDefaults.secondaryChipColors(),
-        )
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        QUICK_REACTIONS.forEach { key ->
-            Chip(
-                label = { Text(key) },
-                onClick = { onReact(item.eventId, key) },
-                colors = ChipDefaults.secondaryChipColors(),
+        onReact = {
+            // Navigate to message detail of the last message where reactions can be picked
+            roomState.items.lastOrNull()?.let { lastItem ->
+                onMessageSelected(lastItem.eventId)
+            }
+        },
+        onReply = {
+            activity.launchDictation { dictated ->
+                if (!dictated.isNullOrBlank()) {
+                    scope.launch {
+                        bridge.send {
+                            WatchCommand.SendText(
+                                requestId = it,
+                                roomId = roomId,
+                                text = dictated,
+                                source = WatchSendSource.DICTATION,
+                                clientTsMs = System.currentTimeMillis(),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        onVoice = {
+            activity.startActivity(
+                Intent(activity, VoiceRecorderActivity::class.java)
+                    .putExtra("roomId", roomId),
             )
-        }
-    }
+        },
+    )
 }

@@ -7,15 +7,20 @@
 
 package io.element.android.wearapp.ui.favorites
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,9 +34,9 @@ import androidx.wear.compose.material.ListHeader
 import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
-import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.ui.common.AvatarBadge
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val ROOM_PAGE_SIZE = 30
@@ -41,6 +46,7 @@ private const val LOAD_MORE_THRESHOLD = 6
 fun FavoritesScreen(
     bridge: WearBridgeClient,
     onRoomSelected: (String) -> Unit,
+    onLongPressRoom: ((WatchFavoriteRoom) -> Unit)? = null,
 ) {
     val rooms by bridge.favorites.collectAsState()
     val reachable by bridge.phoneReachable.collectAsState()
@@ -70,10 +76,9 @@ fun FavoritesScreen(
     val recentRooms = rooms.filterNot { it.isFavorite }
     ScalingLazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        item { ListHeader { Text(text = androidx.compose.ui.res.stringResource(R.string.rooms_title)) } }
         if (!reachable) {
             item { Text(androidx.compose.ui.res.stringResource(R.string.no_phone)) }
         } else if (rooms.isEmpty()) {
@@ -82,32 +87,81 @@ fun FavoritesScreen(
             if (favoriteRooms.isNotEmpty()) {
                 item { ListHeader { Text(text = androidx.compose.ui.res.stringResource(R.string.favorites_title)) } }
                 items(favoriteRooms, key = { "favorite-${it.roomId}" }) { room ->
-                    FavoriteRoomChip(room) { onRoomSelected(room.roomId) }
+                    FavoriteRoomChip(
+                        room = room,
+                        onClick = { onRoomSelected(room.roomId) },
+                        onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
+                    )
                 }
             }
             if (recentRooms.isNotEmpty()) {
                 item { ListHeader { Text(text = androidx.compose.ui.res.stringResource(R.string.recent_rooms_title)) } }
                 items(recentRooms, key = { "recent-${it.roomId}" }) { room ->
-                    FavoriteRoomChip(room) { onRoomSelected(room.roomId) }
+                    FavoriteRoomChip(
+                        room = room,
+                        onClick = { onRoomSelected(room.roomId) },
+                        onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
+                    )
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FavoriteRoomChip(room: WatchFavoriteRoom, onClick: () -> Unit) {
+private fun FavoriteRoomChip(
+    room: WatchFavoriteRoom,
+    onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+) {
     val subtitle = buildString {
-        append(if (room.kind == WatchRoomKind.DM) "DM" else "Room")
-        if (room.isFavorite) append(" · ★")
-        if (room.unreadCount > 0) append(" · ${room.unreadCount}")
-        if (room.hasMentions) append(" · @")
-        room.lastPreviewText?.let { append(" · $it") }
+        if (room.isFavorite) append("★")
+        if (room.unreadCount > 0) {
+            if (isNotEmpty()) append(" · ")
+            append(room.unreadCount)
+        }
+        if (room.hasMentions) {
+            if (isNotEmpty()) append(" · ")
+            append("@")
+        }
+        room.lastPreviewText?.let {
+            if (isNotEmpty()) append(" · ")
+            append(it)
+        }
     }
     Chip(
-        label = { Text(room.displayName) },
-        secondaryLabel = { Text(subtitle) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress,
+                role = Role.Button,
+            ),
+        icon = {
+            AvatarBadge(
+                displayName = room.displayName,
+                avatarUrl = room.avatarUri,
+                modifier = Modifier.size(28.dp),
+            )
+        },
+        label = {
+            Text(
+                text = room.displayName,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        },
+        secondaryLabel = if (subtitle.isNotBlank()) {
+            {
+                Text(
+                    text = subtitle,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+        } else null,
         onClick = onClick,
-        colors = ChipDefaults.primaryChipColors(),
+        colors = if (room.isFavorite) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
     )
 }

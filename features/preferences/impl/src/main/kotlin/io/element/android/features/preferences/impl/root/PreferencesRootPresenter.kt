@@ -162,6 +162,7 @@ class PreferencesRootPresenter(
             showLabsItem = showLabsItem,
             directLogoutState = directLogoutState,
             snackbarMessage = snackbarMessage,
+            showWatchCompanionSettings = true,
             eventSink = ::handleEvent,
         )
     }

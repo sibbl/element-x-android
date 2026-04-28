@@ -74,6 +74,7 @@ fun PreferencesRootView(
     onOpenBlockedUsers: () -> Unit,
     onSignOutClick: () -> Unit,
     onDeactivateClick: () -> Unit,
+    onOpenWatchCompanionSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = rememberSnackbarHostState(snackbarMessage = state.snackbarMessage)
@@ -131,6 +132,10 @@ fun PreferencesRootView(
                 onSignOutClick = onSignOutClick,
                 onDeactivateClick = onDeactivateClick,
             )
+            // Watch companion settings (additive; feature-flagged on WatchBridgeFeatureFlag)
+            if (state.showWatchCompanionSettings) {
+                WatchCompanionSettingsEntry(onOpenWatchSettings = onOpenWatchCompanionSettings)
+            }
             // Version
             Footer(
                 version = state.version,
@@ -359,6 +364,15 @@ private fun ColumnScope.Footer(
         text = version,
         style = ElementTheme.typography.fontBodySmRegular,
         color = ElementTheme.colors.textSecondary,
+    )
+}
+
+@Composable
+private fun WatchCompanionSettingsEntry(onOpenWatchSettings: () -> Unit) {
+    ListItem(
+        headlineContent = { Text("Wear OS Companion") },
+        leadingContent = ListItemContent.Icon(IconSource.Vector(CompoundIcons.Devices())),
+        onClick = onOpenWatchSettings,
     )
 }
 

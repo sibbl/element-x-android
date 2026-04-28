@@ -20,6 +20,7 @@ import com.google.android.gms.wearable.Wearable
 import io.element.android.watchbridge.contract.WatchAck
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchCommand
+import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchPayload
 import io.element.android.watchbridge.contract.WatchProtocol
@@ -65,6 +66,9 @@ class WearBridgeClient(private val context: Context) {
     private val _favorites = MutableStateFlow<List<io.element.android.watchbridge.contract.WatchFavoriteRoom>>(emptyList())
     val favorites: StateFlow<List<io.element.android.watchbridge.contract.WatchFavoriteRoom>> = _favorites.asStateFlow()
 
+    private val _companionSettings = MutableStateFlow(WatchCompanionSettings())
+    val companionSettings: StateFlow<WatchCompanionSettings> = _companionSettings.asStateFlow()
+
     private val _syncEvents = MutableSharedFlow<WatchPayload>(extraBufferCapacity = 64)
     val syncEvents = _syncEvents.asSharedFlow()
 
@@ -73,6 +77,25 @@ class WearBridgeClient(private val context: Context) {
 
     private val _phoneReachable = MutableStateFlow(false)
     val phoneReachable: StateFlow<Boolean> = _phoneReachable.asStateFlow()
+
+    /** In-memory cache of last-known timeline items per room. Survives navigation. */
+    private val _timelineCache = mutableMapOf<String, List<io.element.android.watchbridge.contract.WatchTimelineItem>>()
+    /** In-memory cache of last-known room summary per room. */
+    private val _summaryCache = mutableMapOf<String, io.element.android.watchbridge.contract.WatchRoomSummary>()
+
+    fun getCachedTimeline(roomId: String): List<io.element.android.watchbridge.contract.WatchTimelineItem> =
+        _timelineCache[roomId].orEmpty()
+
+    fun getCachedSummary(roomId: String): io.element.android.watchbridge.contract.WatchRoomSummary? =
+        _summaryCache[roomId]
+
+    fun cacheTimeline(roomId: String, items: List<io.element.android.watchbridge.contract.WatchTimelineItem>) {
+        _timelineCache[roomId] = items
+    }
+
+    fun cacheSummary(roomId: String, summary: io.element.android.watchbridge.contract.WatchRoomSummary) {
+        _summaryCache[roomId] = summary
+    }
 
     private val phoneCapabilityListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
         if (capabilityInfo.name == WatchProtocol.PHONE_CAPABILITY) {
@@ -197,6 +220,10 @@ class WearBridgeClient(private val context: Context) {
             is WatchSync.FavoritesSnapshot -> {
                 Timber.d("received favorites snapshot count=%d", p.rooms.size)
                 _favorites.value = p.rooms
+            }
+            is WatchSync.SettingsUpdate -> {
+                Timber.d("received companion settings update")
+                _companionSettings.value = p.settings
             }
             is WatchAck -> {
                 Timber.d("received ack=%s requestId=%s", p::class.simpleName, p.requestId)

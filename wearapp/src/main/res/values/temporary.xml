@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="composer_reply">Reply</string>
+    <string name="composer_voice">Voice</string>
+    <string name="composer_reply_to">Reply to %1$s</string>
+    <string name="a11y_composer_reply">Reply to message</string>
+    <string name="a11y_composer_voice">Record voice message</string>
+    <string name="a11y_composer_react">React with emoji</string>
+    <string name="a11y_scroll_to_bottom">Scroll to latest message</string>
+    <string name="screen_room_loading_title">Conversation</string>
+    <string name="screen_room_loading_messages">Loading messages…</string>
+    <string name="screen_favorites_recent_contacts_title">Recent contacts</string>
+    <string name="screen_message_detail_loading">Opening message…</string>
+    <string name="screen_message_detail_open_thread">Open thread</string>
+    <string name="screen_message_detail_start_thread">Start thread</string>
+    <string name="screen_message_detail_reactions">Quick reactions</string>
+    <string name="screen_thread_title">Thread</string>
+    <string name="thread_indicator_replies">%1$d replies</string>
+    <string name="timeline_voice_message">Voice message</string>
+    <string name="play_voice_message">Play voice message</string>
+    <string name="timeline_image">Image</string>
+    <string name="timeline_video">Video</string>
+    <string name="timeline_file">File</string>
+    <string name="timeline_redacted">(message removed)</string>
+    <string name="tile_recent_contacts_label">Recent contacts</string>
+</resources>

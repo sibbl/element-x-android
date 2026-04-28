@@ -15,6 +15,9 @@ This fork adds a **companion-only Wear OS implementation** for Element X Android
 - New additive modules: `:watchbridge-contract`, `:watchbridge`, `:watchbridge-testing`, and `:wearapp`
 - Wear companion foundation for favorites, room + thread reading, text send, dictation, quick reactions, TTS, and voice-message handoff to the phone
 - Companion protocol + transport DTOs for watch ↔ phone communication, plus dispatcher and transport scaffolding
+- Voice message playback on the watch via `MediaPlayer` streaming from the Matrix media API
+- In-memory timeline caching so returning to a room shows cached messages instantly instead of a loading indicator
+- Tile improvements: removed DM-only filter, added dark background, relaxed activity filters for better contact visibility
 - Fork-specific docs under `docs/watch-companion/` describing architecture, rollout phases, and touched upstream files
 - Test/build stabilization fixes discovered while wiring the fork, including login nightly test config and stale startchat/push worker tests
 

@@ -18,6 +18,7 @@ import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.transport.WatchTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -37,11 +38,13 @@ class WatchBridgeDispatcher(
     private val port: ElementXWatchPort,
     private val transport: WatchTransport,
     private val scope: CoroutineScope,
+    private val settingsStore: WatchCompanionSettingsStore? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
     private val inflight = LruBoundedMap<String, Job>(capacity = 64)
     private var favoritesJob: Job? = null
+    private var settingsJob: Job? = null
     private val roomJobs = mutableMapOf<String, Job>()
     private val threadJobs = mutableMapOf<String, Job>()
 
@@ -61,10 +64,26 @@ class WatchBridgeDispatcher(
                 }.onFailure { Timber.w(it, "publish favorites failed") }
             }
         }
+        // Publish settings to the watch whenever they change.
+        settingsJob?.cancel()
+        settingsJob = settingsStore?.let { store ->
+            scope.launch {
+                store.settings.collectLatest { settings ->
+                    Timber.d("publishing companion settings to watch")
+                    runCatching {
+                        transport.publishSync(
+                            path = WatchDataPaths.SETTINGS,
+                            envelope = envelope(WatchSync.SettingsUpdate(settings)),
+                        )
+                    }.onFailure { Timber.w(it, "publish settings failed") }
+                }
+            }
+        }
     }
 
     fun stop() {
         favoritesJob?.cancel(); favoritesJob = null
+        settingsJob?.cancel(); settingsJob = null
         roomJobs.values.forEach { it.cancel() }; roomJobs.clear()
         threadJobs.values.forEach { it.cancel() }; threadJobs.clear()
     }
@@ -140,21 +159,62 @@ class WatchBridgeDispatcher(
                 path = WatchDataPaths.ROOM_SUMMARY,
                 envelope = envelope(WatchSync.RoomSummary(summary)),
             )
+            // Publish an initial empty delta so the watch transitions from "loading" to "empty"
+            // quickly if the timeline flow takes time to emit (e.g. encrypted rooms pending key delivery).
+            var hasEmitted = false
+            val initialDeltaJob = launch {
+                delay(3000L)
+                if (!hasEmitted) {
+                    Timber.d("openRoom sending initial empty delta for room=%s", cmd.roomId)
+                    runCatching {
+                        transport.publishSync(
+                            path = WatchDataPaths.roomTimeline(cmd.roomId),
+                            envelope = envelope(
+                                WatchSync.TimelineDelta(
+                                    roomId = cmd.roomId,
+                                    fromTimelineVersion = -1L,
+                                    toTimelineVersion = 0L,
+                                    items = emptyList(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
             var lastVersion = -1L
             port.roomTimeline(cmd.roomId, cmd.limit).collectLatest { items ->
-                val toVersion = summary.timelineVersion
-                transport.publishSync(
-                    path = WatchDataPaths.roomTimeline(cmd.roomId),
-                    envelope = envelope(
-                        WatchSync.TimelineDelta(
-                            roomId = cmd.roomId,
-                            fromTimelineVersion = lastVersion,
-                            toTimelineVersion = toVersion,
-                            items = items,
-                        ),
-                    ),
-                )
-                lastVersion = toVersion
+                hasEmitted = true
+                initialDeltaJob.cancel()
+                // Truncate items if the full list would exceed the transport payload limit.
+                // Try the full list first, then progressively smaller subsets.
+                var toPublish = items
+                var published = false
+                while (!published && toPublish.isNotEmpty()) {
+                    val toVersion = summary.timelineVersion
+                    runCatching {
+                        transport.publishSync(
+                            path = WatchDataPaths.roomTimeline(cmd.roomId),
+                            envelope = envelope(
+                                WatchSync.TimelineDelta(
+                                    roomId = cmd.roomId,
+                                    fromTimelineVersion = lastVersion,
+                                    toTimelineVersion = toVersion,
+                                    items = toPublish,
+                                ),
+                            ),
+                        )
+                        lastVersion = toVersion
+                        published = true
+                    }.onFailure { e ->
+                        Timber.w(e, "Timeline publish failed for room=%s items=%d, reducing", cmd.roomId, toPublish.size)
+                        // Keep the most recent half of items and retry.
+                        val reduced = toPublish.size / 2
+                        toPublish = if (reduced > 0) toPublish.takeLast(reduced) else emptyList()
+                    }
+                }
+                if (!published && items.isNotEmpty()) {
+                    Timber.e("Unable to publish any timeline items for room=%s", cmd.roomId)
+                }
             }
             ack(WatchAck.Sent(cmd.requestId))
         }

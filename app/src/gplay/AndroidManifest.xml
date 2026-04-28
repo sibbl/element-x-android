@@ -37,6 +37,12 @@
             </intent-filter>
         </service>
 
+        <activity
+            android:name="io.element.android.x.watchbridge.WearCompanionSettingsActivity"
+            android:exported="false"
+            android:label="Wear OS Companion"
+            android:theme="@style/Theme.Material3.Light" />
+
     </application>
 
 </manifest>

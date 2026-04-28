@@ -39,7 +39,9 @@ class WatchBridgeCapabilityInitializer : Initializer<Unit> {
             }
     }
 
-    override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()
+    override fun dependencies(): List<Class<out Initializer<*>>> = listOf(
+        androidx.lifecycle.ProcessLifecycleInitializer::class.java
+    )
 
     private fun Throwable.isDuplicateCapability(): Boolean =
         this is ApiException && statusCode == DUPLICATE_CAPABILITY_STATUS_CODE

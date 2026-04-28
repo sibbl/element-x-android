@@ -64,6 +64,7 @@ data class WatchTimelineItem(
     val reactions: List<WatchReactionSummary> = emptyList(),
     val voiceMessageMeta: WatchVoiceMeta? = null,
     val readableByTts: Boolean = true,
+    val threadLastReplyText: String? = null,
 )
 
 /** Reactions aggregated per reaction key. */
@@ -81,6 +82,7 @@ data class WatchVoiceMeta(
     val waveform: List<Int> = emptyList(),
     val mimeType: String,
     val sizeBytes: Long,
+    val audioUrl: String? = null,
 )
 
 /** Projection for a thread's root context shown in the indicator. */

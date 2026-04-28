@@ -9,6 +9,7 @@
 package io.element.android.features.preferences.impl.root
 
 import android.app.Activity
+import android.content.Intent
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -101,7 +102,14 @@ class PreferencesRootNode(
                     callback.startSignOutFlow()
                 }
             },
-            onDeactivateClick = callback::startAccountDeactivationFlow
+            onDeactivateClick = callback::startAccountDeactivationFlow,
+            onOpenWatchCompanionSettings = {
+                runCatching {
+                    val intent = Intent()
+                        .setClassName(activity, "io.element.android.x.watchbridge.WearCompanionSettingsActivity")
+                    activity.startActivity(intent)
+                }
+            },
         )
 
         directLogoutView.Render(state = state.directLogoutState)

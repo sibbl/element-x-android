@@ -69,4 +69,10 @@ sealed interface WatchSync : WatchPayload {
     @Serializable
     @SerialName("sync.fullRefresh")
     data object FullRefresh : WatchSync
+
+    @Serializable
+    @SerialName("sync.settings")
+    data class SettingsUpdate(
+        val settings: WatchCompanionSettings,
+    ) : WatchSync
 }

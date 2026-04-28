@@ -15,6 +15,8 @@ one-line rationale. Keep this file in sync with every PR.
 | `app/src/gplay/res/values/wear.xml` | low | Add the GPlay-only static Wear Data Layer phone capability resource. |
 | `wearapp/src/main/AndroidManifest.xml` | low | Declare the watch capability and use a local launcher icon that parses correctly on Wear OS. |
 | `wearapp/src/main/res/values/wear.xml` | low | Add the static Wear Data Layer watch capability resource. |
+| `wearapp/src/main/kotlin/io/element/android/wearapp/ui/WearMainActivity.kt` | low | Add a watch-only message-detail route so tapping timeline items opens details instead of triggering side effects. |
+| `wearapp/src/main/kotlin/io/element/android/wearapp/ui/room/RoomScreen.kt` | medium | Replace the raw room-id loading state with a room-aware loading shell and remove inline quick-reaction rows from the timeline list. |
 
 ## Planned (Phase 1 — not yet applied)
 
