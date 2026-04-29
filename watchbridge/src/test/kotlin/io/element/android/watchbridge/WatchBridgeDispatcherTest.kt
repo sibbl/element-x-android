@@ -12,6 +12,7 @@ import io.element.android.watchbridge.contract.WatchAck
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
+import io.element.android.watchbridge.contract.WatchMediaPreview
 import io.element.android.watchbridge.contract.WatchPlaybackDescriptor
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchRoomSummary
@@ -55,9 +56,12 @@ class WatchBridgeDispatcherTest {
         private val summary: WatchRoomSummary? = null,
         private val timeline: List<WatchTimelineItem> = emptyList(),
         private val thread: List<WatchThreadItem> = emptyList(),
+        private val timelineFlow: Flow<List<WatchTimelineItem>>? = null,
+        private val threadFlow: Flow<List<WatchThreadItem>>? = null,
         var sendTextResult: Result<String> = Result.success("\$ev"),
         var sendReactionResult: Result<Unit> = Result.success(Unit),
         var sendVoiceResult: Result<String> = Result.success(""),
+        var roomMediaPreviewResult: Result<ByteArray?> = Result.success(null),
         val avatarThumbnailResults: ArrayDeque<Result<ByteArray?>> = ArrayDeque(),
     ) : ElementXWatchPort {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
@@ -67,8 +71,9 @@ class WatchBridgeDispatcherTest {
             ensureLoadedCalls += minimumCount
         }
         override suspend fun roomSummary(roomId: String): WatchRoomSummary? = summary
-        override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = flowOf(timeline)
-        override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = flowOf(thread)
+        override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = timelineFlow ?: flowOf(timeline)
+        override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = threadFlow ?: flowOf(thread)
+        override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> = roomMediaPreviewResult
         override suspend fun sendText(
             roomId: String,
             threadRootEventId: String?,
@@ -312,6 +317,69 @@ class WatchBridgeDispatcherTest {
 
         assertThat(avatarPayload).isNotNull()
         assertThat(avatarPayload!!.imageBytes?.toList()).containsExactly(7.toByte(), 8.toByte(), 9.toByte()).inOrder()
+    }
+
+    @Test
+    fun `open room publishes media previews with ttl and removed event ids`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val imageItem = WatchTimelineItem(
+            eventId = "image-1",
+            roomId = "!a:s",
+            senderId = "@alice:s",
+            senderDisplayName = "Alice",
+            timestampMs = 2L,
+            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE,
+            bodyText = "Photo",
+            mediaPreview = WatchMediaPreview(widthPx = 200, heightPx = 200, mimeType = "image/jpeg"),
+        )
+        val textItem = WatchTimelineItem(
+            eventId = "text-1",
+            roomId = "!a:s",
+            senderId = "@bob:s",
+            senderDisplayName = "Bob",
+            timestampMs = 1L,
+            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.TEXT,
+            bodyText = "Hello",
+        )
+        val port = StubPort(
+            summary = WatchRoomSummary(
+                roomId = "!a:s",
+                displayName = "Room",
+                kind = WatchRoomKind.GROUP,
+                isEncrypted = false,
+                canSendMessages = true,
+                timelineVersion = 5L,
+                lastSyncTsMs = 0L,
+            ),
+            timelineFlow = flowOf(
+                listOf(textItem, imageItem),
+                listOf(imageItem.copy(isReadMarkerAnchor = true)),
+            ),
+            roomMediaPreviewResult = Result.success(byteArrayOf(4, 5, 6)),
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 100L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.OpenRoom(requestId = "open-media", roomId = "!a:s"),
+            ),
+        )
+        advanceUntilIdle()
+
+        val mediaPublication = transport.publications
+            .singleOrNull { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }
+        val secondTimelineDelta = transport.publications
+            .map { it.second.payload }
+            .filterIsInstance<WatchSync.TimelineDelta>()
+            .last()
+
+        assertThat(mediaPublication).isNotNull()
+        assertThat(mediaPublication!!.second.expiresAtMs).isEqualTo(100L + 7L * 24L * 60L * 60L * 1000L)
+        assertThat((mediaPublication.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
+            .containsExactly(4.toByte(), 5.toByte(), 6.toByte())
+            .inOrder()
+        assertThat(secondTimelineDelta.removedEventIds).containsExactly("text-1")
     }
 
     @Test

@@ -299,6 +299,7 @@ dependencies {
 
     testCommonDependencies(libs)
     testImplementation(projects.libraries.matrix.test)
+    testImplementation(libs.network.mockwebserver)
     testImplementation(projects.services.toolbox.test)
 }
 

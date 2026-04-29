@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 private const val INITIAL_ROOM_LOAD_COUNT = 30
 private const val MAX_AVATAR_SYNC_COUNT = 60
+private const val MEDIA_PREVIEW_TTL_MS = 7L * 24L * 60L * 60L * 1000L
 
 /**
  * The phone-side command dispatcher.
@@ -234,15 +235,37 @@ class WatchBridgeDispatcher(
                     }
                 }
                 var lastVersion = -1L
+                var lastPublishedEventIds = emptySet<String>()
+                val publishedMediaEventIds = mutableSetOf<String>()
                 port.roomTimeline(cmd.roomId, cmd.limit).collectLatest { items ->
                     hasEmitted = true
                     initialDeltaJob.cancel()
+                    if (items.isEmpty()) {
+                        transport.publishSync(
+                            path = WatchDataPaths.roomTimeline(cmd.roomId),
+                            envelope = envelope(
+                                WatchSync.TimelineDelta(
+                                    roomId = cmd.roomId,
+                                    fromTimelineVersion = lastVersion,
+                                    toTimelineVersion = summary.timelineVersion,
+                                    items = emptyList(),
+                                    removedEventIds = lastPublishedEventIds.toList(),
+                                ),
+                            ),
+                        )
+                        lastVersion = summary.timelineVersion
+                        lastPublishedEventIds = emptySet()
+                        publishedMediaEventIds.clear()
+                        return@collectLatest
+                    }
                     // Truncate items if the full list would exceed the transport payload limit.
                     // Try the full list first, then progressively smaller subsets.
                     var toPublish = items
                     var published = false
+                    var publishedItems: List<io.element.android.watchbridge.contract.WatchTimelineItem>? = null
                     while (!published && toPublish.isNotEmpty()) {
                         val toVersion = summary.timelineVersion
+                        val currentEventIds = toPublish.map { it.eventId }.toSet()
                         runCatching {
                             transport.publishSync(
                                 path = WatchDataPaths.roomTimeline(cmd.roomId),
@@ -252,11 +275,13 @@ class WatchBridgeDispatcher(
                                         fromTimelineVersion = lastVersion,
                                         toTimelineVersion = toVersion,
                                         items = toPublish,
+                                        removedEventIds = (lastPublishedEventIds - currentEventIds).toList(),
                                     ),
                                 ),
                             )
                             lastVersion = toVersion
                             published = true
+                            publishedItems = toPublish
                         }.onFailure { e ->
                             Timber.w(e, "Timeline publish failed for room=%s items=%d, reducing", cmd.roomId, toPublish.size)
                             val reduced = toPublish.size / 2
@@ -265,6 +290,34 @@ class WatchBridgeDispatcher(
                     }
                     if (!published && items.isNotEmpty()) {
                         Timber.e("Unable to publish any timeline items for room=%s", cmd.roomId)
+                    } else if (publishedItems != null) {
+                        val currentEventIds = publishedItems.map { it.eventId }.toSet()
+                        publishedMediaEventIds.retainAll(currentEventIds)
+                        publishedItems
+                            .filter { it.mediaPreview != null && it.eventId !in publishedMediaEventIds }
+                            .forEach { item ->
+                                port.roomMediaPreview(cmd.roomId, item.eventId)
+                                    .onSuccess { imageBytes ->
+                                        if (imageBytes != null) {
+                                            transport.publishSync(
+                                                path = WatchDataPaths.mediaPreview(cmd.roomId, item.eventId),
+                                                envelope = envelope(
+                                                    payload = WatchSync.MediaPreview(
+                                                        roomId = cmd.roomId,
+                                                        eventId = item.eventId,
+                                                        imageBytes = imageBytes,
+                                                    ),
+                                                    expiresAtMs = clock() + MEDIA_PREVIEW_TTL_MS,
+                                                ),
+                                            )
+                                            publishedMediaEventIds += item.eventId
+                                        }
+                                    }
+                                    .onFailure {
+                                        Timber.w(it, "media preview publish failed for room=%s event=%s", cmd.roomId, item.eventId)
+                                    }
+                            }
+                        lastPublishedEventIds = currentEventIds
                     }
                 }
             }.onFailure {
@@ -297,9 +350,26 @@ class WatchBridgeDispatcher(
                         )
                     }
                 }
+                var lastPublishedEventIds = emptySet<String>()
                 port.threadTimeline(cmd.roomId, cmd.threadRootEventId, cmd.limit).collectLatest { items ->
                     hasEmitted = true
                     initialDeltaJob.cancel()
+                    if (items.isEmpty()) {
+                        transport.publishSync(
+                            path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
+                            envelope = envelope(
+                                WatchSync.ThreadDelta(
+                                    roomId = cmd.roomId,
+                                    threadRootEventId = cmd.threadRootEventId,
+                                    items = emptyList(),
+                                    removedEventIds = lastPublishedEventIds.toList(),
+                                ),
+                            ),
+                        )
+                        lastPublishedEventIds = emptySet()
+                        return@collectLatest
+                    }
+                    val currentEventIds = items.map { it.eventId }.toSet()
                     transport.publishSync(
                         path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
                         envelope = envelope(
@@ -307,9 +377,11 @@ class WatchBridgeDispatcher(
                                 roomId = cmd.roomId,
                                 threadRootEventId = cmd.threadRootEventId,
                                 items = items,
+                                removedEventIds = (lastPublishedEventIds - currentEventIds).toList(),
                             ),
                         ),
                     )
+                    lastPublishedEventIds = currentEventIds
                 }
             }.onFailure {
                 Timber.w(it, "fetchThread failed for %s/%s", cmd.roomId, cmd.threadRootEventId)
@@ -404,8 +476,10 @@ class WatchBridgeDispatcher(
         }
     }
 
-    private fun envelope(payload: io.element.android.watchbridge.contract.WatchPayload) =
-        WatchSyncEnvelope(generatedAtMs = clock(), payload = payload)
+    private fun envelope(
+        payload: io.element.android.watchbridge.contract.WatchPayload,
+        expiresAtMs: Long? = null,
+    ) = WatchSyncEnvelope(generatedAtMs = clock(), expiresAtMs = expiresAtMs, payload = payload)
 
     private fun classify(t: Throwable): WatchErrorCode = when (t) {
         is IllegalArgumentException -> WatchErrorCode.VALIDATION

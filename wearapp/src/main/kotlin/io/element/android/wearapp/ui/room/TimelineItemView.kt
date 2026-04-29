@@ -7,12 +7,16 @@
 
 package io.element.android.wearapp.ui.room
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -25,6 +29,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
@@ -47,6 +53,7 @@ import io.element.android.wearapp.R
 @Composable
 internal fun TimelineMessageRow(
     item: WatchTimelineItem,
+    mediaPreviewBytes: ByteArray? = null,
     onClick: () -> Unit,
     onOpenThread: ((String) -> Unit)?,
     showSender: Boolean = true,
@@ -78,6 +85,7 @@ internal fun TimelineMessageRow(
                 {
                     MessagePreviewBody(
                         item = item,
+                        mediaPreviewBytes = mediaPreviewBytes,
                         maxLines = 3,
                         style = MaterialTheme.typography.caption2,
                     )
@@ -87,6 +95,7 @@ internal fun TimelineMessageRow(
                 {
                     MessagePreviewBody(
                         item = item,
+                        mediaPreviewBytes = mediaPreviewBytes,
                         maxLines = 2,
                         style = MaterialTheme.typography.caption2,
                     )
@@ -117,6 +126,7 @@ internal fun TimelineMessageRow(
 @Composable
 internal fun MessagePreviewBody(
     item: WatchTimelineItem,
+    mediaPreviewBytes: ByteArray? = null,
     maxLines: Int,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.body2,
     modifier: Modifier = Modifier,
@@ -129,11 +139,11 @@ internal fun MessagePreviewBody(
             overflow = TextOverflow.Ellipsis,
             modifier = modifier,
         )
-        WatchTimelineItemKind.IMAGE -> Text(
-            text = "🖼  ${item.bodyText ?: stringResource(R.string.timeline_image)}",
-            style = style,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+        WatchTimelineItemKind.IMAGE -> ImageMessagePreview(
+            item = item,
+            mediaPreviewBytes = mediaPreviewBytes,
+            captionStyle = style,
+            captionMaxLines = maxLines,
             modifier = modifier,
         )
         WatchTimelineItemKind.VIDEO -> Text(
@@ -193,11 +203,19 @@ internal fun MessagePreviewBody(
 @Composable
 internal fun MessageDetailedBody(
     item: WatchTimelineItem,
+    mediaPreviewBytes: ByteArray? = null,
+    onOpenImage: (() -> Unit)? = null,
     onPlayVoice: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     when (item.kind) {
         WatchTimelineItemKind.VOICE -> VoiceMessageDetailedView(item = item, onPlay = onPlayVoice, modifier = modifier)
+        WatchTimelineItemKind.IMAGE -> ImageMessageDetailedView(
+            item = item,
+            mediaPreviewBytes = mediaPreviewBytes,
+            onOpenImage = onOpenImage,
+            modifier = modifier,
+        )
         WatchTimelineItemKind.REDACTED -> Text(
             text = stringResource(R.string.timeline_redacted),
             style = MaterialTheme.typography.body2.copy(fontStyle = FontStyle.Italic),
@@ -205,10 +223,115 @@ internal fun MessageDetailedBody(
         )
         else -> MessagePreviewBody(
             item = item,
+            mediaPreviewBytes = mediaPreviewBytes,
             maxLines = 12,
             style = MaterialTheme.typography.body2,
             modifier = modifier,
         )
+    }
+}
+
+@Composable
+private fun ImageMessagePreview(
+    item: WatchTimelineItem,
+    mediaPreviewBytes: ByteArray?,
+    captionStyle: androidx.compose.ui.text.TextStyle,
+    captionMaxLines: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        MediaPreviewImage(
+            mediaPreviewBytes = mediaPreviewBytes,
+            height = 72.dp,
+        )
+        Text(
+            text = item.bodyText ?: stringResource(R.string.timeline_image),
+            style = captionStyle,
+            maxLines = captionMaxLines,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ImageMessageDetailedView(
+    item: WatchTimelineItem,
+    mediaPreviewBytes: ByteArray?,
+    onOpenImage: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        MediaPreviewImage(
+            mediaPreviewBytes = mediaPreviewBytes,
+            height = 112.dp,
+            onClick = onOpenImage?.takeIf { mediaPreviewBytes != null },
+        )
+        Text(
+            text = item.bodyText ?: stringResource(R.string.timeline_image),
+            style = MaterialTheme.typography.body2,
+            maxLines = 6,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun MediaPreviewImage(
+    mediaPreviewBytes: ByteArray?,
+    height: androidx.compose.ui.unit.Dp,
+    onClick: (() -> Unit)? = null,
+) {
+    val imageBitmap = androidx.compose.runtime.remember(mediaPreviewBytes) {
+        mediaPreviewBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
+    val containerModifier = Modifier
+        .fillMaxWidth()
+        .height(height)
+        .clip(RoundedCornerShape(12.dp))
+        .background(MaterialTheme.colors.surface)
+        .then(
+            if (imageBitmap != null && onClick != null) {
+                Modifier.clickable(onClick = onClick)
+            } else {
+                Modifier
+            }
+        )
+
+    Box(
+        modifier = containerModifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        if (imageBitmap != null) {
+            Image(
+                bitmap = imageBitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(horizontal = 8.dp),
+            ) {
+                Text(
+                    text = "🖼",
+                    style = MaterialTheme.typography.title3,
+                )
+                Text(
+                    text = stringResource(R.string.screen_media_preview_unavailable),
+                    style = MaterialTheme.typography.caption3,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

@@ -21,6 +21,8 @@
     <string name="timeline_voice_message">Voice message</string>
     <string name="play_voice_message">Play voice message</string>
     <string name="timeline_image">Image</string>
+    <string name="screen_media_preview_unavailable">Image unavailable</string>
+    <string name="screen_media_viewer_unavailable">Image unavailable on watch</string>
     <string name="timeline_video">Video</string>
     <string name="timeline_file">File</string>
     <string name="timeline_redacted">(message removed)</string>

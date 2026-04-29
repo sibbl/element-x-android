@@ -41,6 +41,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
+import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.ComposerBar
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -67,6 +68,7 @@ internal fun RoomView(
     val listState = rememberScalingLazyListState()
     val totalItemCount = listState.layoutInfo.totalItemsCount
     val lastEventId = state.items.lastOrNull()?.eventId
+    val readMarkerAnchorEventId = state.items.firstOrNull { it.isReadMarkerAnchor }?.eventId
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
     var lastAutoScrolledEventId by remember(state.timelineKey) { mutableStateOf<String?>(null) }
     var lastHandledScrollRequestId by remember(state.timelineKey) { mutableStateOf<Long?>(null) }
@@ -96,13 +98,13 @@ internal fun RoomView(
         if (requestId == null || requestId == lastHandledScrollRequestId || totalItemCount <= 0) return@LaunchedEffect
 
         if (state.forceScrollToBottom) {
-            listState.animateScrollToItem(totalItemCount - 1)
+            listState.scrollToItem(totalItemCount - 1)
             shouldStickToBottom = true
             lastAutoScrolledEventId = lastEventId
         } else {
             val targetIndex = timelineListIndexForEvent(state.items, state.scrollToEventId)
             if (targetIndex != null) {
-                listState.animateScrollToItem(targetIndex)
+                listState.scrollToItem(targetIndex)
                 shouldStickToBottom = false
             }
         }
@@ -110,17 +112,18 @@ internal fun RoomView(
         onScrollRequestHandled?.invoke(requestId)
     }
 
-    LaunchedEffect(state.timelineKey, lastEventId, totalItemCount) {
+    LaunchedEffect(state.timelineKey, lastEventId, totalItemCount, readMarkerAnchorEventId) {
         if (lastEventId == null || totalItemCount <= 0) return@LaunchedEffect
 
         val initialScroll = lastAutoScrolledEventId == null
         val hasNewBottomItem = lastEventId != lastAutoScrolledEventId
-        if (shouldStickToBottom && (initialScroll || hasNewBottomItem)) {
-            if (initialScroll) {
-                listState.scrollToItem(totalItemCount - 1)
-            } else {
-                listState.animateScrollToItem(totalItemCount - 1)
-            }
+        if (initialScroll) {
+            val initialIndex = timelineListIndexForEvent(state.items, readMarkerAnchorEventId) ?: (totalItemCount - 1)
+            listState.scrollToItem(initialIndex)
+            shouldStickToBottom = initialIndex >= totalItemCount - 1
+            lastAutoScrolledEventId = lastEventId
+        } else if (shouldStickToBottom && hasNewBottomItem) {
+            listState.animateScrollToItem(totalItemCount - 1)
             lastAutoScrolledEventId = lastEventId
         }
     }
@@ -171,6 +174,7 @@ internal fun RoomView(
 
                     TimelineMessageRow(
                         item = entry,
+                        mediaPreviewBytes = state.mediaPreviewImages[mediaPreviewCacheKey(entry.roomId, entry.eventId)],
                         showSender = showSender,
                         onClick = { onMessageSelected(entry.eventId) },
                         onOpenThread = onOpenThread,
@@ -189,7 +193,7 @@ internal fun RoomView(
                     onClick = {
                         scope.launch {
                             val total = listState.layoutInfo.totalItemsCount
-                            if (total > 0) listState.animateScrollToItem(total - 1)
+                            if (total > 0) listState.scrollToItem(total - 1)
                             shouldStickToBottom = true
                         }
                     },
@@ -222,6 +226,7 @@ internal data class RoomViewState(
     val scrollRequestId: Long? = null,
     val scrollToEventId: String? = null,
     val forceScrollToBottom: Boolean = false,
+    val mediaPreviewImages: Map<String, ByteArray> = emptyMap(),
 )
 
 @Composable

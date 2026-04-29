@@ -38,6 +38,14 @@ sealed interface WatchSync : WatchPayload {
     ) : WatchSync
 
     @Serializable
+    @SerialName("sync.mediaPreview")
+    data class MediaPreview(
+        val roomId: String,
+        val eventId: String,
+        val imageBytes: ByteArray? = null,
+    ) : WatchSync
+
+    @Serializable
     @SerialName("sync.timelineDelta")
     data class TimelineDelta(
         val roomId: String,

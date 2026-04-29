@@ -59,6 +59,8 @@ private const val MAX_CACHED_TIMELINE_ITEMS = 100
 private const val MAX_CACHED_THREAD_ITEMS = 50
 private const val VOICE_UPLOAD_TIMEOUT_MS = 60_000L
 
+internal fun mediaPreviewCacheKey(roomId: String, eventId: String): String = "$roomId/$eventId"
+
 /**
  * Watch-side entry point to the companion protocol.
  *
@@ -100,6 +102,9 @@ class WearBridgeClient(private val context: Context) {
     private val _avatarImages = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val avatarImages: StateFlow<Map<String, ByteArray>> = _avatarImages.asStateFlow()
 
+    private val _mediaPreviewImages = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
+    val mediaPreviewImages: StateFlow<Map<String, ByteArray>> = _mediaPreviewImages.asStateFlow()
+
     /** In-memory cache of last-known timeline items per room. Survives navigation. */
     private val _timelineCache = mutableMapOf<String, CachedTimeline>()
     /** In-memory cache of last-known thread items per room/root pair. */
@@ -121,6 +126,9 @@ class WearBridgeClient(private val context: Context) {
         threadRootEventId: String,
     ): List<io.element.android.watchbridge.contract.WatchThreadItem> =
         _threadCache[threadCacheKey(roomId, threadRootEventId)]?.items.orEmpty()
+
+    fun getCachedMediaPreview(roomId: String, eventId: String): ByteArray? =
+        _mediaPreviewImages.value[mediaPreviewCacheKey(roomId, eventId)]
 
     fun hasCachedThreadSnapshot(roomId: String, threadRootEventId: String): Boolean =
         _threadCache[threadCacheKey(roomId, threadRootEventId)]?.hasSnapshot == true
@@ -189,7 +197,7 @@ class WearBridgeClient(private val context: Context) {
     /** Called from the app-level `WearableListenerService` on any `DataItem` change. */
     fun onDataChanged(events: DataEventBuffer) {
         for (ev in events) {
-            val item = ev.dataItem ?: continue
+            val item = ev.dataItem
             val data = DataMapItem.fromDataItem(item).dataMap.getByteArray("envelope") ?: continue
             val envelope = decode(data) ?: continue
             dispatchIncoming(envelope)
@@ -390,23 +398,37 @@ class WearBridgeClient(private val context: Context) {
                 }
                 requestTileRefresh()
             }
+            is WatchSync.MediaPreview -> {
+                val key = mediaPreviewCacheKey(p.roomId, p.eventId)
+                val imageBytes = p.imageBytes
+                _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
+                    if (imageBytes == null) remove(key) else put(key, imageBytes)
+                }
+                scope.launch { _syncEvents.emit(p) }
+            }
             is WatchSync.RoomSummary -> {
                 _summaryCache[p.summary.roomId] = p.summary
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.TimelineDelta -> {
-                val updatedItems = (getCachedTimeline(p.roomId) + p.items)
+                removeCachedMediaPreviews(roomId = p.roomId, eventIds = p.removedEventIds)
+                val updatedItems = mergeTimelineItems(
+                    existing = getCachedTimeline(p.roomId),
+                    incoming = p.items,
+                )
                     .filter { it.eventId !in p.removedEventIds }
-                    .distinctBy { it.eventId }
                     .sortedBy { it.timestampMs }
                     .takeLast(MAX_CACHED_TIMELINE_ITEMS)
                 cacheTimeline(roomId = p.roomId, items = updatedItems, hasSnapshot = true)
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.ThreadDelta -> {
-                val updatedItems = (getCachedThread(p.roomId, p.threadRootEventId) + p.items)
+                removeCachedMediaPreviews(roomId = p.roomId, eventIds = p.removedEventIds)
+                val updatedItems = mergeThreadItems(
+                    existing = getCachedThread(p.roomId, p.threadRootEventId),
+                    incoming = p.items,
+                )
                     .filter { it.eventId !in p.removedEventIds }
-                    .distinctBy { it.eventId }
                     .sortedBy { it.timestampMs }
                     .takeLast(MAX_CACHED_THREAD_ITEMS)
                 cacheThread(
@@ -452,6 +474,9 @@ class WearBridgeClient(private val context: Context) {
                 _threadCache.keys
                     .filter { it.startsWith(threadCachePrefix(roomId)) }
                     .forEach(_threadCache::remove)
+                _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
+                    keys.filter { it.startsWith("$roomId/") }.forEach(::remove)
+                }
                 _avatarImages.value = _avatarImages.value.toMutableMap().apply { remove(roomId) }
                 requestTileRefresh()
             }
@@ -463,6 +488,7 @@ class WearBridgeClient(private val context: Context) {
             WatchSync.Invalidation.InvalidationScope.ALL -> {
                 _favorites.value = emptyList()
                 _avatarImages.value = emptyMap()
+                _mediaPreviewImages.value = emptyMap()
                 _summaryCache.clear()
                 _timelineCache.clear()
                 _threadCache.clear()
@@ -482,9 +508,36 @@ class WearBridgeClient(private val context: Context) {
         WatchBridgeSerialization.decodeEnvelopeFromBytes(bytes)
     }.onFailure { Timber.w(it, "envelope decode failed") }.getOrNull()
 
+    private fun removeCachedMediaPreviews(roomId: String, eventIds: List<String>) {
+        if (eventIds.isEmpty()) return
+        _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
+            eventIds.forEach { eventId -> remove(mediaPreviewCacheKey(roomId, eventId)) }
+        }
+    }
+
     private fun threadCacheKey(roomId: String, threadRootEventId: String): String = "$roomId/$threadRootEventId"
 
     private fun threadCachePrefix(roomId: String): String = "$roomId/"
+
+    private fun mergeTimelineItems(
+        existing: List<io.element.android.watchbridge.contract.WatchTimelineItem>,
+        incoming: List<io.element.android.watchbridge.contract.WatchTimelineItem>,
+    ): List<io.element.android.watchbridge.contract.WatchTimelineItem> {
+        return (existing + incoming)
+            .associateBy { it.eventId }
+            .values
+            .toList()
+    }
+
+    private fun mergeThreadItems(
+        existing: List<io.element.android.watchbridge.contract.WatchThreadItem>,
+        incoming: List<io.element.android.watchbridge.contract.WatchThreadItem>,
+    ): List<io.element.android.watchbridge.contract.WatchThreadItem> {
+        return (existing + incoming)
+            .associateBy { it.eventId }
+            .values
+            .toList()
+    }
 
     private data class CachedTimeline(
         val items: List<io.element.android.watchbridge.contract.WatchTimelineItem>,

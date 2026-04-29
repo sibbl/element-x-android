@@ -18,7 +18,8 @@ This fork adds a **companion-only Wear OS implementation** for Element X Android
 - Voice message playback on the watch via `MediaPlayer` streaming from the Matrix media API
 - In-memory timeline caching so returning to a room shows cached messages instantly instead of a loading indicator
 - Split Wear tiles for **Recent conversations** and **Favorite conversations**, both with direct deep-links into the real room timeline view
-- Timeline UX improvements on the watch: sticky-bottom behavior, smarter return-from-detail scroll restoration, Matrix-native replies, and explicit empty-thread states
+- Timeline UX improvements on the watch: sticky-bottom behavior, smarter return-from-detail scroll restoration, Matrix-native replies, and explicit empty-thread states. **Now includes non-animated "jump to bottom" and improved deep-link consumption.**
+- **Media Support on Wear OS**: Images are now displayed in both the timeline and message detail view. Includes a full-screen image viewer, a robust 1-week TTL cache with automated pruning, and graceful error placeholders.
 - Voice-message recording on the watch now uses an explicit record/cancel/send flow with live recording feedback and a phone-side Matrix voice-send handoff
 - Fork-specific docs under `docs/watch-companion/` describing architecture, rollout phases, and touched upstream files
 - Test/build stabilization fixes discovered while wiring the fork, including login nightly test config and stale startchat/push worker tests

@@ -38,6 +38,7 @@ fun RoomScreen(
     onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
+    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val settings by bridge.companionSettings.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
@@ -60,6 +61,7 @@ fun RoomScreen(
             scrollRequestId = scrollRequestId,
             scrollToEventId = scrollToEventId,
             forceScrollToBottom = forceScrollToBottom,
+            mediaPreviewImages = mediaPreviewImages,
         ),
         onMessageSelected = onMessageSelected,
         onOpenThread = onOpenThread,

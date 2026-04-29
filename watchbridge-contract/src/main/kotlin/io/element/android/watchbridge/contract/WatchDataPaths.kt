@@ -13,6 +13,7 @@ import java.util.Base64
 object WatchDataPaths {
     const val FAVORITES: String = "${WatchProtocol.DATA_PATH_PREFIX}/favorites"
     private const val AVATAR: String = "${WatchProtocol.DATA_PATH_PREFIX}/avatar"
+    private const val MEDIA_PREVIEW: String = "${WatchProtocol.DATA_PATH_PREFIX}/media"
     const val ROOM_SUMMARY: String = "${WatchProtocol.DATA_PATH_PREFIX}/room/summary"
     const val ROOM_TIMELINE: String = "${WatchProtocol.DATA_PATH_PREFIX}/room/timeline"
     const val THREAD: String = "${WatchProtocol.DATA_PATH_PREFIX}/thread"
@@ -23,6 +24,8 @@ object WatchDataPaths {
     const val SETTINGS: String = "${WatchProtocol.DATA_PATH_PREFIX}/settings"
 
     fun avatar(roomId: String): String = "$AVATAR/${roomId.toDataPathSegment()}"
+    fun mediaPreview(roomId: String, eventId: String): String =
+        "$MEDIA_PREVIEW/${roomId.toDataPathSegment()}/${eventId.toDataPathSegment()}"
     fun roomTimeline(roomId: String): String = "$ROOM_TIMELINE/$roomId"
     fun thread(roomId: String, threadRootEventId: String): String = "$THREAD/$roomId/$threadRootEventId"
     fun voiceDraftChannel(draftId: String): String = "$VOICE_DRAFT_CHANNEL/$draftId"

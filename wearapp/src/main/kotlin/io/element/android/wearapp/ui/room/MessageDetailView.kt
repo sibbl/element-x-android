@@ -47,9 +47,11 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "🎉", "🙏", "
 @Composable
 internal fun MessageDetailView(
     state: MessageDetailViewState,
+    mediaPreviewBytes: ByteArray? = null,
     onReply: () -> Unit,
     onVoice: (() -> Unit)?,
     onReadAloud: () -> Unit,
+    onOpenImage: (() -> Unit)? = null,
     onOpenOrStartThread: () -> Unit,
     onSendReaction: (reactionKey: String) -> Unit,
     modifier: Modifier = Modifier,
@@ -105,6 +107,8 @@ internal fun MessageDetailView(
                 item {
                     MessageDetailedBody(
                         item = item,
+                        mediaPreviewBytes = mediaPreviewBytes,
+                        onOpenImage = onOpenImage,
                         onPlayVoice = { url ->
                             if (voiceState == WearVoicePlayer.State.PLAYING) {
                                 voicePlayer.stop()

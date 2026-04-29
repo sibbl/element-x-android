@@ -32,6 +32,7 @@ object WatchBridgeSerialization {
                 subclass(WatchSync.FavoritesSnapshot::class)
                 subclass(WatchSync.RoomSummary::class)
                 subclass(WatchSync.AvatarUpdate::class)
+                subclass(WatchSync.MediaPreview::class)
                 subclass(WatchSync.TimelineDelta::class)
                 subclass(WatchSync.ThreadDelta::class)
                 subclass(WatchSync.UnreadUpdate::class)

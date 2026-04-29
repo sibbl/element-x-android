@@ -49,6 +49,7 @@ fun ThreadScreen(
     var hasReceivedDelta by remember(roomId, threadRootEventId) {
         mutableStateOf(bridge.hasCachedThreadSnapshot(roomId, threadRootEventId))
     }
+    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
 
@@ -71,9 +72,11 @@ fun ThreadScreen(
             .collect { delta ->
                 if (delta.roomId == roomId && delta.threadRootEventId == threadRootEventId) {
                     hasReceivedDelta = true
-                    val updated = (items + delta.items)
+                    val updated = mergeThreadItems(
+                        existing = items,
+                        incoming = delta.items,
+                    )
                         .filter { it.eventId !in delta.removedEventIds }
-                        .distinctBy { it.eventId }
                         .sortedBy { it.timestampMs }
                         .takeLast(50)
                     items = updated
@@ -101,6 +104,7 @@ fun ThreadScreen(
             composerContextLabel = null,
             isLoading = !hasReceivedDelta,
             emptyText = stringResource(R.string.screen_thread_empty_messages),
+            mediaPreviewImages = mediaPreviewImages,
         ),
         onMessageSelected = onMessageSelected,
         // No nested-thread navigation inside a thread.
@@ -160,6 +164,17 @@ private fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimelineI
     threadReplyCount = 0,
     reactions = reactions,
     voiceMessageMeta = voiceMessageMeta,
+    mediaPreview = mediaPreview,
     readableByTts = true,
     threadLastReplyText = null,
 )
+
+private fun mergeThreadItems(
+    existing: List<WatchThreadItem>,
+    incoming: List<WatchThreadItem>,
+): List<WatchThreadItem> {
+    return (existing + incoming)
+        .associateBy { it.eventId }
+        .values
+        .toList()
+}

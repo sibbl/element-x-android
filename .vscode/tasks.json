@@ -1,0 +1,67 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Gradle version check",
+			"type": "shell",
+			"command": "./gradlew",
+			"args": [
+				"-version"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Gradle version check JDK21",
+			"type": "shell",
+			"command": "JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home PATH=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home/bin:$PATH ./gradlew",
+			"args": [
+				"-version"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Gradle version check JDK21 shell",
+			"type": "shell",
+			"command": "export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew -version",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify and build watch changes",
+			"type": "shell",
+			"command": "export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew :watchbridge-contract:test :watchbridge:test :wearapp:testDebugUnitTest :app:assembleGplayDebug :wearapp:assembleDebug --no-daemon --console=plain",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify and build watch changes retry",
+			"type": "shell",
+			"command": "export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew :watchbridge-contract:test :watchbridge:test :wearapp:testDebugUnitTest :app:assembleGplayDebug :wearapp:assembleDebug --no-daemon --console=plain",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify and build watch changes final",
+			"type": "shell",
+			"command": "export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew :watchbridge-contract:test :watchbridge:test :wearapp:testDebugUnitTest :app:assembleGplayDebug :wearapp:assembleDebug --no-daemon --console=plain",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Verify and build watch changes post-warning-fix",
+			"type": "shell",
+			"command": "export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home && export PATH=$JAVA_HOME/bin:$PATH && ./gradlew :watchbridge-contract:test :watchbridge:test :wearapp:testDebugUnitTest :app:assembleGplayDebug :wearapp:assembleDebug --no-daemon --console=plain",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

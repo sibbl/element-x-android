@@ -62,9 +62,11 @@ internal fun rememberRoomTimelineState(
             .collect { delta ->
                 if (delta.roomId == roomId) {
                     hasReceivedDelta = true
-                    val updated = (items + delta.items)
+                    val updated = mergeTimelineItems(
+                        existing = items,
+                        incoming = delta.items,
+                    )
                         .filter { it.eventId !in delta.removedEventIds }
-                        .distinctBy { it.eventId }
                         .sortedBy { it.timestampMs }
                         .takeLast(MAX_TIMELINE_ITEMS)
                     items = updated
@@ -95,3 +97,13 @@ internal fun WatchTimelineItem.displayText(): String {
 internal fun WatchTimelineItem.reactionSummaryText(): String? =
     reactions.takeIf { it.isNotEmpty() }
         ?.joinToString(separator = "  ") { "${it.key} ${it.count}" }
+
+private fun mergeTimelineItems(
+    existing: List<WatchTimelineItem>,
+    incoming: List<WatchTimelineItem>,
+): List<WatchTimelineItem> {
+    return (existing + incoming)
+        .associateBy { it.eventId }
+        .values
+        .toList()
+}

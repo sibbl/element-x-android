@@ -10,7 +10,10 @@ package io.element.android.x.watchbridge
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Bitmap.CompressFormat
+import android.graphics.BitmapFactory
 import coil3.ImageLoader
+import io.element.android.libraries.androidutils.bitmap.calculateInSampleSize
+import io.element.android.libraries.androidutils.bitmap.resizeToMax
 import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.di.DependencyInjectionGraphOwner
 import io.element.android.libraries.matrix.api.MatrixClient
@@ -19,6 +22,9 @@ import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.SessionId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.media.AudioInfo
+import io.element.android.libraries.matrix.api.media.ImageInfo
+import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
+import io.element.android.libraries.matrix.api.media.MediaSource
 import io.element.android.libraries.matrix.api.room.CreateTimelineParams
 import io.element.android.libraries.matrix.api.room.CurrentUserMembership
 import io.element.android.libraries.matrix.api.room.JoinedRoom
@@ -30,6 +36,7 @@ import io.element.android.libraries.matrix.api.roomlist.RoomSummary
 import io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem
 import io.element.android.libraries.matrix.api.timeline.ReceiptType
 import io.element.android.libraries.matrix.api.timeline.item.EventThreadInfo
+import io.element.android.libraries.matrix.api.timeline.item.virtual.VirtualTimelineItem
 import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EmoteMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EventContent
@@ -44,6 +51,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.PollContent
 import io.element.android.libraries.matrix.api.timeline.item.event.ProfileDetails
 import io.element.android.libraries.matrix.api.timeline.item.event.RedactedContent
 import io.element.android.libraries.matrix.api.timeline.item.event.StickerContent
+import io.element.android.libraries.matrix.api.timeline.item.event.StickerMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.UnableToDecryptContent
 import io.element.android.libraries.matrix.api.timeline.item.event.VideoMessageType
@@ -56,6 +64,7 @@ import io.element.android.watchbridge.ElementXWatchPort
 import io.element.android.watchbridge.WatchBridgeDispatcher
 import io.element.android.watchbridge.WatchCompanionSettingsStore
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
+import io.element.android.watchbridge.contract.WatchMediaPreview
 import io.element.android.watchbridge.contract.WatchPlaybackDescriptor
 import io.element.android.watchbridge.contract.WatchReactionSummary
 import io.element.android.watchbridge.contract.WatchRoomKind
@@ -92,6 +101,17 @@ private const val ROOM_LIST_PAGE_SIZE = 30
 private const val MAX_ROOM_LIST_COUNT = 200
 private const val MAX_LOAD_MORE_ATTEMPTS = 8
 private const val WATCH_AVATAR_SIZE_PX = 64L
+private const val WATCH_MEDIA_PREVIEW_SIZE_PX = 384L
+
+internal data class TimelineProjection(
+    val items: List<WatchTimelineItem>,
+    val mediaSources: Map<String, MediaPreviewSourceRef>,
+)
+
+internal data class MediaPreviewSourceRef(
+    val primarySource: MediaSource,
+    val thumbnailSource: MediaSource? = null,
+)
 
 /** Process-wide runtime that keeps the Wear bridge attached to the current Matrix session. */
 object ElementXWatchBridgeRuntime {
@@ -212,6 +232,7 @@ private class MatrixRoomListWatchPort(
         coroutineScope = client.sessionCoroutineScope,
     )
     private val joinedRooms = ConcurrentHashMap<String, JoinedRoom>()
+    private val roomTimelineMediaSources = ConcurrentHashMap<String, Map<String, MediaPreviewSourceRef>>()
 
     override fun favorites(): Flow<List<WatchFavoriteRoom>> = roomList.summaries
         .onEach { summaries -> subscribeToVisibleRooms(summaries, ROOM_LIST_PAGE_SIZE) }
@@ -257,10 +278,19 @@ private class MatrixRoomListWatchPort(
             .onFailure { Timber.d(it, "WatchBridge initial back-paginate for room=%s", roomId) }
         emitAll(
             room.liveTimeline.timelineItems.map { items ->
-                items.toWatchTimelineItems(roomId)
-                    .sortedBy { it.timestampMs }
-                    .takeLast(limit)
+                val projection = items.toWatchTimelineProjection(roomId = roomId, limit = limit)
+                roomTimelineMediaSources[roomId] = projection.mediaSources
+                projection.items
             }
+        )
+    }
+
+    override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> {
+        val sourceRef = roomTimelineMediaSources[roomId]?.get(eventId) ?: return Result.success(null)
+        return loadWatchMediaPreviewBytes(
+            mediaLoader = client.matrixMediaLoader,
+            sourceRef = sourceRef,
+            maxDimensionPx = WATCH_MEDIA_PREVIEW_SIZE_PX.toInt(),
         )
     }
 
@@ -467,9 +497,49 @@ private fun LatestEventValue.previewText(): String? = when (this) {
     is LatestEventValue.RoomInvite -> "Invite"
 }
 
-private fun List<MatrixTimelineItem>.toWatchTimelineItems(roomId: String): List<WatchTimelineItem> = mapNotNull { item ->
-    val event = (item as? MatrixTimelineItem.Event)?.event ?: return@mapNotNull null
-    event.toWatchTimelineItem(roomId)
+internal fun List<MatrixTimelineItem>.toWatchTimelineProjection(
+    roomId: String,
+    limit: Int,
+): TimelineProjection {
+    val projectedItems = mutableListOf<WatchTimelineItem>()
+    val mediaSources = mutableMapOf<String, MediaPreviewSourceRef>()
+    var readMarkerAnchorEventId: String? = null
+    var latestEventIdBeforeReadMarker: String? = null
+
+    forEach { item ->
+        when (item) {
+            is MatrixTimelineItem.Event -> {
+                val event = item.event
+                if (event.threadInfo() is EventThreadInfo.ThreadResponse) return@forEach
+                val projected = event.toWatchTimelineItem(roomId) ?: return@forEach
+                projectedItems += projected
+                latestEventIdBeforeReadMarker = projected.eventId
+                event.content.mediaPreviewSourceRef()?.let { mediaSources[projected.eventId] = it }
+            }
+            is MatrixTimelineItem.Virtual -> {
+                if (item.virtual == VirtualTimelineItem.ReadMarker) {
+                    readMarkerAnchorEventId = latestEventIdBeforeReadMarker
+                }
+            }
+            MatrixTimelineItem.Other -> Unit
+        }
+    }
+
+    val limitedItems = projectedItems
+        .sortedBy { it.timestampMs }
+        .takeLast(limit)
+    val limitedEventIds = limitedItems.map { it.eventId }.toSet()
+    val anchoredEventId = when {
+        readMarkerAnchorEventId != null && readMarkerAnchorEventId in limitedEventIds -> readMarkerAnchorEventId
+        else -> limitedItems.lastOrNull()?.eventId
+    }
+
+    return TimelineProjection(
+        items = limitedItems.map { item ->
+            item.copy(isReadMarkerAnchor = item.eventId == anchoredEventId)
+        },
+        mediaSources = mediaSources.filterKeys { it in limitedEventIds },
+    )
 }
 
 private fun List<MatrixTimelineItem>.toWatchThreadItems(roomId: String, threadRootEventId: String): List<WatchThreadItem> = mapNotNull { item ->
@@ -487,6 +557,7 @@ private fun List<MatrixTimelineItem>.toWatchThreadItems(roomId: String, threadRo
         isOwn = event.isOwn,
         reactions = event.watchReactions(),
         voiceMessageMeta = event.content.voiceMeta(),
+        mediaPreview = event.content.mediaPreview(),
     )
 }
 
@@ -515,7 +586,101 @@ private fun EventTimelineItem.toWatchTimelineItem(roomId: String): WatchTimeline
         reactions = watchReactions(),
         voiceMessageMeta = content.voiceMeta(),
         readableByTts = content.watchKind() in setOf(WatchTimelineItemKind.TEXT, WatchTimelineItemKind.EMOTE, WatchTimelineItemKind.NOTICE),
+        mediaPreview = content.mediaPreview(),
     )
+}
+
+private fun EventContent.mediaPreview(): WatchMediaPreview? = when (this) {
+    is MessageContent -> when (val messageType = type) {
+        is ImageMessageType -> messageType.toWatchMediaPreview()
+        is StickerMessageType -> messageType.toWatchMediaPreview()
+        else -> null
+    }
+    is StickerContent -> info.toWatchMediaPreview()
+    else -> null
+}
+
+private fun EventContent.mediaPreviewSourceRef(): MediaPreviewSourceRef? = when (this) {
+    is MessageContent -> when (val messageType = type) {
+        is ImageMessageType -> MediaPreviewSourceRef(
+            primarySource = messageType.source,
+            thumbnailSource = messageType.info?.thumbnailSource,
+        )
+        is StickerMessageType -> MediaPreviewSourceRef(
+            primarySource = messageType.source,
+            thumbnailSource = messageType.info?.thumbnailSource,
+        )
+        else -> null
+    }
+    is StickerContent -> MediaPreviewSourceRef(primarySource = source)
+    else -> null
+}
+
+private fun ImageMessageType.toWatchMediaPreview(): WatchMediaPreview = WatchMediaPreview(
+    widthPx = info?.width.safeDimensionPx(),
+    heightPx = info?.height.safeDimensionPx(),
+    mimeType = info?.mimetype,
+)
+
+private fun StickerMessageType.toWatchMediaPreview(): WatchMediaPreview = WatchMediaPreview(
+    widthPx = info?.width.safeDimensionPx(),
+    heightPx = info?.height.safeDimensionPx(),
+    mimeType = info?.mimetype,
+)
+
+private fun ImageInfo.toWatchMediaPreview(): WatchMediaPreview = WatchMediaPreview(
+    widthPx = width.safeDimensionPx(),
+    heightPx = height.safeDimensionPx(),
+    mimeType = mimetype,
+)
+
+private fun Long?.safeDimensionPx(): Int? = this
+    ?.coerceAtLeast(1L)
+    ?.coerceAtMost(Int.MAX_VALUE.toLong())
+    ?.toInt()
+
+internal suspend fun loadWatchMediaPreviewBytes(
+    mediaLoader: MatrixMediaLoader,
+    sourceRef: MediaPreviewSourceRef,
+    maxDimensionPx: Int = WATCH_MEDIA_PREVIEW_SIZE_PX.toInt(),
+): Result<ByteArray?> {
+    val preferredSource = sourceRef.thumbnailSource ?: sourceRef.primarySource
+    val thumbnailBytes = mediaLoader.loadMediaThumbnail(
+        source = preferredSource,
+        width = maxDimensionPx.toLong(),
+        height = maxDimensionPx.toLong(),
+    ).getOrNull()
+
+    normalizeWatchMediaPreviewBytes(thumbnailBytes, maxDimensionPx)?.let { return Result.success(it) }
+
+    return mediaLoader.loadMediaContent(sourceRef.primarySource).mapCatching { bytes ->
+        normalizeWatchMediaPreviewBytes(bytes, maxDimensionPx)
+            ?: error("Unable to decode watch media preview")
+    }
+}
+
+internal fun normalizeWatchMediaPreviewBytes(
+    bytes: ByteArray?,
+    maxDimensionPx: Int = WATCH_MEDIA_PREVIEW_SIZE_PX.toInt(),
+): ByteArray? {
+    if (bytes == null || bytes.isEmpty()) return null
+
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    val decodeOptions = BitmapFactory.Options().apply {
+        inSampleSize = bounds.calculateInSampleSize(maxDimensionPx, maxDimensionPx)
+    }
+    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions) ?: return null
+    val resized = decoded.resizeToMax(maxDimensionPx, maxDimensionPx)
+    val format = if (resized.hasAlpha()) CompressFormat.PNG else CompressFormat.JPEG
+    val quality = if (format == CompressFormat.PNG) 100 else 82
+
+    return ByteArrayOutputStream().use { output ->
+        if (!resized.compress(format, quality, output)) return null
+        output.toByteArray()
+    }
 }
 
 private fun EventTimelineItem.watchReactions(): List<WatchReactionSummary> = reactions.map { reaction ->

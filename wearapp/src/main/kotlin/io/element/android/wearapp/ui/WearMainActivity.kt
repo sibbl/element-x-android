@@ -41,6 +41,7 @@ import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.R
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import io.element.android.wearapp.ui.room.ImageViewerScreen
 import io.element.android.wearapp.ui.favorites.FavoritesScreen
 import io.element.android.wearapp.ui.room.MessageDetailScreen
 import io.element.android.wearapp.ui.room.RoomScreen
@@ -81,7 +82,7 @@ class WearMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pendingDeepLink = extractDeepLink(intent)
+        pendingDeepLink = consumePendingDeepLink(intent)
         val bridge = (application as WearApp).bridgeClient
         setContent {
             val nav = rememberSwipeDismissableNavController()
@@ -201,6 +202,11 @@ class WearMainActivity : ComponentActivity() {
                                         "thread?roomId=${Uri.encode(roomId)}&rootId=${Uri.encode(rootId)}",
                                     )
                                 },
+                                onOpenImage = { imageEventId ->
+                                    nav.navigate(
+                                        "image?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(imageEventId)}",
+                                    )
+                                },
                                 onReplySent = { sourceEventId, sourceWasLastMessage ->
                                     pendingRoomScrollRequest = PendingRoomScrollRequest(
                                         roomId = roomId,
@@ -210,6 +216,15 @@ class WearMainActivity : ComponentActivity() {
                                     nav.popBackStack()
                                 },
                                 onError = { transientErrorMessage = it },
+                            )
+                        }
+                        composable("image?roomId={roomId}&eventId={eventId}") { entry ->
+                            val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                            val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                            ImageViewerScreen(
+                                bridge = bridge,
+                                roomId = roomId,
+                                eventId = eventId,
                             )
                         }
                         composable("thread?roomId={roomId}&rootId={rootId}") { entry ->
@@ -247,14 +262,9 @@ class WearMainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         // When already running and a notification opens us, store deep link for next recomposition.
-        pendingDeepLink = extractDeepLink(intent)
-    }
-
-    private fun extractDeepLink(intent: Intent?): Pair<String, String?>? {
-        val roomId = intent?.getStringExtra("roomId") ?: return null
-        val eventId = intent.getStringExtra("eventId")?.takeIf { it.isNotBlank() }
-        return roomId to eventId
+        pendingDeepLink = consumePendingDeepLink(intent)
     }
 
     private data class PendingRoomScrollRequest(
@@ -263,4 +273,12 @@ class WearMainActivity : ComponentActivity() {
         val targetEventId: String? = null,
         val forceScrollToBottom: Boolean = false,
     )
+}
+
+internal fun consumePendingDeepLink(intent: Intent?): Pair<String, String?>? {
+    val roomId = intent?.getStringExtra("roomId")?.takeIf { it.isNotBlank() } ?: return null
+    val eventId = intent.getStringExtra("eventId")?.takeIf { it.isNotBlank() }
+    intent.removeExtra("roomId")
+    intent.removeExtra("eventId")
+    return roomId to eventId
 }

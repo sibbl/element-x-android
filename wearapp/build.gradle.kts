@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
  */
 
+import extension.testCommonDependencies
+
 import config.BuildTimeConfig
 
 plugins {
@@ -14,12 +16,19 @@ plugins {
 android {
     namespace = "io.element.android.wearapp"
 
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     defaultConfig {
         applicationId = BuildTimeConfig.APPLICATION_ID
         minSdk = 30 // Wear OS 3.0+
         targetSdk = Versions.TARGET_SDK
         versionCode = Versions.VERSION_CODE
         versionName = Versions.VERSION_NAME
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -69,8 +78,19 @@ dependencies {
     implementation("androidx.wear.protolayout:protolayout-material:1.2.1")
     implementation("com.google.guava:guava:33.3.1-android")
 
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    testCommonDependencies(libs, true)
     testImplementation(libs.test.junit)
     testImplementation(libs.test.truth)
     testImplementation(libs.coroutines.test)
+    testImplementation(project(":libraries:matrix:test"))
     testImplementation(project(":watchbridge-testing"))
+
+    androidTestImplementation(libs.androidx.compose.ui.test.junit)
+    androidTestImplementation(libs.coroutines.test)
+    androidTestImplementation(libs.test.core)
+    androidTestImplementation(libs.test.junit)
+    androidTestImplementation(libs.test.runner)
+    androidTestImplementation(libs.test.truth)
 }

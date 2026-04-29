@@ -37,6 +37,7 @@ interface ElementXWatchPort {
     /** Room summary + recent timeline slice projection. */
     suspend fun roomSummary(roomId: String): WatchRoomSummary?
     fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>>
+    suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> = Result.success(null)
 
     /** Thread read access (root context + recent replies). */
     fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>>

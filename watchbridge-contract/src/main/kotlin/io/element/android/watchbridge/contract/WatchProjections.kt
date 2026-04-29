@@ -45,6 +45,14 @@ data class WatchRoomSummary(
 @Serializable
 enum class WatchTimelineItemKind { TEXT, EMOTE, NOTICE, IMAGE, VIDEO, FILE, VOICE, REDACTED, STATE, UNSUPPORTED }
 
+/** Bounded image metadata the watch uses to render a cached preview. */
+@Serializable
+data class WatchMediaPreview(
+    val widthPx: Int? = null,
+    val heightPx: Int? = null,
+    val mimeType: String? = null,
+)
+
 /** A single compact timeline item. */
 @Serializable
 data class WatchTimelineItem(
@@ -65,6 +73,8 @@ data class WatchTimelineItem(
     val voiceMessageMeta: WatchVoiceMeta? = null,
     val readableByTts: Boolean = true,
     val threadLastReplyText: String? = null,
+    val mediaPreview: WatchMediaPreview? = null,
+    val isReadMarkerAnchor: Boolean = false,
 )
 
 /** Reactions aggregated per reaction key. */
@@ -109,6 +119,7 @@ data class WatchThreadItem(
     val isOwn: Boolean = false,
     val reactions: List<WatchReactionSummary> = emptyList(),
     val voiceMessageMeta: WatchVoiceMeta? = null,
+    val mediaPreview: WatchMediaPreview? = null,
 )
 
 /** Minimum info the watch needs to play a voice message it does not own. */

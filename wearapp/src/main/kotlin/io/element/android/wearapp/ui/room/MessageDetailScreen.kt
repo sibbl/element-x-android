@@ -17,6 +17,7 @@ import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.WearMainActivity
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
@@ -29,10 +30,12 @@ fun MessageDetailScreen(
     eventId: String,
     activity: WearMainActivity,
     onOpenThread: (String) -> Unit,
+    onOpenImage: (String) -> Unit = {},
     onReplySent: (sourceEventId: String, sourceWasLastMessage: Boolean) -> Unit = { _, _ -> },
     onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
+    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
         roomId = roomId,
@@ -45,12 +48,14 @@ fun MessageDetailScreen(
         ?: fallbackRoom?.displayName
         ?: ""
     val item = roomState.items.firstOrNull { it.eventId == eventId }
+    val mediaPreviewBytes = item?.let { mediaPreviewImages[mediaPreviewCacheKey(roomId, it.eventId)] }
 
     MessageDetailView(
         state = MessageDetailViewState(
             roomDisplayName = roomName,
             item = item,
         ),
+        mediaPreviewBytes = mediaPreviewBytes,
         onReply = {
             if (item != null) {
                 activity.launchDictation { dictated ->
@@ -90,6 +95,9 @@ fun MessageDetailScreen(
         onReadAloud = {
             item?.let { tts.speak(it.displayText()) }
         },
+        onOpenImage = item
+            ?.takeIf { it.kind == io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE }
+            ?.let { currentItem -> { onOpenImage(currentItem.eventId) } },
         onOpenOrStartThread = {
             val rootEventId = item?.threadRootEventId ?: item?.eventId
             if (rootEventId != null) onOpenThread(rootEventId)
