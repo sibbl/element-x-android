@@ -24,7 +24,9 @@ import io.element.android.watchbridge.contract.WatchVoiceDraft
 import io.element.android.watchbridge.transport.WatchChannel
 import io.element.android.watchbridge.transport.WatchTransport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -62,6 +64,7 @@ class WatchBridgeDispatcherTest {
         var sendReactionResult: Result<Unit> = Result.success(Unit),
         var sendVoiceResult: Result<String> = Result.success(""),
         var roomMediaPreviewResult: Result<ByteArray?> = Result.success(null),
+        val roomMediaPreviewResults: ArrayDeque<Result<ByteArray?>> = ArrayDeque(),
         val avatarThumbnailResults: ArrayDeque<Result<ByteArray?>> = ArrayDeque(),
     ) : ElementXWatchPort {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
@@ -73,7 +76,8 @@ class WatchBridgeDispatcherTest {
         override suspend fun roomSummary(roomId: String): WatchRoomSummary? = summary
         override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = timelineFlow ?: flowOf(timeline)
         override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = threadFlow ?: flowOf(thread)
-        override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> = roomMediaPreviewResult
+        override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> =
+            if (roomMediaPreviewResults.isEmpty()) roomMediaPreviewResult else roomMediaPreviewResults.removeFirst()
         override suspend fun sendText(
             roomId: String,
             threadRootEventId: String?,
@@ -282,6 +286,61 @@ class WatchBridgeDispatcherTest {
     }
 
     @Test
+    fun `fetch thread waits for real timeline items before publishing and sends media preview`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val imageItem = WatchThreadItem(
+            eventId = "image-1",
+            threadRootEventId = "root",
+            roomId = "!a:s",
+            senderId = "@alice:s",
+            senderDisplayName = "Alice",
+            timestampMs = 2L,
+            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE,
+            bodyText = "Photo",
+            mediaPreview = WatchMediaPreview(widthPx = 200, heightPx = 200, mimeType = "image/jpeg"),
+        )
+        val port = StubPort(
+            threadFlow = flow {
+                delay(3_500L)
+                emit(listOf(imageItem))
+            },
+            roomMediaPreviewResult = Result.success(byteArrayOf(8, 9, 10)),
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 100L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.FetchThread(requestId = "r-thread-media", roomId = "!a:s", threadRootEventId = "root"),
+            ),
+        )
+
+        advanceTimeBy(3_000L)
+        runCurrent()
+
+        assertThat(
+            transport.publications.none { (it.second.payload as? WatchSync.ThreadDelta)?.threadRootEventId == "root" },
+        ).isTrue()
+
+        advanceTimeBy(500L)
+        runCurrent()
+        advanceUntilIdle()
+
+        val threadPublication = transport.publications
+            .singleOrNull { it.first == WatchDataPaths.thread("!a:s", "root") }
+        val mediaPublication = transport.publications
+            .singleOrNull { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }
+
+        assertThat(threadPublication).isNotNull()
+        assertThat(mediaPublication).isNotNull()
+        assertThat((threadPublication!!.second.payload as WatchSync.ThreadDelta).items.map { it.eventId })
+            .containsExactly("image-1")
+        assertThat((mediaPublication!!.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
+            .containsExactly(8.toByte(), 9.toByte(), 10.toByte())
+            .inOrder()
+    }
+
+    @Test
     fun `avatar publication retries when thumbnail is temporarily unavailable`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
         val port = StubPort(
@@ -380,6 +439,56 @@ class WatchBridgeDispatcherTest {
             .containsExactly(4.toByte(), 5.toByte(), 6.toByte())
             .inOrder()
         assertThat(secondTimelineDelta.removedEventIds).containsExactly("text-1")
+    }
+
+    @Test
+    fun `open room retries media preview publication after initial failure`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val imageItem = WatchTimelineItem(
+            eventId = "image-1",
+            roomId = "!a:s",
+            senderId = "@alice:s",
+            senderDisplayName = "Alice",
+            timestampMs = 2L,
+            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE,
+            bodyText = "Photo",
+            mediaPreview = WatchMediaPreview(widthPx = 200, heightPx = 200, mimeType = "image/jpeg"),
+        )
+        val port = StubPort(
+            summary = WatchRoomSummary(
+                roomId = "!a:s",
+                displayName = "Room",
+                kind = WatchRoomKind.GROUP,
+                isEncrypted = false,
+                canSendMessages = true,
+                timelineVersion = 5L,
+                lastSyncTsMs = 0L,
+            ),
+            timelineFlow = flowOf(listOf(imageItem)),
+            roomMediaPreviewResults = ArrayDeque<Result<ByteArray?>>().apply {
+                add(Result.failure(IllegalStateException("temporary failure")))
+                add(Result.success(byteArrayOf(9, 8, 7)))
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 100L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.OpenRoom(requestId = "open-media-retry", roomId = "!a:s"),
+            ),
+        )
+        advanceTimeBy(1_500L)
+        runCurrent()
+        advanceUntilIdle()
+
+        val mediaPublication = transport.publications
+            .singleOrNull { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }
+
+        assertThat(mediaPublication).isNotNull()
+        assertThat((mediaPublication!!.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
+            .containsExactly(9.toByte(), 8.toByte(), 7.toByte())
+            .inOrder()
     }
 
     @Test

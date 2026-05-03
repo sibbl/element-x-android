@@ -44,6 +44,16 @@
             android:label="Wear OS Companion"
             android:theme="@style/Theme.Material3.Light" />
 
+        <activity
+            android:name="io.element.android.x.watchbridge.OpenOnWearActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="io.element.android.action.OPEN_ON_WEAR" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>

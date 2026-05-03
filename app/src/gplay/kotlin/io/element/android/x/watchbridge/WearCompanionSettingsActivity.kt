@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,11 +32,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.element.android.x.R
 import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchLongPressConversationAction
 import io.element.android.watchbridge.contract.WatchLongPressMessageAction
+
+internal const val WEAR_COMPANION_SEND_TEST_NOTIFICATION_TAG = "wear-companion-send-test-notification"
+
+internal data class WearCompanionNotificationSectionStrings(
+    val sectionTitle: String,
+    val actionTitle: String,
+    val actionDescription: String,
+)
 
 /**
  * Standalone settings Activity for the Wear OS companion. Launched from the main app's preferences.
@@ -48,6 +58,7 @@ class WearCompanionSettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = ElementXWatchBridgeRuntime.settingsStore(this)
+        val notificationTester = WearCompanionTestNotificationSender(this)
 
         setContent {
             MaterialTheme {
@@ -55,6 +66,7 @@ class WearCompanionSettingsActivity : ComponentActivity() {
                 WearCompanionSettingsScreen(
                     settings = settings,
                     onUpdateSettings = { store.update(it) },
+                    onSendTestNotification = { notificationTester.send() },
                     onBack = { finish() },
                 )
             }
@@ -64,18 +76,21 @@ class WearCompanionSettingsActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WearCompanionSettingsScreen(
+internal fun WearCompanionSettingsScreen(
     settings: WatchCompanionSettings,
     onUpdateSettings: (WatchCompanionSettings) -> Unit,
+    onSendTestNotification: () -> Unit,
     onBack: () -> Unit,
+    notificationStrings: WearCompanionNotificationSectionStrings? = null,
 ) {
+    val resolvedNotificationStrings = notificationStrings ?: rememberWearCompanionNotificationSectionStrings()
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Wear OS Companion") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
@@ -134,9 +149,35 @@ private fun WearCompanionSettingsScreen(
                     },
                 )
             }
+
+            Text(
+                text = resolvedNotificationStrings.sectionTitle,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            ListItem(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onSendTestNotification)
+                    .testTag(WEAR_COMPANION_SEND_TEST_NOTIFICATION_TAG),
+                headlineContent = {
+                    Text(resolvedNotificationStrings.actionTitle)
+                },
+                supportingContent = {
+                    Text(resolvedNotificationStrings.actionDescription)
+                },
+            )
         }
     }
 }
+
+@Composable
+private fun rememberWearCompanionNotificationSectionStrings(): WearCompanionNotificationSectionStrings =
+    WearCompanionNotificationSectionStrings(
+        sectionTitle = androidx.compose.ui.res.stringResource(R.string.screen_wear_companion_notifications_section),
+        actionTitle = androidx.compose.ui.res.stringResource(R.string.screen_wear_companion_send_test_notification),
+        actionDescription = androidx.compose.ui.res.stringResource(R.string.screen_wear_companion_send_test_notification_description),
+    )
 
 private fun WatchLongPressMessageAction.displayLabel(): String = when (this) {
     WatchLongPressMessageAction.READ_ALOUD -> "Read aloud / Play"

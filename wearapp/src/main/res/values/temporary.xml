@@ -32,6 +32,11 @@
     <string name="tile_favorite_conversations_label">Favorite conversations</string>
     <string name="tile_favorite_conversations_empty">Open the app to sync favorite conversations</string>
     <string name="tile_favorite_conversations_unavailable">Favorite conversations unavailable</string>
+    <string name="screen_wear_notifications_permission_message">Allow notifications on your watch to receive mirrored conversations.</string>
+    <string name="screen_wear_notifications_settings_message">Notifications are off for Element X Wear. Open settings to turn them back on.</string>
+    <string name="screen_wear_notifications_action_allow">Allow notifications</string>
+    <string name="screen_wear_notifications_action_settings">Open settings</string>
+    <string name="screen_wear_local_notifications_channel_name">Wear conversations</string>
     <string name="screen_voice_recorder_title">Voice message</string>
     <string name="screen_voice_recorder_permission">Allow microphone access to record voice messages.</string>
     <string name="screen_voice_recorder_recording">Recording…</string>
@@ -39,6 +44,7 @@
     <string name="screen_voice_recorder_action_record">Record</string>
     <string name="screen_voice_recorder_action_send">Send</string>
     <string name="screen_voice_recorder_action_cancel">Cancel</string>
+    <string name="screen_voice_recorder_action_hint">Tap Send to stop recording and send it.</string>
     <string name="watch_error_phone_unavailable">Phone unavailable</string>
     <string name="watch_error_timeout">Phone didn’t respond</string>
     <string name="watch_error_network">Connection issue</string>

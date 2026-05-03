@@ -58,6 +58,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":appconfig"))
     implementation(project(":watchbridge-contract"))
 
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
@@ -65,6 +66,7 @@ dependencies {
     implementation("androidx.wear.compose:compose-material:1.5.0")
     implementation("androidx.wear.compose:compose-foundation:1.5.0")
     implementation("androidx.wear.compose:compose-navigation:1.5.0")
+    implementation("androidx.wear:wear-phone-interactions:1.0.1")
 
     implementation(libs.androidx.corektx)
     implementation(libs.androidx.compose.material.icons)

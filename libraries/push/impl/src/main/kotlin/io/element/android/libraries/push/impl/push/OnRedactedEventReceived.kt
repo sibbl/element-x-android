@@ -19,12 +19,14 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import io.element.android.libraries.di.annotations.ApplicationContext
 import io.element.android.libraries.push.impl.notifications.ActiveNotificationsProvider
+import io.element.android.libraries.push.impl.notifications.CompanionNotificationBridge
 import io.element.android.libraries.push.impl.notifications.NotificationDisplayer
 import io.element.android.libraries.push.impl.notifications.factories.DefaultNotificationCreator
 import io.element.android.libraries.push.impl.notifications.model.ResolvedPushEvent
 import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.services.toolbox.api.strings.StringProvider
 import timber.log.Timber
+import kotlin.jvm.JvmSuppressWildcards
 
 interface OnRedactedEventReceived {
     suspend fun onRedactedEventsReceived(redactions: List<ResolvedPushEvent.Redaction>)
@@ -36,6 +38,7 @@ class DefaultOnRedactedEventReceived(
     private val notificationDisplayer: NotificationDisplayer,
     @ApplicationContext private val context: Context,
     private val stringProvider: StringProvider,
+    private val companionNotificationBridges: Set<@JvmSuppressWildcards CompanionNotificationBridge>,
 ) : OnRedactedEventReceived {
     override suspend fun onRedactedEventsReceived(redactions: List<ResolvedPushEvent.Redaction>) {
         val redactionsBySessionIdAndRoom = redactions.groupBy { redaction ->
@@ -82,6 +85,10 @@ class DefaultOnRedactedEventReceived(
                         .build()
                 )
             }
+        }
+        companionNotificationBridges.forEach { bridge ->
+            runCatching { bridge.onMessageNotificationsRedacted(redactions) }
+                .onFailure { Timber.w(it, "Failed to sync redacted companion notification") }
         }
     }
 }

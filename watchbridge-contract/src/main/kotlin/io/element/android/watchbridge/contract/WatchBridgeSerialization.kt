@@ -36,6 +36,7 @@ object WatchBridgeSerialization {
                 subclass(WatchSync.TimelineDelta::class)
                 subclass(WatchSync.ThreadDelta::class)
                 subclass(WatchSync.UnreadUpdate::class)
+                subclass(WatchSync.MessageNotification::class)
                 subclass(WatchSync.Invalidation::class)
                 subclass(WatchSync.FullRefresh::class)
                 subclass(WatchSync.SettingsUpdate::class)

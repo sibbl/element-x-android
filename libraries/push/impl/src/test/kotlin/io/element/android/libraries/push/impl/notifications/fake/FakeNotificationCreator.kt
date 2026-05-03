@@ -38,7 +38,7 @@ class FakeNotificationCreator(
     var createFallbackNotificationResult: LambdaThreeParamsRecorder<Notification?, NotificationAccountParams, List<FallbackNotifiableEvent>, Notification> =
         lambdaRecorder { _, _, _ -> A_NOTIFICATION },
     var createSummaryListNotificationResult: LambdaFiveParamsRecorder<
-        NotificationAccountParams, String, Boolean, Long, NotificationAccountParams, Notification
+        NotificationAccountParams, String, Boolean, Long, List<String>, Notification
         > = lambdaRecorder { _, _, _, _, _ -> A_NOTIFICATION },
     var createDiagnosticNotificationResult: LambdaOneParamRecorder<Int, Notification> =
         lambdaRecorder<Int, Notification> { _ -> A_NOTIFICATION },
@@ -102,8 +102,9 @@ class FakeNotificationCreator(
         compatSummary: String,
         noisy: Boolean,
         lastMessageTimestamp: Long,
+        summaryLines: List<String>,
     ): Notification {
-        return createSummaryListNotificationResult(notificationAccountParams, compatSummary, noisy, lastMessageTimestamp, notificationAccountParams)
+        return createSummaryListNotificationResult(notificationAccountParams, compatSummary, noisy, lastMessageTimestamp, summaryLines)
     }
 
     override fun createDiagnosticNotification(

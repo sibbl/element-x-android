@@ -22,12 +22,15 @@ import androidx.core.app.Person
 import coil3.ImageLoader
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
+import io.element.android.appconfig.NotificationConfig
+import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.libraries.core.meta.BuildMeta
 import io.element.android.libraries.designsystem.components.avatar.AvatarData
 import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.designsystem.utils.CommonDrawables
 import io.element.android.libraries.di.annotations.ApplicationContext
 import io.element.android.libraries.matrix.api.core.RoomId
+import io.element.android.libraries.matrix.api.core.SessionId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.timeline.item.event.EventType
 import io.element.android.libraries.matrix.api.user.MatrixUser
@@ -40,6 +43,7 @@ import io.element.android.libraries.push.impl.notifications.channels.Notificatio
 import io.element.android.libraries.push.impl.notifications.debug.annotateForDebug
 import io.element.android.libraries.push.impl.notifications.factories.action.AcceptInvitationActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.MarkAsReadActionFactory
+import io.element.android.libraries.push.impl.notifications.factories.action.OpenOnWearActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.QuickReplyActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.RejectInvitationActionFactory
 import io.element.android.libraries.push.impl.notifications.model.FallbackNotifiableEvent
@@ -91,6 +95,7 @@ interface NotificationCreator {
         compatSummary: String,
         noisy: Boolean,
         lastMessageTimestamp: Long,
+        summaryLines: List<String>,
     ): Notification
 
     fun createDiagnosticNotification(
@@ -122,6 +127,7 @@ class DefaultNotificationCreator(
     private val pendingIntentFactory: PendingIntentFactory,
     private val markAsReadActionFactory: MarkAsReadActionFactory,
     private val quickReplyActionFactory: QuickReplyActionFactory,
+    private val openOnWearActionFactory: OpenOnWearActionFactory,
     private val bitmapLoader: NotificationBitmapLoader,
     private val acceptInvitationActionFactory: AcceptInvitationActionFactory,
     private val rejectInvitationActionFactory: RejectInvitationActionFactory,
@@ -142,6 +148,14 @@ class DefaultNotificationCreator(
     ): Notification {
         // Build the pending intent for when the notification is clicked
         val eventId = events.firstOrNull()?.eventId
+        val quickReplyAction = events.lastOrNull()?.eventId
+            ?.takeIf { !roomInfo.hasSmartReplyError }
+            ?.let { latestEventId -> quickReplyActionFactory.create(roomInfo, latestEventId, threadId) }
+        val openOnWearAction = openOnWearActionFactory.create(
+            roomId = roomInfo.roomId,
+            eventId = eventId,
+            threadId = threadId,
+        )
         val openIntent = when {
             threadId != null -> pendingIntentFactory.createOpenThreadPendingIntent(roomInfo.sessionId, roomInfo.roomId, eventId, threadId)
             else -> pendingIntentFactory.createOpenRoomPendingIntent(
@@ -213,12 +227,28 @@ class DefaultNotificationCreator(
             .setContentIntent(openIntent)
             .setLargeIcon(largeIcon)
             .setDeleteIntent(pendingIntentFactory.createDismissRoomPendingIntent(roomInfo.sessionId, roomInfo.roomId))
+            .enableWearPhoneBridge(
+                dismissalId = wearRoomNotificationDismissalId(
+                    scope = "messages",
+                    sessionId = roomInfo.sessionId,
+                    roomId = roomInfo.roomId,
+                    threadId = threadId,
+                ),
+                configure = {
+                    quickReplyAction?.let(::addAction)
+                    addAction(openOnWearAction)
+                    setContentAction(if (quickReplyAction != null) 1 else 0)
+                    setStartScrollBottom(true)
+                    setContentIntentAvailableOffline(false)
+                },
+            )
             .apply {
                 // Wear OS: include roomId/eventId as notification extras so bridged
                 // notifications carry enough context for the watch companion to deep-link.
                 addExtras(Bundle().apply {
-                    putString("io.element.android.wear.roomId", roomInfo.roomId.value)
-                    putString("io.element.android.wear.eventId", eventId?.value.orEmpty())
+                    putString(WearCompanionConfig.EXTRA_ROOM_ID, roomInfo.roomId.value)
+                    putString(WearCompanionConfig.EXTRA_EVENT_ID, eventId?.value.orEmpty())
+                    putString(WearCompanionConfig.EXTRA_THREAD_ROOT_EVENT_ID, threadId?.value.orEmpty())
                     putString("io.element.android.wear.roomName", roomInfo.roomDisplayName.orEmpty())
                 })
             }
@@ -233,10 +263,7 @@ class DefaultNotificationCreator(
                     priority = NotificationCompat.PRIORITY_LOW
                 }
                 // Quick reply
-                if (!roomInfo.hasSmartReplyError) {
-                    val latestEventId = events.lastOrNull()?.eventId
-                    addAction(quickReplyActionFactory.create(roomInfo, latestEventId, threadId))
-                }
+                quickReplyAction?.let(::addAction)
             }
             .setTicker(tickerText)
             .build()
@@ -282,6 +309,13 @@ class DefaultNotificationCreator(
                 )
             )
             .setAutoCancel(true)
+            .enableWearPhoneBridge(
+                dismissalId = wearRoomNotificationDismissalId(
+                    scope = "invite",
+                    sessionId = inviteNotifiableEvent.sessionId,
+                    roomId = inviteNotifiableEvent.roomId,
+                )
+            )
             .build()
     }
 
@@ -317,6 +351,13 @@ class DefaultNotificationCreator(
                     priority = NotificationCompat.PRIORITY_LOW
                 }
             }
+            .enableWearPhoneBridge(
+                dismissalId = wearRoomNotificationDismissalId(
+                    scope = "simple",
+                    sessionId = simpleNotifiableEvent.sessionId,
+                    roomId = simpleNotifiableEvent.roomId,
+                )
+            )
             .build()
     }
 
@@ -352,6 +393,12 @@ class DefaultNotificationCreator(
             .setWhen(fallbackNotifiableEvent.timestamp)
             .setContentIntent(pendingIntentFactory.createOpenSessionPendingIntent(fallbackNotifiableEvent.sessionId))
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .enableWearPhoneBridge(
+                dismissalId = wearSessionNotificationDismissalId(
+                    scope = "fallback",
+                    sessionId = fallbackNotifiableEvent.sessionId,
+                )
+            )
             .build()
     }
 
@@ -363,14 +410,29 @@ class DefaultNotificationCreator(
         compatSummary: String,
         noisy: Boolean,
         lastMessageTimestamp: Long,
+        summaryLines: List<String>,
     ): Notification {
         val userId = notificationAccountParams.user.userId
         val channelId = notificationChannels.getChannelIdForMessage(
             sessionId = userId,
             noisy = noisy,
         )
+        val summaryTitle = compatSummary.annotateForDebug(9)
+        val summaryText = summaryLines.firstOrNull()?.annotateForDebug(10) ?: summaryTitle
+        val summaryStyle = if (summaryLines.isEmpty()) {
+            NotificationCompat.BigTextStyle().bigText(summaryTitle)
+        } else {
+            NotificationCompat.InboxStyle()
+                .setBigContentTitle(summaryTitle)
+                .also { style ->
+                    summaryLines.forEach { style.addLine(it.annotateForDebug(11)) }
+                }
+        }
         return NotificationCompat.Builder(context, channelId)
             .setOnlyAlertOnce(true)
+            .setContentTitle(summaryTitle)
+            .setContentText(summaryText)
+            .setStyle(summaryStyle)
             // used in compat < N, after summary is built based on child notifications
             .setWhen(lastMessageTimestamp)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -389,6 +451,7 @@ class DefaultNotificationCreator(
             }
             .setContentIntent(pendingIntentFactory.createOpenSessionPendingIntent(userId))
             .setDeleteIntent(pendingIntentFactory.createDismissSummaryPendingIntent(userId))
+                .enableWearPhoneBridge(dismissalId = "summary:${userId.value}")
             .build()
     }
 
@@ -406,6 +469,7 @@ class DefaultNotificationCreator(
             .setAutoCancel(true)
             .setContentIntent(intent)
             .setDeleteIntent(intent)
+                .enableWearPhoneBridge(dismissalId = "diagnostic")
             .build()
     }
 
@@ -425,6 +489,7 @@ class DefaultNotificationCreator(
             .setCategory(NotificationCompat.CATEGORY_ERROR)
             .setAutoCancel(true)
             .setContentIntent(pendingIntentFactory.createOpenSessionPendingIntent(userId))
+                .enableWearPhoneBridge(dismissalId = "unregistration:${userId.value}")
             .build()
     }
 
@@ -542,6 +607,33 @@ class DefaultNotificationCreator(
         const val MESSAGE_EVENT_ID = "message_event_id"
         private const val FALLBACK_COUNTER_EXTRA = "COUNTER"
     }
+}
+
+private fun NotificationCompat.Builder.enableWearPhoneBridge(
+    dismissalId: String,
+    configure: (NotificationCompat.WearableExtender.() -> Unit)? = null,
+): NotificationCompat.Builder = apply {
+    val extender = NotificationCompat.WearableExtender()
+        .setBridgeTag(NotificationConfig.WEAR_BRIDGED_NOTIFICATION_TAG)
+        .setDismissalId(dismissalId)
+    configure?.invoke(extender)
+    extend(extender)
+}
+
+private fun wearRoomNotificationDismissalId(
+    scope: String,
+    sessionId: SessionId,
+    roomId: RoomId,
+    threadId: ThreadId? = null,
+): String {
+    return "$scope:${sessionId.value}:${NotificationCreator.messageTag(roomId, threadId)}"
+}
+
+private fun wearSessionNotificationDismissalId(
+    scope: String,
+    sessionId: SessionId,
+): String {
+    return "$scope:${sessionId.value}"
 }
 
 private fun NotificationCompat.Builder.configureWith(notificationAccountParams: NotificationAccountParams) = apply {

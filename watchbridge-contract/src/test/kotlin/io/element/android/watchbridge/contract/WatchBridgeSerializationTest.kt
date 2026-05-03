@@ -101,6 +101,33 @@ class WatchBridgeSerializationTest {
     }
 
     @Test
+    fun `message notification roundtrips`() {
+        val envelope = WatchSyncEnvelope(
+            generatedAtMs = 55L,
+            expiresAtMs = 1055L,
+            payload = WatchSync.MessageNotification(
+                notification = WatchMessageNotification(
+                    notificationKey = "message:@alice:server:!room:server",
+                    roomId = "!room:server",
+                    eventId = "\$event:server",
+                    threadRootEventId = "\$root:server",
+                    roomDisplayName = "Team Wear",
+                    senderDisplayName = "Bob",
+                    bodyText = "Hello there",
+                    timestampMs = 12L,
+                    messageCount = 3,
+                    isNoisy = true,
+                ),
+            ),
+        )
+
+        val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+
+        assertThat(decoded).isEqualTo(envelope)
+        assertThat((decoded.payload as WatchSync.MessageNotification).notification.messageCount).isEqualTo(3)
+    }
+
+    @Test
     fun `byte roundtrip preserves content`() {
         val env = WatchSyncEnvelope(generatedAtMs = 1L, payload = WatchSync.FullRefresh)
         val decoded = ser.decodeEnvelopeFromBytes(ser.encodeEnvelopeToBytes(env))

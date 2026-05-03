@@ -13,6 +13,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -51,7 +54,7 @@ import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CircularProgressIndicator
-import androidx.wear.compose.material.CompactChip
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchVoiceDraft
@@ -246,14 +249,22 @@ private fun VoiceRecorderUi(
                     style = MaterialTheme.typography.title2,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                CompactChip(
-                    label = { Text(stringResource(R.string.screen_voice_recorder_action_cancel)) },
-                    onClick = { cancelRecording() },
-                    colors = ChipDefaults.secondaryChipColors(),
+                Text(
+                    text = stringResource(R.string.screen_voice_recorder_action_hint),
+                    style = MaterialTheme.typography.caption2,
+                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.72f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Chip(
                     modifier = Modifier.fillMaxWidth(),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                        )
+                    },
                     label = { Text(stringResource(R.string.screen_voice_recorder_action_send)) },
                     onClick = {
                         val file = recorder.stop()
@@ -297,6 +308,19 @@ private fun VoiceRecorderUi(
                         }
                     },
                     colors = ChipDefaults.primaryChipColors(),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Chip(
+                    modifier = Modifier.fillMaxWidth(0.72f),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = null,
+                        )
+                    },
+                    label = { Text(stringResource(R.string.screen_voice_recorder_action_cancel)) },
+                    onClick = { cancelRecording() },
+                    colors = ChipDefaults.secondaryChipColors(),
                 )
             }
 

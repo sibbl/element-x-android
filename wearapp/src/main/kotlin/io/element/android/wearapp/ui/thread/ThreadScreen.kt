@@ -31,6 +31,7 @@ import io.element.android.wearapp.ui.room.RoomView
 import io.element.android.wearapp.ui.room.RoomViewState
 import io.element.android.wearapp.ui.room.displayText
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
@@ -43,11 +44,17 @@ fun ThreadScreen(
     onMessageSelected: (String) -> Unit = {},
     onError: (String) -> Unit = {},
 ) {
-    var items by remember(roomId, threadRootEventId) {
-        mutableStateOf(bridge.getCachedThread(roomId, threadRootEventId))
+    val cachedItems = remember(roomId, threadRootEventId) {
+        bridge.getCachedThread(roomId, threadRootEventId)
     }
+    var items by remember(roomId, threadRootEventId) { mutableStateOf(cachedItems) }
     var hasReceivedDelta by remember(roomId, threadRootEventId) {
-        mutableStateOf(bridge.hasCachedThreadSnapshot(roomId, threadRootEventId))
+        mutableStateOf(
+            bridge.hasCachedThreadSnapshot(roomId, threadRootEventId) || cachedItems.isNotEmpty(),
+        )
+    }
+    var initialBottomScrollRequestId by remember(roomId, threadRootEventId) {
+        mutableStateOf<Long?>(System.currentTimeMillis())
     }
     val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val scope = rememberCoroutineScope()
@@ -58,35 +65,31 @@ fun ThreadScreen(
 
     LaunchedEffect(roomId, threadRootEventId) {
         runCatching {
-            bridge.send {
-                WatchCommand.FetchThread(
-                    requestId = it,
-                    roomId = roomId,
-                    threadRootEventId = threadRootEventId,
-                )
-            }
+            bridge.ensureThreadSubscription(
+                roomId = roomId,
+                threadRootEventId = threadRootEventId,
+            )
         }.onFailure {
             onError(activity.watchCommandErrorMessage(it, R.string.watch_error_open_thread_failed))
         }
         bridge.syncEvents.filterIsInstance<WatchSync.ThreadDelta>()
+            .filter { delta -> delta.roomId == roomId && delta.threadRootEventId == threadRootEventId }
             .collect { delta ->
-                if (delta.roomId == roomId && delta.threadRootEventId == threadRootEventId) {
-                    hasReceivedDelta = true
-                    val updated = mergeThreadItems(
-                        existing = items,
-                        incoming = delta.items,
-                    )
-                        .filter { it.eventId !in delta.removedEventIds }
-                        .sortedBy { it.timestampMs }
-                        .takeLast(50)
-                    items = updated
-                    bridge.cacheThread(
-                        roomId = roomId,
-                        threadRootEventId = threadRootEventId,
-                        items = updated,
-                        hasSnapshot = true,
-                    )
-                }
+                hasReceivedDelta = true
+                val updated = mergeThreadItems(
+                    existing = items,
+                    incoming = delta.items,
+                )
+                    .filter { it.eventId !in delta.removedEventIds }
+                    .sortedBy { it.timestampMs }
+                    .takeLast(50)
+                items = updated
+                bridge.cacheThread(
+                    roomId = roomId,
+                    threadRootEventId = threadRootEventId,
+                    items = updated,
+                    hasSnapshot = true,
+                )
             }
     }
 
@@ -104,11 +107,18 @@ fun ThreadScreen(
             composerContextLabel = null,
             isLoading = !hasReceivedDelta,
             emptyText = stringResource(R.string.screen_thread_empty_messages),
+            scrollRequestId = initialBottomScrollRequestId,
+            forceScrollToBottom = true,
             mediaPreviewImages = mediaPreviewImages,
         ),
         onMessageSelected = onMessageSelected,
         // No nested-thread navigation inside a thread.
         onOpenThread = null,
+        onScrollRequestHandled = { requestId ->
+            if (initialBottomScrollRequestId == requestId) {
+                initialBottomScrollRequestId = null
+            }
+        },
         onLongPressMessage = { item -> tts.speak(item.displayText()) },
         onReact = {
             timelineItems.lastOrNull()?.let { lastItem ->

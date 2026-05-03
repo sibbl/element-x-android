@@ -8,8 +8,12 @@
 package io.element.android.wearapp
 
 import android.app.Application
+import android.content.Context
 import android.content.pm.ApplicationInfo
+import androidx.wear.phone.interactions.notifications.BridgingConfig
+import androidx.wear.phone.interactions.notifications.BridgingManager
 import androidx.wear.tiles.TileService
+import io.element.android.appconfig.NotificationConfig
 import io.element.android.wearapp.tile.FavoriteContactsTileService
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.tile.RecentContactsTileService
@@ -29,6 +33,7 @@ class WearApp : Application() {
         if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             Timber.plant(Timber.DebugTree())
         }
+        configureNotificationBridging()
         bridgeClient = WearBridgeClient(this)
         bridgeClient.start()
         // Request tile updates so both conversation tiles refresh when data becomes available.
@@ -40,4 +45,18 @@ class WearApp : Application() {
         bridgeClient.stop()
         super.onTerminate()
     }
+
+    private fun configureNotificationBridging() {
+        runCatching {
+            BridgingManager.fromContext(this).setConfig(createWearNotificationBridgingConfig(this))
+        }.onFailure { throwable ->
+            Timber.w(throwable, "Unable to configure Wear notification bridging")
+        }
+    }
+}
+
+internal fun createWearNotificationBridgingConfig(context: Context): BridgingConfig {
+    return BridgingConfig.Builder(context, false)
+        .addExcludedTags(listOf(NotificationConfig.WEAR_BRIDGED_NOTIFICATION_TAG))
+        .build()
 }

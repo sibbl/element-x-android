@@ -37,6 +37,7 @@ class DefaultSummaryGroupMessageCreatorTest : RobolectricTest() {
                 RoomNotification(
                     notification = Notification(),
                     roomId = A_ROOM_ID,
+                    roomDisplayName = "A Room",
                     messageCount = 1,
                     latestTimestamp = A_FAKE_TIMESTAMP + 10,
                     shouldBing = true,

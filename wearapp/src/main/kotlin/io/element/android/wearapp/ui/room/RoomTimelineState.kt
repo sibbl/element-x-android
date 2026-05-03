@@ -14,11 +14,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.text.HtmlCompat
-import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.bridge.WearBridgeClient
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 
 private const val MAX_TIMELINE_ITEMS = 100
@@ -36,42 +36,41 @@ internal fun rememberRoomTimelineState(
     onOpenFailure: ((Throwable) -> Unit)? = null,
 ): RoomTimelineState {
     var summary by remember(roomId) { mutableStateOf(bridge.getCachedSummary(roomId)) }
-    var items by remember(roomId) { mutableStateOf(bridge.getCachedTimeline(roomId)) }
-    var hasReceivedDelta by remember(roomId) { mutableStateOf(bridge.hasCachedTimelineSnapshot(roomId)) }
+    val cachedItems = remember(roomId) { bridge.getCachedTimeline(roomId) }
+    var items by remember(roomId) { mutableStateOf(cachedItems) }
+    var hasReceivedDelta by remember(roomId) {
+        mutableStateOf(bridge.hasCachedTimelineSnapshot(roomId) || cachedItems.isNotEmpty())
+    }
 
     LaunchedEffect(bridge, roomId) {
         runCatching {
-            bridge.send { requestId ->
-                WatchCommand.OpenRoom(requestId = requestId, roomId = roomId)
-            }
+            bridge.ensureRoomSubscription(roomId = roomId)
         }.onFailure { onOpenFailure?.invoke(it) }
     }
 
     LaunchedEffect(bridge, roomId) {
         bridge.syncEvents.filterIsInstance<WatchSync.RoomSummary>()
+            .filter { update -> update.summary.roomId == roomId }
             .collect { update ->
-                if (update.summary.roomId == roomId) {
-                    summary = update.summary
-                    bridge.cacheSummary(roomId, update.summary)
-                }
+                summary = update.summary
+                bridge.cacheSummary(roomId, update.summary)
             }
     }
 
     LaunchedEffect(bridge, roomId) {
         bridge.syncEvents.filterIsInstance<WatchSync.TimelineDelta>()
+            .filter { delta -> delta.roomId == roomId }
             .collect { delta ->
-                if (delta.roomId == roomId) {
-                    hasReceivedDelta = true
-                    val updated = mergeTimelineItems(
-                        existing = items,
-                        incoming = delta.items,
-                    )
-                        .filter { it.eventId !in delta.removedEventIds }
-                        .sortedBy { it.timestampMs }
-                        .takeLast(MAX_TIMELINE_ITEMS)
-                    items = updated
-                    bridge.cacheTimeline(roomId, updated, hasSnapshot = true)
-                }
+                hasReceivedDelta = true
+                val updated = mergeTimelineItems(
+                    existing = items,
+                    incoming = delta.items,
+                )
+                    .filter { it.eventId !in delta.removedEventIds }
+                    .sortedBy { it.timestampMs }
+                    .takeLast(MAX_TIMELINE_ITEMS)
+                items = updated
+                bridge.cacheTimeline(roomId, updated, hasSnapshot = true)
             }
     }
 

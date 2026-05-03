@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="screen_wear_companion_notifications_section">Notification test</string>
+    <string name="screen_wear_companion_send_test_notification">Send test notification</string>
+    <string name="screen_wear_companion_send_test_notification_description">Mirror a diagnostic notification to your watch to verify notification forwarding.</string>
+    <string name="screen_wear_companion_test_notification_title">Wear OS companion test</string>
+    <string name="screen_wear_companion_test_notification_body">If this appears on your watch, notification forwarding is working.</string>
+    <string name="screen_wear_companion_test_notification_channel_name">Wear OS companion</string>
+    <string name="screen_wear_companion_test_notification_channel_description">Test notifications for the Wear OS companion.</string>
+</resources>

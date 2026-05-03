@@ -513,6 +513,7 @@ fun TestScope.createDefaultNotificationDrawerManager(
     sessionObserver: SessionObserver = FakeSessionObserver(),
     analyticsService: FakeAnalyticsService = FakeAnalyticsService(),
     lockScreenService: LockScreenService = FakeLockScreenService(),
+    companionNotificationBridges: Set<CompanionNotificationBridge> = emptySet(),
 ): DefaultNotificationDrawerManager {
     return DefaultNotificationDrawerManager(
         notificationDisplayer = notificationDisplayer,
@@ -534,6 +535,7 @@ fun TestScope.createDefaultNotificationDrawerManager(
         imageLoaderHolder = FakeImageLoaderHolder(),
         activeNotificationsProvider = activeNotificationsProvider,
         lockScreenService = lockScreenService,
+        companionNotificationBridges = companionNotificationBridges,
         sessionObserver = sessionObserver,
     )
 }

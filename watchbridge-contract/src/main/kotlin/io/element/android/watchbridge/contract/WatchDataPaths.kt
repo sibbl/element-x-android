@@ -14,6 +14,7 @@ object WatchDataPaths {
     const val FAVORITES: String = "${WatchProtocol.DATA_PATH_PREFIX}/favorites"
     private const val AVATAR: String = "${WatchProtocol.DATA_PATH_PREFIX}/avatar"
     private const val MEDIA_PREVIEW: String = "${WatchProtocol.DATA_PATH_PREFIX}/media"
+    private const val NOTIFICATION: String = "${WatchProtocol.DATA_PATH_PREFIX}/notification"
     const val ROOM_SUMMARY: String = "${WatchProtocol.DATA_PATH_PREFIX}/room/summary"
     const val ROOM_TIMELINE: String = "${WatchProtocol.DATA_PATH_PREFIX}/room/timeline"
     const val THREAD: String = "${WatchProtocol.DATA_PATH_PREFIX}/thread"
@@ -26,6 +27,12 @@ object WatchDataPaths {
     fun avatar(roomId: String): String = "$AVATAR/${roomId.toDataPathSegment()}"
     fun mediaPreview(roomId: String, eventId: String): String =
         "$MEDIA_PREVIEW/${roomId.toDataPathSegment()}/${eventId.toDataPathSegment()}"
+    fun notification(notificationKey: String): String = "$NOTIFICATION/${notificationKey.toDataPathSegment()}"
+    fun notificationKey(path: String): String? = path
+        .takeIf { it.startsWith("$NOTIFICATION/") }
+        ?.removePrefix("$NOTIFICATION/")
+        ?.takeIf { it.isNotBlank() }
+        ?.fromDataPathSegment()
     fun roomTimeline(roomId: String): String = "$ROOM_TIMELINE/$roomId"
     fun thread(roomId: String, threadRootEventId: String): String = "$THREAD/$roomId/$threadRootEventId"
     fun voiceDraftChannel(draftId: String): String = "$VOICE_DRAFT_CHANNEL/$draftId"
@@ -36,4 +43,8 @@ object WatchDataPaths {
 
     private fun String.toDataPathSegment(): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(toByteArray(Charsets.UTF_8))
+
+    private fun String.fromDataPathSegment(): String? = runCatching {
+        String(Base64.getUrlDecoder().decode(this), Charsets.UTF_8)
+    }.getOrNull()
 }

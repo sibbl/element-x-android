@@ -7,33 +7,52 @@
 
 package io.element.android.wearapp.ui
 
+import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import io.element.android.appconfig.WearCompanionDeepLink
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchLongPressConversationAction
 import io.element.android.watchbridge.contract.WatchSendSource
@@ -43,6 +62,7 @@ import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.room.ImageViewerScreen
 import io.element.android.wearapp.ui.favorites.FavoritesScreen
+import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.room.MessageDetailScreen
 import io.element.android.wearapp.ui.room.RoomScreen
 import io.element.android.wearapp.ui.thread.ThreadScreen
@@ -55,9 +75,20 @@ import java.util.Locale
 class WearMainActivity : ComponentActivity() {
 
     private var pendingDictationResult: ((String?) -> Unit)? = null
-    private var pendingDeepLink by mutableStateOf<Pair<String, String?>?>(null)
+    private var notificationPermissionState by mutableStateOf(WearNotificationPermissionState.Granted)
+    private var pendingDeepLink by mutableStateOf<WearCompanionDeepLink?>(null)
     private var pendingRoomScrollRequest by mutableStateOf<PendingRoomScrollRequest?>(null)
     private var transientErrorMessage by mutableStateOf<String?>(null)
+    private var favoritesRequestedRoomCount by mutableIntStateOf(30)
+    private var favoritesRestoredPage by mutableIntStateOf(-1)
+    private val favoritesListPositions = mutableStateMapOf<String, SavedScalingListPosition>()
+    private var hasRequestedNotificationPermissionThisSession = false
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        refreshNotificationPermissionState()
+    }
 
     private val dictationLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -82,16 +113,35 @@ class WearMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        refreshNotificationPermissionState()
         pendingDeepLink = consumePendingDeepLink(intent)
         val bridge = (application as WearApp).bridgeClient
         setContent {
             val nav = rememberSwipeDismissableNavController()
+            val openRoomAtBottom: (String) -> Unit = { roomId ->
+                pendingRoomScrollRequest = PendingRoomScrollRequest(
+                    roomId = roomId,
+                    forceScrollToBottom = true,
+                )
+                nav.navigate(roomRoute(roomId)) {
+                    launchSingleTop = true
+                }
+            }
+            LaunchedEffect(notificationPermissionState) {
+                requestNotificationPermissionIfNeeded()
+            }
             LaunchedEffect(pendingDeepLink) {
-                pendingDeepLink?.let { (roomId, eventId) ->
-                    if (eventId != null) {
-                        nav.navigate("message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}")
-                    } else {
-                        nav.navigate("room?roomId=${Uri.encode(roomId)}")
+                pendingDeepLink?.let { deepLink ->
+                    when {
+                        deepLink.threadRootEventId != null -> {
+                            navigateFromRoot(nav = nav, deepLink = deepLink)
+                        }
+                        deepLink.eventId == null -> {
+                            openRoomAtBottom(deepLink.roomId)
+                        }
+                        else -> {
+                            navigateFromRoot(nav = nav, deepLink = deepLink)
+                        }
                     }
                     pendingDeepLink = null
                 }
@@ -111,16 +161,14 @@ class WearMainActivity : ComponentActivity() {
                             val tts = remember { WearTextToSpeech(this@WearMainActivity) }
                             FavoritesScreen(
                                 bridge = bridge,
-                                onRoomSelected = { roomId ->
-                                    nav.navigate("room?roomId=${Uri.encode(roomId)}")
-                                },
+                                onRoomSelected = openRoomAtBottom,
                                 onLongPressRoom = { room ->
                                     when (settings.longPressConversationAction) {
                                         WatchLongPressConversationAction.READ_LATEST -> {
                                             room.lastPreviewText?.let { tts.speak(it) }
                                         }
                                         WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> {
-                                            nav.navigate("room?roomId=${Uri.encode(room.roomId)}")
+                                            openRoomAtBottom(room.roomId)
                                         }
                                         WatchLongPressConversationAction.QUICK_REPLY_TEXT -> {
                                             launchDictation { dictated ->
@@ -154,11 +202,19 @@ class WearMainActivity : ComponentActivity() {
                                             )
                                         }
                                         WatchLongPressConversationAction.OPEN_LATEST -> {
-                                            nav.navigate("room?roomId=${Uri.encode(room.roomId)}")
+                                            openRoomAtBottom(room.roomId)
                                         }
                                     }
                                 },
                                 onError = { transientErrorMessage = it },
+                                requestedRoomCount = favoritesRequestedRoomCount,
+                                restoredPage = favoritesRestoredPage.takeIf { it >= 0 },
+                                savedFavoriteListPosition = favoritesListPositions[FAVORITES_PAGE_KEY],
+                                savedRecentListPosition = favoritesListPositions[RECENTS_PAGE_KEY],
+                                onRequestedRoomCountChange = { favoritesRequestedRoomCount = it.coerceAtLeast(favoritesRequestedRoomCount) },
+                                onPageChanged = { favoritesRestoredPage = it },
+                                onFavoriteListPositionChange = { favoritesListPositions[FAVORITES_PAGE_KEY] = it },
+                                onRecentListPositionChange = { favoritesListPositions[RECENTS_PAGE_KEY] = it },
                             )
                         }
                         composable("room?roomId={roomId}") { entry ->
@@ -169,14 +225,14 @@ class WearMainActivity : ComponentActivity() {
                                 roomId = roomId,
                                 activity = this@WearMainActivity,
                                 onOpenThread = { rootId ->
-                                    nav.navigate(
-                                        "thread?roomId=${Uri.encode(roomId)}&rootId=${Uri.encode(rootId)}",
-                                    )
+                                    nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
+                                        launchSingleTop = true
+                                    }
                                 },
                                 onMessageSelected = { eventId ->
-                                    nav.navigate(
-                                        "message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}",
-                                    )
+                                    nav.navigate(messageRoute(roomId = roomId, eventId = eventId)) {
+                                        launchSingleTop = true
+                                    }
                                 },
                                 scrollRequestId = roomScrollRequest?.requestId,
                                 scrollToEventId = roomScrollRequest?.targetEventId,
@@ -198,14 +254,14 @@ class WearMainActivity : ComponentActivity() {
                                 eventId = eventId,
                                 activity = this@WearMainActivity,
                                 onOpenThread = { rootId ->
-                                    nav.navigate(
-                                        "thread?roomId=${Uri.encode(roomId)}&rootId=${Uri.encode(rootId)}",
-                                    )
+                                    nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
+                                        launchSingleTop = true
+                                    }
                                 },
                                 onOpenImage = { imageEventId ->
-                                    nav.navigate(
-                                        "image?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(imageEventId)}",
-                                    )
+                                    nav.navigate(imageRoute(roomId = roomId, eventId = imageEventId)) {
+                                        launchSingleTop = true
+                                    }
                                 },
                                 onReplySent = { sourceEventId, sourceWasLastMessage ->
                                     pendingRoomScrollRequest = PendingRoomScrollRequest(
@@ -240,6 +296,17 @@ class WearMainActivity : ComponentActivity() {
                         }
                     }
 
+                    if (notificationPermissionState != WearNotificationPermissionState.Granted) {
+                        NotificationPermissionPrompt(
+                            state = notificationPermissionState,
+                            onRequestPermission = { requestNotificationPermissionIfNeeded(force = true) },
+                            onOpenSettings = ::openNotificationSettings,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+
                     transientErrorMessage?.let { message ->
                         Text(
                             text = message,
@@ -260,11 +327,47 @@ class WearMainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshNotificationPermissionState()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         // When already running and a notification opens us, store deep link for next recomposition.
         pendingDeepLink = consumePendingDeepLink(intent)
+    }
+
+    private fun refreshNotificationPermissionState() {
+        val permissionGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val notificationsEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
+        notificationPermissionState = resolveWearNotificationPermissionState(
+            sdkInt = Build.VERSION.SDK_INT,
+            permissionGranted = permissionGranted,
+            notificationsEnabled = notificationsEnabled,
+        )
+    }
+
+    private fun requestNotificationPermissionIfNeeded(force: Boolean = false) {
+        if (notificationPermissionState != WearNotificationPermissionState.NeedsRuntimePermission) return
+        if (!force && hasRequestedNotificationPermissionThisSession) return
+        hasRequestedNotificationPermissionThisSession = true
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun openNotificationSettings() {
+        val notificationSettingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        val appDetailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.fromParts("package", packageName, null))
+
+        try {
+            startActivity(notificationSettingsIntent)
+        } catch (_: ActivityNotFoundException) {
+            startActivity(appDetailsIntent)
+        }
     }
 
     private data class PendingRoomScrollRequest(
@@ -275,10 +378,113 @@ class WearMainActivity : ComponentActivity() {
     )
 }
 
-internal fun consumePendingDeepLink(intent: Intent?): Pair<String, String?>? {
-    val roomId = intent?.getStringExtra("roomId")?.takeIf { it.isNotBlank() } ?: return null
-    val eventId = intent.getStringExtra("eventId")?.takeIf { it.isNotBlank() }
-    intent.removeExtra("roomId")
-    intent.removeExtra("eventId")
-    return roomId to eventId
+private const val FAVORITES_PAGE_KEY = "favorites"
+private const val RECENTS_PAGE_KEY = "recents"
+
+internal enum class WearNotificationPermissionState {
+    Granted,
+    NeedsRuntimePermission,
+    DisabledInSettings,
+}
+
+internal fun resolveWearNotificationPermissionState(
+    sdkInt: Int,
+    permissionGranted: Boolean,
+    notificationsEnabled: Boolean,
+): WearNotificationPermissionState {
+    return when {
+        sdkInt >= Build.VERSION_CODES.TIRAMISU && !permissionGranted -> WearNotificationPermissionState.NeedsRuntimePermission
+        !notificationsEnabled -> WearNotificationPermissionState.DisabledInSettings
+        else -> WearNotificationPermissionState.Granted
+    }
+}
+
+@Composable
+private fun NotificationPermissionPrompt(
+    state: WearNotificationPermissionState,
+    onRequestPermission: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val messageResId: Int
+    val actionResId: Int
+    val action: () -> Unit
+
+    when (state) {
+        WearNotificationPermissionState.Granted -> return
+        WearNotificationPermissionState.NeedsRuntimePermission -> {
+            messageResId = R.string.screen_wear_notifications_permission_message
+            actionResId = R.string.screen_wear_notifications_action_allow
+            action = onRequestPermission
+        }
+        WearNotificationPermissionState.DisabledInSettings -> {
+            messageResId = R.string.screen_wear_notifications_settings_message
+            actionResId = R.string.screen_wear_notifications_action_settings
+            action = onOpenSettings
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colors.surface,
+                shape = RoundedCornerShape(16.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = stringResource(messageResId),
+            style = MaterialTheme.typography.caption2,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Chip(
+            modifier = Modifier.fillMaxWidth(),
+            label = {
+                Text(
+                    text = stringResource(actionResId),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            onClick = action,
+            colors = ChipDefaults.primaryChipColors(),
+        )
+    }
+}
+
+private fun roomRoute(roomId: String): String = "room?roomId=${Uri.encode(roomId)}"
+
+private fun messageRoute(roomId: String, eventId: String): String =
+    "message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}"
+
+private fun imageRoute(roomId: String, eventId: String): String =
+    "image?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}"
+
+private fun threadRoute(roomId: String, rootId: String): String =
+    "thread?roomId=${Uri.encode(roomId)}&rootId=${Uri.encode(rootId)}"
+
+private fun navigateFromRoot(
+    nav: androidx.navigation.NavHostController,
+    deepLink: WearCompanionDeepLink,
+) {
+    val threadRootEventId = deepLink.threadRootEventId
+    val eventId = deepLink.eventId
+    val route = when {
+        threadRootEventId != null -> threadRoute(
+            roomId = deepLink.roomId,
+            rootId = threadRootEventId,
+        )
+        eventId != null -> messageRoute(deepLink.roomId, eventId)
+        else -> roomRoute(deepLink.roomId)
+    }
+    nav.navigate(route) {
+        popUpTo("favorites") {
+            inclusive = false
+        }
+        launchSingleTop = true
+    }
 }

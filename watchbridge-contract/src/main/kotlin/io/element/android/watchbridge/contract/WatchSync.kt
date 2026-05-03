@@ -73,6 +73,12 @@ sealed interface WatchSync : WatchPayload {
     ) : WatchSync
 
     @Serializable
+    @SerialName("sync.messageNotification")
+    data class MessageNotification(
+        val notification: WatchMessageNotification,
+    ) : WatchSync
+
+    @Serializable
     @SerialName("sync.invalidation")
     data class Invalidation(
         val scope: InvalidationScope,

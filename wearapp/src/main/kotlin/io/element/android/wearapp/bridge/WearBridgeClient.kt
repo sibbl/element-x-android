@@ -13,6 +13,7 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageClient
@@ -31,6 +32,7 @@ import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.contract.WatchVoiceDraft
 import io.element.android.wearapp.tile.FavoriteContactsTileService
+import io.element.android.wearapp.notifications.WearLocalNotificationManager
 import io.element.android.wearapp.tile.RecentContactsTileService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -53,6 +55,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
 private const val MAX_CACHED_TIMELINE_ITEMS = 100
@@ -77,6 +80,7 @@ class WearBridgeClient(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val cacheStore = WearBridgeCacheStore(context)
+    private val localNotificationManager = WearLocalNotificationManager(context)
 
     private val dataClient: DataClient by lazy { Wearable.getDataClient(context) }
     private val messageClient: MessageClient by lazy { Wearable.getMessageClient(context) }
@@ -111,6 +115,10 @@ class WearBridgeClient(private val context: Context) {
     private val _threadCache = mutableMapOf<String, CachedThreadTimeline>()
     /** In-memory cache of last-known room summary per room. */
     private val _summaryCache = mutableMapOf<String, io.element.android.watchbridge.contract.WatchRoomSummary>()
+    /** Room subscriptions already requested during this app process. */
+    private val activeRoomSubscriptions = ConcurrentHashMap.newKeySet<String>()
+    /** Thread subscriptions already requested during this app process. */
+    private val activeThreadSubscriptions = ConcurrentHashMap.newKeySet<String>()
 
     fun getCachedTimeline(roomId: String): List<io.element.android.watchbridge.contract.WatchTimelineItem> =
         _timelineCache[roomId]?.items.orEmpty()
@@ -154,6 +162,53 @@ class WearBridgeClient(private val context: Context) {
         _threadCache[threadCacheKey(roomId, threadRootEventId)] = CachedThreadTimeline(items = items, hasSnapshot = hasSnapshot)
     }
 
+    suspend fun ensureRoomSubscription(
+        roomId: String,
+        limit: Int = 30,
+    ) {
+        val hasSnapshot = hasCachedTimelineSnapshot(roomId)
+        val alreadyActive = !activeRoomSubscriptions.add(roomId)
+        if (alreadyActive && hasSnapshot) return
+
+        runCatching {
+            send { requestId ->
+                WatchCommand.OpenRoom(
+                    requestId = requestId,
+                    roomId = roomId,
+                    limit = limit,
+                )
+            }
+        }.onFailure {
+            activeRoomSubscriptions.remove(roomId)
+            throw it
+        }
+    }
+
+    suspend fun ensureThreadSubscription(
+        roomId: String,
+        threadRootEventId: String,
+        limit: Int = 20,
+    ) {
+        val subscriptionKey = threadCacheKey(roomId, threadRootEventId)
+        val hasSnapshot = hasCachedThreadSnapshot(roomId, threadRootEventId)
+        val alreadyActive = !activeThreadSubscriptions.add(subscriptionKey)
+        if (alreadyActive && hasSnapshot) return
+
+        runCatching {
+            send { requestId ->
+                WatchCommand.FetchThread(
+                    requestId = requestId,
+                    roomId = roomId,
+                    threadRootEventId = threadRootEventId,
+                    limit = limit,
+                )
+            }
+        }.onFailure {
+            activeThreadSubscriptions.remove(subscriptionKey)
+            throw it
+        }
+    }
+
     private val phoneCapabilityListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
         if (capabilityInfo.name == WatchProtocol.PHONE_CAPABILITY) {
             Timber.d(
@@ -188,6 +243,8 @@ class WearBridgeClient(private val context: Context) {
         capabilityClient.removeListener(phoneCapabilityListener)
         // Scope teardown left to Application lifecycle; explicit cancel intentionally avoided
         // here so in-flight request UIs keep observing acks on Activity restarts.
+        activeRoomSubscriptions.clear()
+        activeThreadSubscriptions.clear()
     }
 
     fun refreshPhoneReachability() {
@@ -197,6 +254,11 @@ class WearBridgeClient(private val context: Context) {
     /** Called from the app-level `WearableListenerService` on any `DataItem` change. */
     fun onDataChanged(events: DataEventBuffer) {
         for (ev in events) {
+            val path = ev.dataItem.uri.path.orEmpty()
+            if (ev.type == DataEvent.TYPE_DELETED) {
+                WatchDataPaths.notificationKey(path)?.let(localNotificationManager::dismiss)
+                continue
+            }
             val item = ev.dataItem
             val data = DataMapItem.fromDataItem(item).dataMap.getByteArray("envelope") ?: continue
             val envelope = decode(data) ?: continue
@@ -340,15 +402,22 @@ class WearBridgeClient(private val context: Context) {
                 .await()
             val connectedNodes = nodeClient.connectedNodes.await()
             val nodes = caps.nodes.takeIf { it.isNotEmpty() } ?: connectedNodes
+            val reachable = nodes.isNotEmpty()
             Timber.d(
                 "phone reachability probe reachable=%s capabilityNodes=%s connectedNodes=%s",
-                nodes.isNotEmpty(),
+                reachable,
                 caps.nodes.joinToString { it.debugLabel() },
                 connectedNodes.joinToString { it.debugLabel() },
             )
-            _phoneReachable.value = nodes.isNotEmpty()
+            if (!reachable) {
+                activeRoomSubscriptions.clear()
+                activeThreadSubscriptions.clear()
+            }
+            _phoneReachable.value = reachable
         }.onFailure {
             _phoneReachable.value = false
+            activeRoomSubscriptions.clear()
+            activeThreadSubscriptions.clear()
             Timber.w(it, "phone capability probe failed")
         }
     }
@@ -450,6 +519,13 @@ class WearBridgeClient(private val context: Context) {
                 requestTileRefresh()
                 scope.launch { _syncEvents.emit(p) }
             }
+            is WatchSync.MessageNotification -> {
+                localNotificationManager.show(
+                    notification = p.notification,
+                    generatedAtMs = envelope.generatedAtMs,
+                    expiresAtMs = envelope.expiresAtMs,
+                )
+            }
             is WatchSync.Invalidation -> {
                 applyInvalidation(p)
                 scope.launch { _syncEvents.emit(p) }
@@ -471,9 +547,13 @@ class WearBridgeClient(private val context: Context) {
             WatchSync.Invalidation.InvalidationScope.ROOM -> invalidation.roomId?.let { roomId ->
                 _summaryCache.remove(roomId)
                 _timelineCache.remove(roomId)
+                activeRoomSubscriptions.remove(roomId)
                 _threadCache.keys
                     .filter { it.startsWith(threadCachePrefix(roomId)) }
-                    .forEach(_threadCache::remove)
+                    .forEach { key ->
+                        _threadCache.remove(key)
+                        activeThreadSubscriptions.remove(key)
+                    }
                 _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
                     keys.filter { it.startsWith("$roomId/") }.forEach(::remove)
                 }
@@ -483,7 +563,10 @@ class WearBridgeClient(private val context: Context) {
             WatchSync.Invalidation.InvalidationScope.THREAD -> invalidation.roomId?.let { roomId ->
                 _threadCache.keys
                     .filter { it.startsWith(threadCachePrefix(roomId)) }
-                    .forEach(_threadCache::remove)
+                    .forEach { key ->
+                        _threadCache.remove(key)
+                        activeThreadSubscriptions.remove(key)
+                    }
             }
             WatchSync.Invalidation.InvalidationScope.ALL -> {
                 _favorites.value = emptyList()
@@ -492,6 +575,8 @@ class WearBridgeClient(private val context: Context) {
                 _summaryCache.clear()
                 _timelineCache.clear()
                 _threadCache.clear()
+                activeRoomSubscriptions.clear()
+                activeThreadSubscriptions.clear()
                 requestTileRefresh()
             }
         }

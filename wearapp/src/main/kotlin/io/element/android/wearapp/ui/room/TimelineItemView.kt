@@ -12,7 +12,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,27 +22,40 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.ui.common.PressableWearChip
+import io.element.android.wearapp.ui.common.wearTapAndLongPress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * One actionable row in a timeline list. Tapping opens the [MessageDetailScreen]; the optional
@@ -64,21 +76,22 @@ internal fun TimelineMessageRow(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Chip(
+        PressableWearChip(
+            onTap = onClick,
+            onLongPress = onLongPress,
+            backgroundColor = if (item.isOwn) MaterialTheme.colors.primary else MaterialTheme.colors.surface,
             modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = onLongPress,
-                    role = Role.Button,
-                ),
+                .fillMaxWidth(),
             label = if (showSender) {
                 {
                     Text(
                         text = item.senderDisplayName ?: item.senderId,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.caption1.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (item.isOwn) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
+                        ),
                     )
                 }
             } else {
@@ -87,7 +100,9 @@ internal fun TimelineMessageRow(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
                         maxLines = 3,
-                        style = MaterialTheme.typography.caption2,
+                        style = MaterialTheme.typography.caption2.copy(
+                            color = if (item.isOwn) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurfaceVariant,
+                        ),
                     )
                 }
             },
@@ -97,12 +112,12 @@ internal fun TimelineMessageRow(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
                         maxLines = 2,
-                        style = MaterialTheme.typography.caption2,
+                        style = MaterialTheme.typography.caption2.copy(
+                            color = if (item.isOwn) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurfaceVariant,
+                        ),
                     )
                 }
             } else null,
-            onClick = onClick,
-            colors = if (item.isOwn) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
         )
         if (item.reactions.isNotEmpty()) {
             ReactionsRow(item = item)
@@ -246,6 +261,7 @@ private fun ImageMessagePreview(
         MediaPreviewImage(
             mediaPreviewBytes = mediaPreviewBytes,
             height = 72.dp,
+            previewExpected = item.mediaPreview != null,
         )
         Text(
             text = item.bodyText ?: stringResource(R.string.timeline_image),
@@ -270,7 +286,8 @@ private fun ImageMessageDetailedView(
         MediaPreviewImage(
             mediaPreviewBytes = mediaPreviewBytes,
             height = 112.dp,
-            onClick = onOpenImage?.takeIf { mediaPreviewBytes != null },
+            previewExpected = item.mediaPreview != null,
+            onClick = onOpenImage,
         )
         Text(
             text = item.bodyText ?: stringResource(R.string.timeline_image),
@@ -285,18 +302,35 @@ private fun ImageMessageDetailedView(
 private fun MediaPreviewImage(
     mediaPreviewBytes: ByteArray?,
     height: androidx.compose.ui.unit.Dp,
+    previewExpected: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
-    val imageBitmap = androidx.compose.runtime.remember(mediaPreviewBytes) {
-        mediaPreviewBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    val imageBitmap = rememberDecodedImageBitmap(mediaPreviewBytes)
+    var shouldShowUnavailable by remember(previewExpected, mediaPreviewBytes) {
+        mutableStateOf(mediaPreviewBytes == null && !previewExpected)
     }
+
+    LaunchedEffect(previewExpected, mediaPreviewBytes) {
+        when {
+            mediaPreviewBytes != null -> shouldShowUnavailable = false
+            previewExpected -> {
+                shouldShowUnavailable = false
+                delay(1_500L)
+                if (mediaPreviewBytes == null) {
+                    shouldShowUnavailable = true
+                }
+            }
+            else -> shouldShowUnavailable = true
+        }
+    }
+
     val containerModifier = Modifier
         .fillMaxWidth()
         .height(height)
         .clip(RoundedCornerShape(12.dp))
         .background(MaterialTheme.colors.surface)
         .then(
-            if (imageBitmap != null && onClick != null) {
+            if (onClick != null) {
                 Modifier.clickable(onClick = onClick)
             } else {
                 Modifier
@@ -314,6 +348,8 @@ private fun MediaPreviewImage(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+        } else if (mediaPreviewBytes != null || (previewExpected && !shouldShowUnavailable)) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp))
         } else {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -333,6 +369,20 @@ private fun MediaPreviewImage(
             }
         }
     }
+}
+
+@Composable
+internal fun rememberDecodedImageBitmap(imageBytes: ByteArray?): ImageBitmap? {
+    val decodedImage by produceState<ImageBitmap?>(initialValue = null, imageBytes) {
+        value = if (imageBytes == null) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)?.asImageBitmap()
+            }
+        }
+    }
+    return decodedImage
 }
 
 @Composable

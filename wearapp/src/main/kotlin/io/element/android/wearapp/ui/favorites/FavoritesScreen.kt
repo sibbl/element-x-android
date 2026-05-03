@@ -8,7 +8,6 @@
 package io.element.android.wearapp.ui.favorites
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -29,13 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.HorizontalPageIndicator
 import androidx.wear.compose.material.ListHeader
@@ -47,8 +45,12 @@ import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.common.AvatarBadge
+import io.element.android.wearapp.ui.common.PressableWearChip
+import io.element.android.wearapp.ui.common.wearTapAndLongPress
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 private const val ROOM_PAGE_SIZE = 30
 private const val LOAD_MORE_THRESHOLD = 6
@@ -59,18 +61,26 @@ fun FavoritesScreen(
     onRoomSelected: (String) -> Unit,
     onLongPressRoom: ((WatchFavoriteRoom) -> Unit)? = null,
     onError: ((String) -> Unit)? = null,
+    requestedRoomCount: Int = ROOM_PAGE_SIZE,
+    restoredPage: Int? = null,
+    savedFavoriteListPosition: SavedScalingListPosition? = null,
+    savedRecentListPosition: SavedScalingListPosition? = null,
+    onRequestedRoomCountChange: (Int) -> Unit = {},
+    onPageChanged: (Int) -> Unit = {},
+    onFavoriteListPositionChange: (SavedScalingListPosition) -> Unit = {},
+    onRecentListPositionChange: (SavedScalingListPosition) -> Unit = {},
 ) {
     val rooms by bridge.favorites.collectAsState()
     val avatarImages by bridge.avatarImages.collectAsState()
     val reachable by bridge.phoneReachable.collectAsState()
-    var requestedRoomCount by remember { mutableIntStateOf(ROOM_PAGE_SIZE) }
     val context = LocalContext.current
+    val minimumRoomCount = requestedRoomCount.coerceAtLeast(ROOM_PAGE_SIZE)
 
-    LaunchedEffect(reachable, requestedRoomCount) {
+    LaunchedEffect(reachable, minimumRoomCount) {
         bridge.refreshPhoneReachability()
         if (reachable) {
             runCatching {
-                bridge.send { id -> WatchCommand.RefreshRooms(requestId = id, minimumCount = requestedRoomCount) }
+                bridge.send { id -> WatchCommand.RefreshRooms(requestId = id, minimumCount = minimumRoomCount) }
             }.onFailure {
                 onError?.invoke(context.watchCommandErrorMessage(it, R.string.watch_error_refresh_failed))
             }
@@ -81,7 +91,7 @@ fun FavoritesScreen(
     val recentRooms = rooms.filterNot { it.isFavorite }
 
     // If no favorites, show All Rooms by default (page 1); otherwise Favorites first (page 0).
-    val initialPage = if (favoriteRooms.isEmpty()) 1 else 0
+    val initialPage = restoredPage?.takeIf { it in 0..1 } ?: if (favoriteRooms.isEmpty()) 1 else 0
     val pagerState = rememberPagerState(initialPage = initialPage) { 2 }
     val pageIndicatorState = remember {
         object : PageIndicatorState {
@@ -89,6 +99,12 @@ fun FavoritesScreen(
             override val pageOffset: Float get() = pagerState.currentPageOffsetFraction
             override val selectedPage: Int get() = pagerState.currentPage
         }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect(onPageChanged)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -103,6 +119,8 @@ fun FavoritesScreen(
                     avatarImages = avatarImages,
                     onRoomSelected = onRoomSelected,
                     onLongPressRoom = onLongPressRoom,
+                    savedPosition = savedFavoriteListPosition,
+                    onListPositionChange = onFavoriteListPositionChange,
                 )
                 1 -> RoomListPage(
                     title = stringResource(R.string.recent_rooms_title),
@@ -113,7 +131,9 @@ fun FavoritesScreen(
                     avatarImages = avatarImages,
                     onRoomSelected = onRoomSelected,
                     onLongPressRoom = onLongPressRoom,
-                    onLoadMore = { requestedRoomCount += ROOM_PAGE_SIZE },
+                    savedPosition = savedRecentListPosition,
+                    onListPositionChange = onRecentListPositionChange,
+                    onLoadMore = { onRequestedRoomCountChange(minimumRoomCount + ROOM_PAGE_SIZE) },
                 )
             }
         }
@@ -136,9 +156,43 @@ private fun RoomListPage(
     avatarImages: Map<String, ByteArray>,
     onRoomSelected: (String) -> Unit,
     onLongPressRoom: ((WatchFavoriteRoom) -> Unit)?,
+    savedPosition: SavedScalingListPosition? = null,
+    onListPositionChange: ((SavedScalingListPosition) -> Unit)? = null,
     onLoadMore: (() -> Unit)? = null,
 ) {
     val listState = rememberScalingLazyListState()
+    var hasRestoredScroll by remember(title, savedPosition) { mutableStateOf(savedPosition == null) }
+    var lastLoadMoreRoomCount by remember(title) { mutableIntStateOf(-1) }
+    val maxScrollableIndex = when {
+        !reachable || rooms.isEmpty() -> 1
+        else -> rooms.size
+    }
+
+    LaunchedEffect(listState, onListPositionChange) {
+        if (onListPositionChange == null) return@LaunchedEffect
+        snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .filter { isScrolling -> !isScrolling }
+            .map {
+                SavedScalingListPosition(
+                    index = listState.centerItemIndex,
+                    offset = listState.centerItemScrollOffset,
+                )
+            }
+            .distinctUntilChanged()
+            .collect(onListPositionChange)
+    }
+
+    LaunchedEffect(savedPosition, maxScrollableIndex) {
+        val targetPosition = savedPosition ?: return@LaunchedEffect
+        if (hasRestoredScroll) return@LaunchedEffect
+
+        hasRestoredScroll = true
+        val targetIndex = targetPosition.index.coerceIn(0, maxScrollableIndex)
+        if (targetIndex > 0 || targetPosition.offset != 0) {
+            listState.scrollToItem(targetIndex, targetPosition.offset)
+        }
+    }
 
     // Infinite scroll for the All Rooms page.
     if (onLoadMore != null) {
@@ -146,7 +200,12 @@ private fun RoomListPage(
             snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
                 .distinctUntilChanged()
                 .collect { lastVisibleIndex ->
-                    if (rooms.isNotEmpty() && lastVisibleIndex >= rooms.size - LOAD_MORE_THRESHOLD) {
+                    if (
+                        rooms.isNotEmpty() &&
+                        lastVisibleIndex >= rooms.size - LOAD_MORE_THRESHOLD &&
+                        lastLoadMoreRoomCount != rooms.size
+                    ) {
+                        lastLoadMoreRoomCount = rooms.size
                         onLoadMore()
                     }
                 }
@@ -211,14 +270,12 @@ private fun FavoriteRoomChip(
             append(it)
         }
     }
-    Chip(
+    PressableWearChip(
+        onTap = onClick,
+        onLongPress = onLongPress,
+        backgroundColor = MaterialTheme.colors.surface,
         modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongPress,
-                role = Role.Button,
-            ),
+            .fillMaxWidth(),
         icon = {
             AvatarBadge(
                 displayName = room.displayName,
@@ -231,7 +288,8 @@ private fun FavoriteRoomChip(
             Text(
                 text = room.displayName,
                 maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                color = MaterialTheme.colors.onSurface,
             )
         },
         secondaryLabel = if (subtitle.isNotBlank()) {
@@ -239,11 +297,15 @@ private fun FavoriteRoomChip(
                 Text(
                     text = subtitle,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    color = MaterialTheme.colors.onSurfaceVariant,
                 )
             }
         } else null,
-        onClick = onClick,
-        colors = if (room.isFavorite) ChipDefaults.primaryChipColors() else ChipDefaults.secondaryChipColors(),
     )
 }
+
+data class SavedScalingListPosition(
+    val index: Int = 0,
+    val offset: Int = 0,
+)

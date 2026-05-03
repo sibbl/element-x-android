@@ -35,6 +35,7 @@ import io.element.android.libraries.push.impl.notifications.channels.DefaultNoti
 import io.element.android.libraries.push.impl.notifications.channels.NotificationChannels
 import io.element.android.libraries.push.impl.notifications.factories.action.AcceptInvitationActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.MarkAsReadActionFactory
+import io.element.android.libraries.push.impl.notifications.factories.action.OpenOnWearActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.QuickReplyActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.RejectInvitationActionFactory
 import io.element.android.libraries.push.impl.notifications.fixtures.aFallbackNotifiableEvent
@@ -223,10 +224,13 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
             compatSummary = "compatSummary",
             noisy = false,
             lastMessageTimestamp = 123_456L,
+            summaryLines = emptyList(),
         )
         result.commonAssertions(
             expectedGroup = matrixUser.userId.value,
         )
+        assertThat(result.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()).isEqualTo("compatSummary")
+        assertThat(result.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()).isEqualTo("compatSummary")
     }
 
     @Test
@@ -242,10 +246,34 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
             compatSummary = "compatSummary",
             noisy = true,
             lastMessageTimestamp = 123_456L,
+            summaryLines = emptyList(),
         )
         result.commonAssertions(
             expectedGroup = matrixUser.userId.value,
         )
+        assertThat(result.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()).isEqualTo("compatSummary")
+        assertThat(result.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()).isEqualTo("compatSummary")
+    }
+
+    @Test
+    fun `test createSummaryListNotification with summary lines`() {
+        val sut = createNotificationCreator()
+        val matrixUser = aMatrixUser()
+        val result = sut.createSummaryListNotification(
+            notificationAccountParams = aNotificationAccountParams(user = matrixUser),
+            compatSummary = "compatSummary",
+            noisy = false,
+            lastMessageTimestamp = 123_456L,
+            summaryLines = listOf("Room A: 1 message", "Room B: 2 messages"),
+        )
+        result.commonAssertions(
+            expectedGroup = matrixUser.userId.value,
+        )
+        assertThat(result.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()).isEqualTo("compatSummary")
+        assertThat(result.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()).isEqualTo("Room A: 1 message")
+        assertThat(result.extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.map { it.toString() })
+            .containsExactly("Room A: 1 message", "Room B: 2 messages")
+            .inOrder()
     }
 
     @Test
@@ -271,6 +299,11 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
             events = listOf(aNotifiableMessageEvent()),
         )
         result.commonAssertions()
+        result.wearAssertions(
+            expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, null)}",
+            expectedContentAction = 1,
+            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE, OPEN_ON_WEAR_ACTION_TITLE),
+        )
     }
 
     @Test
@@ -300,6 +333,11 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
             events = listOf(aNotifiableMessageEvent()),
         )
         result.commonAssertions()
+        result.wearAssertions(
+            expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, A_THREAD_ID)}",
+            expectedContentAction = 1,
+            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE, OPEN_ON_WEAR_ACTION_TITLE),
+        )
     }
 
     private fun Notification.commonAssertions(
@@ -309,11 +347,25 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
         assertThat(contentIntent).isNotNull()
         assertThat(group).isEqualTo(expectedGroup)
         assertThat(category).isEqualTo(expectedCategory)
+        assertThat(NotificationCompat.WearableExtender(this).getBridgeTag()).isEqualTo(NotificationConfig.WEAR_BRIDGED_NOTIFICATION_TAG)
+    }
+
+    private fun Notification.wearAssertions(
+        expectedDismissalId: String,
+        expectedContentAction: Int,
+        expectedWearActionTitles: List<String>,
+    ) {
+        val wearableExtender = NotificationCompat.WearableExtender(this)
+        assertThat(wearableExtender.getDismissalId()).isEqualTo(expectedDismissalId)
+        assertThat(wearableExtender.getContentAction()).isEqualTo(expectedContentAction)
+        assertThat(wearableExtender.getStartScrollBottom()).isTrue()
+        assertThat(wearableExtender.actions.map { it.title.toString() }).containsExactlyElementsIn(expectedWearActionTitles).inOrder()
     }
 }
 
 const val MARK_AS_READ_ACTION_TITLE = "MarkAsReadAction"
 const val QUICK_REPLY_ACTION_TITLE = "QuickReplyAction"
+const val OPEN_ON_WEAR_ACTION_TITLE = "OpenOnWearAction"
 const val ACCEPT_INVITATION_ACTION_TITLE = "AcceptInvitationAction"
 const val REJECT_INVITATION_ACTION_TITLE = "RejectInvitationAction"
 
@@ -350,6 +402,15 @@ fun createNotificationCreator(
             actionIds = NotificationActionIds(buildMeta),
             stringProvider = FakeStringProvider(QUICK_REPLY_ACTION_TITLE),
             clock = FakeSystemClock(),
+        ),
+        openOnWearActionFactory = OpenOnWearActionFactory(
+            pendingIntentFactory = PendingIntentFactory(
+                context,
+                FakeIntentProvider(),
+                FakeSystemClock(),
+                NotificationActionIds(buildMeta),
+            ),
+            stringProvider = FakeStringProvider(OPEN_ON_WEAR_ACTION_TITLE),
         ),
         bitmapLoader = bitmapLoader,
         acceptInvitationActionFactory = AcceptInvitationActionFactory(

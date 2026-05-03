@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import dev.zacsweers.metro.Inject
+import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.libraries.androidutils.uri.createIgnoredUri
 import io.element.android.libraries.di.annotations.ApplicationContext
 import io.element.android.libraries.matrix.api.core.EventId
@@ -118,6 +119,36 @@ class PendingIntentFactory(
             0,
             testActionIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    fun createOpenOnWearPendingIntent(
+        roomId: RoomId,
+        eventId: EventId?,
+        threadId: ThreadId?,
+    ): PendingIntent {
+        val intent = Intent(WearCompanionConfig.ACTION_OPEN_ON_WEAR)
+            .setPackage(context.packageName)
+            .setData(
+                createIgnoredUri(
+                    buildString {
+                        append("openOnWear/")
+                        append(roomId.value)
+                        eventId?.value?.let { append("/").append(it) }
+                        threadId?.value?.let { append("/thread/").append(it) }
+                    },
+                ),
+            )
+            .putExtra(WearCompanionConfig.EXTRA_ROOM_ID, roomId.value)
+
+        eventId?.let { intent.putExtra(WearCompanionConfig.EXTRA_EVENT_ID, it.value) }
+        threadId?.let { intent.putExtra(WearCompanionConfig.EXTRA_THREAD_ROOT_EVENT_ID, it.value) }
+
+        return PendingIntent.getActivity(
+            context,
+            clock.epochMillis().toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 }

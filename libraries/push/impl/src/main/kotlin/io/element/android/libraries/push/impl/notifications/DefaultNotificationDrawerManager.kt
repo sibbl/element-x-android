@@ -40,6 +40,8 @@ import io.element.android.services.appnavstate.api.currentThreadId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import timber.log.Timber
+import kotlin.jvm.JvmSuppressWildcards
 
 /**
  * This class receives notification events as they arrive from the PushHandler calling [onNotifiableEventReceived] and
@@ -52,12 +54,12 @@ class DefaultNotificationDrawerManager(
     private val notificationDisplayer: NotificationDisplayer,
     private val notificationRenderer: NotificationRenderer,
     private val appNavigationStateService: AppNavigationStateService,
-    @AppCoroutineScope
-    coroutineScope: CoroutineScope,
+    @AppCoroutineScope private val coroutineScope: CoroutineScope,
     private val matrixClientProvider: MatrixClientProvider,
     private val imageLoaderHolder: ImageLoaderHolder,
     private val activeNotificationsProvider: ActiveNotificationsProvider,
     private val lockScreenService: LockScreenService,
+    private val companionNotificationBridges: Set<@JvmSuppressWildcards CompanionNotificationBridge>,
     sessionObserver: SessionObserver,
 ) : NotificationCleaner {
     // TODO EAx add a setting per user for this
@@ -122,6 +124,7 @@ class DefaultNotificationDrawerManager(
     override fun clearAllMessagesEvents(sessionId: SessionId) {
         notificationDisplayer.cancelNotification(null, NotificationIdProvider.getRoomMessagesNotificationId(sessionId))
         clearSummaryNotificationIfNeeded(sessionId)
+        notifyCompanionBridgesAsync { it.onAllMessagesCleared(sessionId) }
     }
 
     /**
@@ -130,6 +133,7 @@ class DefaultNotificationDrawerManager(
     fun clearAllEvents(sessionId: SessionId) {
         activeNotificationsProvider.getNotificationsForSession(sessionId)
             .forEach { notificationDisplayer.cancelNotification(it.tag, it.id) }
+        notifyCompanionBridgesAsync { it.onSessionCleared(sessionId) }
     }
 
     /**
@@ -151,6 +155,7 @@ class DefaultNotificationDrawerManager(
     override fun clearMessagesForRoom(sessionId: SessionId, roomId: RoomId) {
         notificationDisplayer.cancelNotification(roomId.value, NotificationIdProvider.getRoomMessagesNotificationId(sessionId))
         clearSummaryNotificationIfNeeded(sessionId)
+        notifyCompanionBridgesAsync { it.onMessagesClearedForRoom(sessionId, roomId) }
     }
 
     /**
@@ -161,6 +166,7 @@ class DefaultNotificationDrawerManager(
         val tag = NotificationCreator.messageTag(roomId, threadId)
         notificationDisplayer.cancelNotification(tag, NotificationIdProvider.getRoomMessagesNotificationId(sessionId))
         clearSummaryNotificationIfNeeded(sessionId)
+        notifyCompanionBridgesAsync { it.onMessagesClearedForThread(sessionId, roomId, threadId) }
     }
 
     override fun clearMembershipNotificationForSession(sessionId: SessionId) {
@@ -230,7 +236,25 @@ class DefaultNotificationDrawerManager(
                     eventsToProcess = notifiableEvents,
                     imageLoader = imageLoader,
                 )
+                val messageEvents = notifiableEvents.filterIsInstance<NotifiableMessageEvent>()
+                if (messageEvents.isNotEmpty()) {
+                    notifyCompanionBridges { it.onMessageNotificationsRendered(messageEvents) }
+                }
             }
+        }
+    }
+
+    private fun notifyCompanionBridgesAsync(block: suspend (CompanionNotificationBridge) -> Unit) {
+        if (companionNotificationBridges.isEmpty()) return
+        coroutineScope.launch {
+            notifyCompanionBridges(block)
+        }
+    }
+
+    private suspend fun notifyCompanionBridges(block: suspend (CompanionNotificationBridge) -> Unit) {
+        companionNotificationBridges.forEach { bridge ->
+            runCatching { block(bridge) }
+                .onFailure { Timber.w(it, "Failed to sync companion notification bridge") }
         }
     }
 }

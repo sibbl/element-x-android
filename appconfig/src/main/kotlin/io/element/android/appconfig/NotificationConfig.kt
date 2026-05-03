@@ -18,6 +18,11 @@ object NotificationConfig {
     const val SHOW_MARK_AS_READ_ACTION = true
 
     /**
+     * Bridge tag used to selectively mirror phone notifications onto the paired Wear OS companion.
+     */
+    const val WEAR_BRIDGED_NOTIFICATION_TAG = "io.element.android.notification.WEAR_BRIDGED"
+
+    /**
      * If set to true, the notification for invitation will have two actions to accept or decline the invite.
      */
     const val SHOW_ACCEPT_AND_DECLINE_INVITE_ACTIONS = true

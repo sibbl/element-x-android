@@ -53,11 +53,68 @@ class DefaultSummaryGroupMessageCreator(
             ?: simpleNotifications.last().timestamp
         val nbEvents = roomNotifications.size + invitationNotifications.size + simpleNotifications.size
         val sumTitle = stringProvider.getQuantityString(R.plurals.notification_compat_summary_title, nbEvents, nbEvents)
+        val summaryLines = buildSummaryLines(roomNotifications, invitationNotifications, simpleNotifications)
         return notificationCreator.createSummaryListNotification(
             notificationAccountParams = notificationAccountParams,
             sumTitle,
             noisy = summaryIsNoisy,
             lastMessageTimestamp = lastMessageTimestamp,
+            summaryLines = summaryLines,
         )
+    }
+
+    private fun buildSummaryLines(
+        roomNotifications: List<RoomNotification>,
+        invitationNotifications: List<OneShotNotification>,
+        simpleNotifications: List<OneShotNotification>,
+    ): List<String> {
+        return buildList {
+            roomNotifications.forEach { roomNotification ->
+                add(
+                    SummaryLine(
+                        timestamp = roomNotification.latestTimestamp,
+                        text = stringProvider.getQuantityString(
+                            R.plurals.notification_compat_summary_line_for_room,
+                            roomNotification.messageCount,
+                            roomNotification.roomDisplayName,
+                            roomNotification.messageCount,
+                        ),
+                    )
+                )
+            }
+            invitationNotifications.forEach { oneShotNotification ->
+                notificationSummaryLine(oneShotNotification.notification)?.let { line ->
+                    add(SummaryLine(oneShotNotification.timestamp, line))
+                }
+            }
+            simpleNotifications.forEach { oneShotNotification ->
+                notificationSummaryLine(oneShotNotification.notification)?.let { line ->
+                    add(SummaryLine(oneShotNotification.timestamp, line))
+                }
+            }
+        }
+            .sortedByDescending(SummaryLine::timestamp)
+            .map(SummaryLine::text)
+            .take(MAX_SUMMARY_LINES)
+    }
+
+    private fun notificationSummaryLine(notification: Notification): String? {
+        val title = notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() }
+        val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.takeIf { it.isNotBlank() }
+        return when {
+            title != null && text != null && title != text -> "$title: $text"
+            text != null -> text
+            title != null -> title
+            else -> null
+        }
+    }
+
+    private data class SummaryLine(
+        val timestamp: Long,
+        val text: String,
+    )
+
+    private companion object {
+        const val MAX_SUMMARY_LINES = 5
     }
 }

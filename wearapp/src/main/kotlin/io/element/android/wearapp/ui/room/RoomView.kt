@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -43,6 +44,7 @@ import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.ComposerBar
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -64,9 +66,10 @@ internal fun RoomView(
     onLongPressMessage: ((WatchTimelineItem) -> Unit)? = null,
     onScrollRequestHandled: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    listState: ScalingLazyListState? = null,
 ) {
-    val listState = rememberScalingLazyListState()
-    val totalItemCount = listState.layoutInfo.totalItemsCount
+    val lazyListState = listState ?: rememberScalingLazyListState()
+    val totalItemCount = lazyListState.layoutInfo.totalItemsCount
     val lastEventId = state.items.lastOrNull()?.eventId
     val readMarkerAnchorEventId = state.items.firstOrNull { it.isReadMarkerAnchor }?.eventId
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
@@ -76,12 +79,13 @@ internal fun RoomView(
 
     val isAtBottom by remember {
         derivedStateOf {
-            isAtBottom(listState)
+            isAtBottom(lazyListState)
         }
     }
 
-    LaunchedEffect(listState, state.timelineKey) {
-        snapshotFlow { isAtBottom(listState) }
+    LaunchedEffect(lazyListState, state.timelineKey) {
+        snapshotFlow { isAtBottom(lazyListState) }
+            .distinctUntilChanged()
             .collect { atBottom ->
                 shouldStickToBottom = atBottom
             }
@@ -98,14 +102,15 @@ internal fun RoomView(
         if (requestId == null || requestId == lastHandledScrollRequestId || totalItemCount <= 0) return@LaunchedEffect
 
         if (state.forceScrollToBottom) {
-            listState.scrollToItem(totalItemCount - 1)
+            lazyListState.scrollToItem(totalItemCount - 1)
             shouldStickToBottom = true
             lastAutoScrolledEventId = lastEventId
         } else {
             val targetIndex = timelineListIndexForEvent(state.items, state.scrollToEventId)
             if (targetIndex != null) {
-                listState.scrollToItem(targetIndex)
+                lazyListState.scrollToItem(targetIndex)
                 shouldStickToBottom = false
+                lastAutoScrolledEventId = lastEventId
             }
         }
         lastHandledScrollRequestId = requestId
@@ -119,11 +124,11 @@ internal fun RoomView(
         val hasNewBottomItem = lastEventId != lastAutoScrolledEventId
         if (initialScroll) {
             val initialIndex = timelineListIndexForEvent(state.items, readMarkerAnchorEventId) ?: (totalItemCount - 1)
-            listState.scrollToItem(initialIndex)
+            lazyListState.scrollToItem(initialIndex)
             shouldStickToBottom = initialIndex >= totalItemCount - 1
             lastAutoScrolledEventId = lastEventId
         } else if (shouldStickToBottom && hasNewBottomItem) {
-            listState.animateScrollToItem(totalItemCount - 1)
+            lazyListState.scrollToItem(totalItemCount - 1)
             lastAutoScrolledEventId = lastEventId
         }
     }
@@ -131,7 +136,7 @@ internal fun RoomView(
     Column(modifier = modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f)) {
             ScalingLazyColumn(
-                state = listState,
+                state = lazyListState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 8.dp),
@@ -192,9 +197,10 @@ internal fun RoomView(
                         .size(32.dp),
                     onClick = {
                         scope.launch {
-                            val total = listState.layoutInfo.totalItemsCount
-                            if (total > 0) listState.scrollToItem(total - 1)
+                            val total = lazyListState.layoutInfo.totalItemsCount
+                            if (total > 0) lazyListState.scrollToItem(total - 1)
                             shouldStickToBottom = true
+                            lastAutoScrolledEventId = lastEventId
                         }
                     },
                     colors = ButtonDefaults.primaryButtonColors(),

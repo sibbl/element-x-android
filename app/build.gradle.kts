@@ -276,6 +276,8 @@ dependencies {
     }
     "gplayImplementation"(project(":watchbridge"))
     "gplayImplementation"("com.google.android.gms:play-services-wearable:19.0.0")
+    "gplayImplementation"("androidx.wear:wear-remote-interactions:1.0.0")
+    "gplayImplementation"(libs.coroutines.guava)
     if (ModulesConfig.pushProvidersConfig.includeUnifiedPush) {
         implementation(projects.libraries.pushproviders.unifiedpush)
     }
@@ -296,8 +298,10 @@ dependencies {
     implementation(libs.serialization.json)
 
     implementation(libs.matrix.emojibase.bindings)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testCommonDependencies(libs)
+    testImplementation(libs.androidx.compose.ui.test.junit)
     testImplementation(projects.libraries.matrix.test)
     testImplementation(libs.network.mockwebserver)
     testImplementation(projects.services.toolbox.test)

@@ -87,6 +87,7 @@ class DefaultNotificationDataFactory(
                     notification = notification,
                     roomId = roomId,
                     threadId = threadId,
+                    roomDisplayName = events.last().roomName ?: events.last().senderDisambiguatedDisplayName ?: roomId.value,
                     messageCount = events.size,
                     latestTimestamp = events.maxOf { it.timestamp },
                     shouldBing = events.any { it.noisy }
@@ -184,6 +185,7 @@ data class RoomNotification(
     val notification: Notification,
     val roomId: RoomId,
     val threadId: ThreadId?,
+    val roomDisplayName: String,
     val messageCount: Int,
     val latestTimestamp: Long,
     val shouldBing: Boolean,
@@ -192,6 +194,7 @@ data class RoomNotification(
         return notification == other.notification &&
             roomId == other.roomId &&
             threadId == other.threadId &&
+            roomDisplayName == other.roomDisplayName &&
             messageCount == other.messageCount &&
             latestTimestamp == other.latestTimestamp &&
             shouldBing == other.shouldBing

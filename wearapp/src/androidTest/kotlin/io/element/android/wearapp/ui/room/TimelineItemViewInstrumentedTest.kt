@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -69,6 +70,29 @@ class TimelineItemViewInstrumentedTest {
         rule.runOnIdle {
             assertThat(clickCount).isEqualTo(1)
         }
+    }
+
+    @Test
+    fun timeline_image_row_hides_unavailable_placeholder_when_preview_is_available_on_emulator() {
+        val unavailableText = rule.activity.getString(R.string.screen_media_preview_unavailable)
+
+        rule.setContent {
+            MaterialTheme {
+                TimelineMessageRow(
+                    item = anImageTimelineItem(),
+                    mediaPreviewBytes = createPreviewBytes(),
+                    onClick = {},
+                    onOpenThread = null,
+                    showSender = false,
+                )
+            }
+        }
+
+        rule.waitUntil(timeoutMillis = 5_000L) {
+            rule.onAllNodesWithText(unavailableText, useUnmergedTree = true)
+                .fetchSemanticsNodes().isEmpty()
+        }
+        rule.onNodeWithText("Vacation photo").assertExists()
     }
 
     private fun anImageTimelineItem() = WatchTimelineItem(

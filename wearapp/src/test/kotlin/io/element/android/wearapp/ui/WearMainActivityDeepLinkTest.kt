@@ -8,8 +8,11 @@
 package io.element.android.wearapp.ui
 
 import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import io.element.android.appconfig.WearCompanionConfig
+import io.element.android.appconfig.WearCompanionDeepLink
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -21,12 +24,51 @@ class WearMainActivityDeepLinkTest {
     @Test
     fun `consume pending deep link clears extras after first use`() {
         val intent = Intent()
-            .putExtra("roomId", "!room:server")
-            .putExtra("eventId", "\$event:server")
+            .putExtra(WearCompanionConfig.EXTRA_ROOM_ID, "!room:server")
+            .putExtra(WearCompanionConfig.EXTRA_EVENT_ID, "\$event:server")
 
-        assertThat(consumePendingDeepLink(intent)).isEqualTo("!room:server" to "\$event:server")
-        assertThat(intent.hasExtra("roomId")).isFalse()
-        assertThat(intent.hasExtra("eventId")).isFalse()
+        assertThat(consumePendingDeepLink(intent)).isEqualTo(
+            WearCompanionDeepLink(roomId = "!room:server", eventId = "\$event:server"),
+        )
+        assertThat(intent.hasExtra(WearCompanionConfig.EXTRA_ROOM_ID)).isFalse()
+        assertThat(intent.hasExtra(WearCompanionConfig.EXTRA_EVENT_ID)).isFalse()
         assertThat(consumePendingDeepLink(intent)).isNull()
+    }
+
+    @Test
+    fun `consume pending deep link parses wear deep link uri`() {
+        val intent = buildWearLaunchIntent(
+            context = androidx.test.core.app.ApplicationProvider.getApplicationContext(),
+            roomId = "!room:server",
+            eventId = "\$event:server",
+        )
+
+        assertThat(consumePendingDeepLink(intent)).isEqualTo(
+            WearCompanionDeepLink(roomId = "!room:server", eventId = "\$event:server"),
+        )
+        assertThat(intent.data).isNull()
+    }
+
+    @Test
+    fun `consume pending deep link parses thread uri`() {
+        val intent = buildWearLaunchIntent(
+            context = ApplicationProvider.getApplicationContext(),
+            roomId = "!room:server",
+            threadRootEventId = "\$root:server",
+        )
+
+        assertThat(consumePendingDeepLink(intent)).isEqualTo(
+            WearCompanionDeepLink(roomId = "!room:server", threadRootEventId = "\$root:server"),
+        )
+        assertThat(intent.data).isNull()
+    }
+
+    @Test
+    fun `tile clickable ids round-trip room ids`() {
+        val clickableId = openRoomTileClickableId("!room:server")
+
+        assertThat(parseOpenRoomTileClickableId(clickableId)).isEqualTo("!room:server")
+        assertThat(isOpenAppTileClickableId(openAppTileClickableId())).isTrue()
+        assertThat(parseOpenRoomTileClickableId(openAppTileClickableId())).isNull()
     }
 }

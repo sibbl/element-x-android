@@ -108,6 +108,11 @@ internal data class TimelineProjection(
     val mediaSources: Map<String, MediaPreviewSourceRef>,
 )
 
+internal data class ThreadProjection(
+    val items: List<WatchThreadItem>,
+    val mediaSources: Map<String, MediaPreviewSourceRef>,
+)
+
 internal data class MediaPreviewSourceRef(
     val primarySource: MediaSource,
     val thumbnailSource: MediaSource? = null,
@@ -232,7 +237,7 @@ private class MatrixRoomListWatchPort(
         coroutineScope = client.sessionCoroutineScope,
     )
     private val joinedRooms = ConcurrentHashMap<String, JoinedRoom>()
-    private val roomTimelineMediaSources = ConcurrentHashMap<String, Map<String, MediaPreviewSourceRef>>()
+    private val mediaSourcesByRoom = ConcurrentHashMap<String, ConcurrentHashMap<String, MediaPreviewSourceRef>>()
 
     override fun favorites(): Flow<List<WatchFavoriteRoom>> = roomList.summaries
         .onEach { summaries -> subscribeToVisibleRooms(summaries, ROOM_LIST_PAGE_SIZE) }
@@ -279,14 +284,14 @@ private class MatrixRoomListWatchPort(
         emitAll(
             room.liveTimeline.timelineItems.map { items ->
                 val projection = items.toWatchTimelineProjection(roomId = roomId, limit = limit)
-                roomTimelineMediaSources[roomId] = projection.mediaSources
+                mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
                 projection.items
             }
         )
     }
 
     override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> {
-        val sourceRef = roomTimelineMediaSources[roomId]?.get(eventId) ?: return Result.success(null)
+        val sourceRef = mediaSourcesByRoom[roomId]?.get(eventId) ?: return Result.success(null)
         return loadWatchMediaPreviewBytes(
             mediaLoader = client.matrixMediaLoader,
             sourceRef = sourceRef,
@@ -297,12 +302,14 @@ private class MatrixRoomListWatchPort(
     override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>> = flow {
         val room = joinedRoom(roomId) ?: return@flow
         val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrNull() ?: return@flow
+        runCatching { timeline.paginate(io.element.android.libraries.matrix.api.timeline.Timeline.PaginationDirection.BACKWARDS) }
+            .onFailure { Timber.d(it, "WatchBridge initial back-paginate for thread=%s/%s", roomId, threadRootEventId) }
         try {
             emitAll(
                 timeline.timelineItems.map { items ->
-                    items.toWatchThreadItems(roomId, threadRootEventId)
-                        .sortedBy { it.timestampMs }
-                        .takeLast(limit)
+                    val projection = items.toWatchThreadProjection(roomId, threadRootEventId, limit)
+                    mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
+                    projection.items
                 }
             )
         } finally {
@@ -448,6 +455,9 @@ private class MatrixRoomListWatchPort(
         runCatching { client.roomListService.subscribeToVisibleRooms(roomIds) }
             .onFailure { Timber.w(it, "WatchBridge visible room subscription failed") }
     }
+
+    private fun mediaSourcesForRoom(roomId: String): ConcurrentHashMap<String, MediaPreviewSourceRef> =
+        mediaSourcesByRoom.getOrPut(roomId) { ConcurrentHashMap() }
 }
 
 private suspend fun List<RoomSummary>.toWatchRooms(resolveJoinedRoom: suspend (String) -> JoinedRoom?): List<WatchFavoriteRoom> {
@@ -542,22 +552,50 @@ internal fun List<MatrixTimelineItem>.toWatchTimelineProjection(
     )
 }
 
-private fun List<MatrixTimelineItem>.toWatchThreadItems(roomId: String, threadRootEventId: String): List<WatchThreadItem> = mapNotNull { item ->
-    val event = (item as? MatrixTimelineItem.Event)?.event ?: return@mapNotNull null
-    val eventId = event.eventId?.value ?: return@mapNotNull null
-    WatchThreadItem(
+internal fun List<MatrixTimelineItem>.toWatchThreadProjection(
+    roomId: String,
+    threadRootEventId: String,
+    limit: Int,
+): ThreadProjection {
+    val projectedItems = mutableListOf<WatchThreadItem>()
+    val mediaSources = mutableMapOf<String, MediaPreviewSourceRef>()
+
+    forEach { item ->
+        val event = (item as? MatrixTimelineItem.Event)?.event ?: return@forEach
+        val projected = event.toWatchThreadItem(roomId, threadRootEventId) ?: return@forEach
+        projectedItems += projected
+        event.content.mediaPreviewSourceRef()?.let { mediaSources[projected.eventId] = it }
+    }
+
+    val limitedItems = projectedItems
+        .sortedBy { it.timestampMs }
+        .takeLast(limit)
+    val limitedEventIds = limitedItems.map { it.eventId }.toSet()
+
+    return ThreadProjection(
+        items = limitedItems,
+        mediaSources = mediaSources.filterKeys { it in limitedEventIds },
+    )
+}
+
+private fun EventTimelineItem.toWatchThreadItem(
+    roomId: String,
+    threadRootEventId: String,
+): WatchThreadItem? {
+    val eventId = eventId?.value ?: return null
+    return WatchThreadItem(
         eventId = eventId,
         threadRootEventId = threadRootEventId,
         roomId = roomId,
-        senderId = event.sender.value,
-        senderDisplayName = event.senderProfile.displayName(),
-        timestampMs = event.timestamp,
-        kind = event.content.watchKind(),
-        bodyText = event.content.previewText(),
-        isOwn = event.isOwn,
-        reactions = event.watchReactions(),
-        voiceMessageMeta = event.content.voiceMeta(),
-        mediaPreview = event.content.mediaPreview(),
+        senderId = sender.value,
+        senderDisplayName = senderProfile.displayName(),
+        timestampMs = timestamp,
+        kind = content.watchKind(),
+        bodyText = content.previewText()?.take(300),
+        isOwn = isOwn,
+        reactions = watchReactions(),
+        voiceMessageMeta = content.voiceMeta(),
+        mediaPreview = content.mediaPreview(),
     )
 }
 
@@ -644,14 +682,21 @@ internal suspend fun loadWatchMediaPreviewBytes(
     sourceRef: MediaPreviewSourceRef,
     maxDimensionPx: Int = WATCH_MEDIA_PREVIEW_SIZE_PX.toInt(),
 ): Result<ByteArray?> {
-    val preferredSource = sourceRef.thumbnailSource ?: sourceRef.primarySource
-    val thumbnailBytes = mediaLoader.loadMediaThumbnail(
-        source = preferredSource,
+    sourceRef.thumbnailSource
+        ?.let { thumbnailSource ->
+            normalizeWatchMediaPreviewBytes(
+                bytes = mediaLoader.loadMediaContent(thumbnailSource).getOrNull(),
+                maxDimensionPx = maxDimensionPx,
+            )?.let { return Result.success(it) }
+        }
+
+    val generatedThumbnailBytes = mediaLoader.loadMediaThumbnail(
+        source = sourceRef.primarySource,
         width = maxDimensionPx.toLong(),
         height = maxDimensionPx.toLong(),
     ).getOrNull()
 
-    normalizeWatchMediaPreviewBytes(thumbnailBytes, maxDimensionPx)?.let { return Result.success(it) }
+    normalizeWatchMediaPreviewBytes(generatedThumbnailBytes, maxDimensionPx)?.let { return Result.success(it) }
 
     return mediaLoader.loadMediaContent(sourceRef.primarySource).mapCatching { bytes ->
         normalizeWatchMediaPreviewBytes(bytes, maxDimensionPx)

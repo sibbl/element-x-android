@@ -142,6 +142,55 @@ class ElementXWatchBridgeRuntimeTest {
         }
     }
 
+    @Test
+    fun `media preview loading prefers thumbnail source content before generating thumbnail`() = runTest {
+        val thumbnailBytes = createImageBytes(width = 128, height = 96)
+        val fullBytes = createImageBytes(width = 1200, height = 900)
+        val mediaLoader = object : MatrixMediaLoader {
+            var requestedThumbnailCount = 0
+            val loadedSources = mutableListOf<String>()
+
+            override suspend fun loadMediaContent(source: MediaSource): Result<ByteArray> = runCatching {
+                loadedSources += source.safeUrl
+                when (source.safeUrl) {
+                    "mxc://server/thumb" -> thumbnailBytes
+                    "mxc://server/full" -> fullBytes
+                    else -> error("unexpected source ${source.safeUrl}")
+                }
+            }
+
+            override suspend fun loadMediaThumbnail(source: MediaSource, width: Long, height: Long): Result<ByteArray> {
+                requestedThumbnailCount += 1
+                return Result.failure(IllegalStateException("should not generate thumbnail when thumbnail source content exists"))
+            }
+
+            override suspend fun downloadMediaFile(
+                source: MediaSource,
+                mimeType: String?,
+                filename: String?,
+                useCache: Boolean,
+            ): Result<MediaFile> = error("unused in test")
+        }
+
+        val result = loadWatchMediaPreviewBytes(
+            mediaLoader = mediaLoader,
+            sourceRef = MediaPreviewSourceRef(
+                primarySource = aMediaSource("mxc://server/full"),
+                thumbnailSource = aMediaSource("mxc://server/thumb"),
+            ),
+            maxDimensionPx = 384,
+        )
+
+        val previewBytes = requireNotNull(result.getOrThrow())
+        val previewBitmap = BitmapFactory.decodeByteArray(previewBytes, 0, previewBytes.size)
+
+        assertThat(previewBitmap).isNotNull()
+        assertThat(previewBitmap!!.width).isEqualTo(128)
+        assertThat(previewBitmap.height).isEqualTo(96)
+        assertThat(mediaLoader.loadedSources).containsExactly("mxc://server/thumb")
+        assertThat(mediaLoader.requestedThumbnailCount).isEqualTo(0)
+    }
+
     private fun createImageBytes(width: Int, height: Int): ByteArray {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
             eraseColor(Color.CYAN)

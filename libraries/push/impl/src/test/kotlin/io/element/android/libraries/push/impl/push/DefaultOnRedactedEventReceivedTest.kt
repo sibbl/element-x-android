@@ -23,6 +23,7 @@ import io.element.android.libraries.matrix.test.A_SESSION_ID
 import io.element.android.libraries.matrix.test.A_THREAD_ID
 import io.element.android.libraries.matrix.test.A_USER_ID
 import io.element.android.libraries.matrix.test.A_USER_NAME
+import io.element.android.libraries.push.impl.notifications.CompanionNotificationBridge
 import io.element.android.libraries.push.impl.notifications.factories.DefaultNotificationCreator
 import io.element.android.libraries.push.impl.notifications.fake.FakeActiveNotificationsProvider
 import io.element.android.libraries.push.impl.notifications.fake.FakeNotificationDisplayer
@@ -131,6 +132,7 @@ class DefaultOnRedactedEventReceivedTest : RobolectricTest() {
     private fun createDefaultOnRedactedEventReceived(
         getAllMessageNotificationsForRoomResult: (SessionId, RoomId) -> List<StatusBarNotification> = { _, _ -> lambdaError() },
         displayer: FakeNotificationDisplayer = FakeNotificationDisplayer(),
+        companionNotificationBridges: Set<CompanionNotificationBridge> = emptySet(),
     ): DefaultOnRedactedEventReceived {
         val context = InstrumentationRegistry.getInstrumentation().context
         return DefaultOnRedactedEventReceived(
@@ -146,6 +148,7 @@ class DefaultOnRedactedEventReceivedTest : RobolectricTest() {
             notificationDisplayer = displayer,
             context = context,
             stringProvider = FakeStringProvider(),
+            companionNotificationBridges = companionNotificationBridges,
         )
     }
 }

@@ -7,6 +7,7 @@
 
 package io.element.android.wearapp.tile
 
+import android.content.Intent
 import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -45,6 +46,11 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import io.element.android.wearapp.ui.buildWearLaunchIntent
+import io.element.android.wearapp.ui.isOpenAppTileClickableId
+import io.element.android.wearapp.ui.openAppTileClickableId
+import io.element.android.wearapp.ui.openRoomTileClickableId
+import io.element.android.wearapp.ui.parseOpenRoomTileClickableId
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeCacheStore
@@ -98,6 +104,7 @@ abstract class ConversationTileServiceBase : TileService() {
     protected abstract val tileMode: ConversationTileMode
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
+        handleTileInteraction(requestParams)
         val tile = runCatching {
             val snapshot = readTileSnapshot()
 
@@ -294,33 +301,31 @@ abstract class ConversationTileServiceBase : TileService() {
 
     private fun openRoomClickable(roomId: String): Clickable {
         return Clickable.Builder()
-            .setOnClick(
-                ActionBuilders.LaunchAction.Builder()
-                    .setAndroidActivity(
-                        ActionBuilders.AndroidActivity.Builder()
-                            .setPackageName(packageName)
-                            .setClassName(ComponentName(packageName, "io.element.android.wearapp.ui.WearMainActivity").className)
-                            .addKeyToExtraMapping("roomId", ActionBuilders.stringExtra(roomId))
-                            .build(),
-                    )
-                    .build(),
-            )
+            .setId(openRoomTileClickableId(roomId))
+            .setOnClick(ActionBuilders.LoadAction.Builder().build())
             .build()
     }
 
     private fun openAppClickable(): Clickable {
         return Clickable.Builder()
-            .setOnClick(
-                ActionBuilders.LaunchAction.Builder()
-                    .setAndroidActivity(
-                        ActionBuilders.AndroidActivity.Builder()
-                            .setPackageName(packageName)
-                            .setClassName(ComponentName(packageName, "io.element.android.wearapp.ui.WearMainActivity").className)
-                            .build(),
-                    )
-                    .build(),
-            )
+            .setId(openAppTileClickableId())
+            .setOnClick(ActionBuilders.LoadAction.Builder().build())
             .build()
+    }
+
+    private fun handleTileInteraction(requestParams: RequestBuilders.TileRequest) {
+        val clickableId = requestParams.currentState.lastClickableId
+        when {
+            isOpenAppTileClickableId(clickableId) -> launchIntent(buildWearLaunchIntent(this))
+            else -> parseOpenRoomTileClickableId(clickableId)?.let { roomId ->
+                launchIntent(buildWearLaunchIntent(context = this, roomId = roomId))
+            }
+        }
+    }
+
+    private fun launchIntent(intent: Intent) {
+        runCatching { startActivity(intent) }
+            .onFailure { Timber.w(it, "tile launch failed") }
     }
 
     private fun readTileSnapshot(): TileSnapshot = runBlocking {

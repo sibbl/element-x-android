@@ -237,10 +237,62 @@ class WatchBridgeDispatcher(
                 var lastVersion = -1L
                 var lastPublishedEventIds = emptySet<String>()
                 val publishedMediaEventIds = mutableSetOf<String>()
+                val visibleMediaPreviewEventIds = mutableSetOf<String>()
+                val mediaRetryJobs = mutableMapOf<String, Job>()
+
+                fun scheduleMediaPreviewRetry(item: io.element.android.watchbridge.contract.WatchTimelineItem) {
+                    if (item.eventId in publishedMediaEventIds) return
+                    if (mediaRetryJobs[item.eventId]?.isActive == true) return
+
+                    mediaRetryJobs[item.eventId] = launch {
+                        try {
+                            repeat(4) { attempt ->
+                                delay((attempt + 1) * 1_500L)
+                                if (item.eventId in publishedMediaEventIds || item.eventId !in visibleMediaPreviewEventIds) {
+                                    return@launch
+                                }
+                                port.roomMediaPreview(cmd.roomId, item.eventId)
+                                    .onSuccess { imageBytes ->
+                                        if (imageBytes != null) {
+                                            runCatching {
+                                                transport.publishSync(
+                                                    path = WatchDataPaths.mediaPreview(cmd.roomId, item.eventId),
+                                                    envelope = envelope(
+                                                        payload = WatchSync.MediaPreview(
+                                                            roomId = cmd.roomId,
+                                                            eventId = item.eventId,
+                                                            imageBytes = imageBytes,
+                                                        ),
+                                                        expiresAtMs = clock() + MEDIA_PREVIEW_TTL_MS,
+                                                    ),
+                                                )
+                                                publishedMediaEventIds += item.eventId
+                                            }.onFailure {
+                                                Timber.w(it, "media preview retry publish failed for room=%s event=%s", cmd.roomId, item.eventId)
+                                            }
+                                        }
+                                    }
+                                    .onFailure {
+                                        Timber.w(it, "media preview retry load failed for room=%s event=%s", cmd.roomId, item.eventId)
+                                    }
+
+                                if (item.eventId in publishedMediaEventIds) {
+                                    return@launch
+                                }
+                            }
+                        } finally {
+                            mediaRetryJobs.remove(item.eventId)
+                        }
+                    }
+                }
+
                 port.roomTimeline(cmd.roomId, cmd.limit).collectLatest { items ->
                     hasEmitted = true
                     initialDeltaJob.cancel()
                     if (items.isEmpty()) {
+                        visibleMediaPreviewEventIds.clear()
+                        mediaRetryJobs.values.forEach { it.cancel() }
+                        mediaRetryJobs.clear()
                         transport.publishSync(
                             path = WatchDataPaths.roomTimeline(cmd.roomId),
                             envelope = envelope(
@@ -292,6 +344,15 @@ class WatchBridgeDispatcher(
                         Timber.e("Unable to publish any timeline items for room=%s", cmd.roomId)
                     } else if (publishedItems != null) {
                         val currentEventIds = publishedItems.map { it.eventId }.toSet()
+                        val currentMediaEventIds = publishedItems
+                            .filter { it.mediaPreview != null }
+                            .map { it.eventId }
+                            .toSet()
+                        visibleMediaPreviewEventIds.clear()
+                        visibleMediaPreviewEventIds.addAll(currentMediaEventIds)
+                        mediaRetryJobs.keys
+                            .filterNot { it in currentMediaEventIds }
+                            .forEach { eventId -> mediaRetryJobs.remove(eventId)?.cancel() }
                         publishedMediaEventIds.retainAll(currentEventIds)
                         publishedItems
                             .filter { it.mediaPreview != null && it.eventId !in publishedMediaEventIds }
@@ -299,22 +360,31 @@ class WatchBridgeDispatcher(
                                 port.roomMediaPreview(cmd.roomId, item.eventId)
                                     .onSuccess { imageBytes ->
                                         if (imageBytes != null) {
-                                            transport.publishSync(
-                                                path = WatchDataPaths.mediaPreview(cmd.roomId, item.eventId),
-                                                envelope = envelope(
-                                                    payload = WatchSync.MediaPreview(
-                                                        roomId = cmd.roomId,
-                                                        eventId = item.eventId,
-                                                        imageBytes = imageBytes,
+                                            runCatching {
+                                                transport.publishSync(
+                                                    path = WatchDataPaths.mediaPreview(cmd.roomId, item.eventId),
+                                                    envelope = envelope(
+                                                        payload = WatchSync.MediaPreview(
+                                                            roomId = cmd.roomId,
+                                                            eventId = item.eventId,
+                                                            imageBytes = imageBytes,
+                                                        ),
+                                                        expiresAtMs = clock() + MEDIA_PREVIEW_TTL_MS,
                                                     ),
-                                                    expiresAtMs = clock() + MEDIA_PREVIEW_TTL_MS,
-                                                ),
-                                            )
-                                            publishedMediaEventIds += item.eventId
+                                                )
+                                                publishedMediaEventIds += item.eventId
+                                                mediaRetryJobs.remove(item.eventId)?.cancel()
+                                            }.onFailure {
+                                                Timber.w(it, "media preview publish failed for room=%s event=%s", cmd.roomId, item.eventId)
+                                                scheduleMediaPreviewRetry(item)
+                                            }
+                                        } else {
+                                            scheduleMediaPreviewRetry(item)
                                         }
                                     }
                                     .onFailure {
                                         Timber.w(it, "media preview publish failed for room=%s event=%s", cmd.roomId, item.eventId)
+                                        scheduleMediaPreviewRetry(item)
                                     }
                             }
                         lastPublishedEventIds = currentEventIds
@@ -333,28 +403,71 @@ class WatchBridgeDispatcher(
         threadJobs[key] = scope.launch {
             runCatching {
                 ack(WatchAck.Sent(cmd.requestId))
-                var hasEmitted = false
-                val initialDeltaJob = launch {
-                    delay(3_000L)
-                    if (!hasEmitted) {
-                        Timber.d("fetchThread sending initial empty delta for %s/%s", cmd.roomId, cmd.threadRootEventId)
-                        transport.publishSync(
-                            path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
-                            envelope = envelope(
-                                WatchSync.ThreadDelta(
-                                    roomId = cmd.roomId,
-                                    threadRootEventId = cmd.threadRootEventId,
-                                    items = emptyList(),
-                                ),
-                            ),
-                        )
+                val publishedMediaEventIds = mutableSetOf<String>()
+                val visibleMediaPreviewEventIds = mutableSetOf<String>()
+                val mediaRetryJobs = mutableMapOf<String, Job>()
+
+                fun scheduleMediaPreviewRetry(item: io.element.android.watchbridge.contract.WatchThreadItem) {
+                    if (item.eventId in publishedMediaEventIds) return
+                    if (mediaRetryJobs[item.eventId]?.isActive == true) return
+
+                    mediaRetryJobs[item.eventId] = launch {
+                        try {
+                            repeat(4) { attempt ->
+                                delay((attempt + 1) * 1_500L)
+                                if (item.eventId in publishedMediaEventIds || item.eventId !in visibleMediaPreviewEventIds) {
+                                    return@launch
+                                }
+                                port.roomMediaPreview(cmd.roomId, item.eventId)
+                                    .onSuccess { imageBytes ->
+                                        if (imageBytes != null) {
+                                            runCatching {
+                                                transport.publishSync(
+                                                    path = WatchDataPaths.mediaPreview(cmd.roomId, item.eventId),
+                                                    envelope = envelope(
+                                                        payload = WatchSync.MediaPreview(
+                                                            roomId = cmd.roomId,
+                                                            eventId = item.eventId,
+                                                            imageBytes = imageBytes,
+                                                        ),
+                                                        expiresAtMs = clock() + MEDIA_PREVIEW_TTL_MS,
+                                                    ),
+                                                )
+                                                publishedMediaEventIds += item.eventId
+                                            }.onFailure {
+                                                Timber.w(
+                                                    it,
+                                                    "thread media preview retry publish failed for room=%s event=%s",
+                                                    cmd.roomId,
+                                                    item.eventId,
+                                                )
+                                            }
+                                        }
+                                    }
+                                    .onFailure {
+                                        Timber.w(
+                                            it,
+                                            "thread media preview retry load failed for room=%s event=%s",
+                                            cmd.roomId,
+                                            item.eventId,
+                                        )
+                                    }
+
+                                if (item.eventId in publishedMediaEventIds) {
+                                    return@launch
+                                }
+                            }
+                        } finally {
+                            mediaRetryJobs.remove(item.eventId)
+                        }
                     }
                 }
                 var lastPublishedEventIds = emptySet<String>()
                 port.threadTimeline(cmd.roomId, cmd.threadRootEventId, cmd.limit).collectLatest { items ->
-                    hasEmitted = true
-                    initialDeltaJob.cancel()
                     if (items.isEmpty()) {
+                        visibleMediaPreviewEventIds.clear()
+                        mediaRetryJobs.values.forEach { it.cancel() }
+                        mediaRetryJobs.clear()
                         transport.publishSync(
                             path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
                             envelope = envelope(
@@ -367,6 +480,7 @@ class WatchBridgeDispatcher(
                             ),
                         )
                         lastPublishedEventIds = emptySet()
+                        publishedMediaEventIds.clear()
                         return@collectLatest
                     }
                     val currentEventIds = items.map { it.eventId }.toSet()
@@ -381,6 +495,59 @@ class WatchBridgeDispatcher(
                             ),
                         ),
                     )
+                    val currentMediaEventIds = items
+                        .filter { it.mediaPreview != null }
+                        .map { it.eventId }
+                        .toSet()
+                    visibleMediaPreviewEventIds.clear()
+                    visibleMediaPreviewEventIds.addAll(currentMediaEventIds)
+                    mediaRetryJobs.keys
+                        .filterNot { it in currentMediaEventIds }
+                        .forEach { eventId -> mediaRetryJobs.remove(eventId)?.cancel() }
+                    publishedMediaEventIds.retainAll(currentEventIds)
+                    items
+                        .filter { it.mediaPreview != null && it.eventId !in publishedMediaEventIds }
+                        .forEach { item ->
+                            port.roomMediaPreview(cmd.roomId, item.eventId)
+                                .onSuccess { imageBytes ->
+                                    if (imageBytes != null) {
+                                        runCatching {
+                                            transport.publishSync(
+                                                path = WatchDataPaths.mediaPreview(cmd.roomId, item.eventId),
+                                                envelope = envelope(
+                                                    payload = WatchSync.MediaPreview(
+                                                        roomId = cmd.roomId,
+                                                        eventId = item.eventId,
+                                                        imageBytes = imageBytes,
+                                                    ),
+                                                    expiresAtMs = clock() + MEDIA_PREVIEW_TTL_MS,
+                                                ),
+                                            )
+                                            publishedMediaEventIds += item.eventId
+                                            mediaRetryJobs.remove(item.eventId)?.cancel()
+                                        }.onFailure {
+                                            Timber.w(
+                                                it,
+                                                "thread media preview publish failed for room=%s event=%s",
+                                                cmd.roomId,
+                                                item.eventId,
+                                            )
+                                            scheduleMediaPreviewRetry(item)
+                                        }
+                                    } else {
+                                        scheduleMediaPreviewRetry(item)
+                                    }
+                                }
+                                .onFailure {
+                                    Timber.w(
+                                        it,
+                                        "thread media preview publish failed for room=%s event=%s",
+                                        cmd.roomId,
+                                        item.eventId,
+                                    )
+                                    scheduleMediaPreviewRetry(item)
+                                }
+                        }
                     lastPublishedEventIds = currentEventIds
                 }
             }.onFailure {
