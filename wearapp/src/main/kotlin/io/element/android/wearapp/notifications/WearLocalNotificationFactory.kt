@@ -47,9 +47,10 @@ internal class WearLocalNotificationFactory(
             .setNumber(notification.messageCount)
             .setContentIntent(contentIntent(notification))
             .setDeleteIntent(dismissIntent(notification.notificationKey, generatedAtMs))
-            .addAction(replyAction(notification, generatedAtMs))
+            .addAction(markAsReadAction(notification, generatedAtMs))
             .addAction(voiceAction(notification, title))
             .addAction(threadAction(notification))
+            .addAction(replyAction(notification, generatedAtMs))
             .apply {
                 val timeoutAfterMs = expiresAtMs?.minus(System.currentTimeMillis())?.takeIf { it > 0L }
                 timeoutAfterMs?.let(::setTimeoutAfter)
@@ -84,6 +85,29 @@ internal class WearLocalNotificationFactory(
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    private fun markAsReadAction(notification: WatchMessageNotification, generatedAtMs: Long): NotificationCompat.Action {
+        val markAsReadIntent = baseBroadcastIntent(
+            action = WearNotificationActionReceiver.ACTION_MARK_AS_READ,
+            notificationKey = notification.notificationKey,
+            generatedAtMs = generatedAtMs,
+            notification = notification,
+        )
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode(notification.notificationKey, WearNotificationActionReceiver.ACTION_MARK_AS_READ),
+            markAsReadIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_delete,
+            context.getString(R.string.screen_wear_notification_mark_as_read),
+            pendingIntent,
+        )
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
     }
 
     private fun replyAction(notification: WatchMessageNotification, generatedAtMs: Long): NotificationCompat.Action {

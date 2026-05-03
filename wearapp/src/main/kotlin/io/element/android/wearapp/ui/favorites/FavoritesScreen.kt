@@ -170,9 +170,9 @@ private fun RoomListPage(
 
     LaunchedEffect(listState, onListPositionChange) {
         if (onListPositionChange == null) return@LaunchedEffect
-        snapshotFlow { listState.isScrollInProgress }
+        snapshotFlow { listState.isScrollInProgress to hasRestoredScroll }
             .distinctUntilChanged()
-            .filter { isScrolling -> !isScrolling }
+            .filter { (isScrolling, restored) -> !isScrolling && restored }
             .map {
                 SavedScalingListPosition(
                     index = listState.centerItemIndex,

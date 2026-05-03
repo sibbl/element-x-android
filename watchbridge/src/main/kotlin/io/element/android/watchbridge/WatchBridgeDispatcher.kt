@@ -28,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 private const val INITIAL_ROOM_LOAD_COUNT = 30
 private const val MAX_AVATAR_SYNC_COUNT = 60
+private const val MAX_ROOM_MEDIA_PREVIEW_SYNC_COUNT = 6
+private const val MAX_THREAD_MEDIA_PREVIEW_SYNC_COUNT = 4
 private const val MEDIA_PREVIEW_TTL_MS = 7L * 24L * 60L * 60L * 1000L
 
 /**
@@ -344,8 +346,10 @@ class WatchBridgeDispatcher(
                         Timber.e("Unable to publish any timeline items for room=%s", cmd.roomId)
                     } else if (publishedItems != null) {
                         val currentEventIds = publishedItems.map { it.eventId }.toSet()
-                        val currentMediaEventIds = publishedItems
+                        val currentMediaPreviewItems = publishedItems
                             .filter { it.mediaPreview != null }
+                            .takeLast(MAX_ROOM_MEDIA_PREVIEW_SYNC_COUNT)
+                        val currentMediaEventIds = currentMediaPreviewItems
                             .map { it.eventId }
                             .toSet()
                         visibleMediaPreviewEventIds.clear()
@@ -354,8 +358,8 @@ class WatchBridgeDispatcher(
                             .filterNot { it in currentMediaEventIds }
                             .forEach { eventId -> mediaRetryJobs.remove(eventId)?.cancel() }
                         publishedMediaEventIds.retainAll(currentEventIds)
-                        publishedItems
-                            .filter { it.mediaPreview != null && it.eventId !in publishedMediaEventIds }
+                        currentMediaPreviewItems
+                            .filter { it.eventId !in publishedMediaEventIds }
                             .forEach { item ->
                                 port.roomMediaPreview(cmd.roomId, item.eventId)
                                     .onSuccess { imageBytes ->
@@ -495,8 +499,10 @@ class WatchBridgeDispatcher(
                             ),
                         ),
                     )
-                    val currentMediaEventIds = items
+                    val currentMediaPreviewItems = items
                         .filter { it.mediaPreview != null }
+                        .takeLast(MAX_THREAD_MEDIA_PREVIEW_SYNC_COUNT)
+                    val currentMediaEventIds = currentMediaPreviewItems
                         .map { it.eventId }
                         .toSet()
                     visibleMediaPreviewEventIds.clear()
@@ -505,8 +511,8 @@ class WatchBridgeDispatcher(
                         .filterNot { it in currentMediaEventIds }
                         .forEach { eventId -> mediaRetryJobs.remove(eventId)?.cancel() }
                     publishedMediaEventIds.retainAll(currentEventIds)
-                    items
-                        .filter { it.mediaPreview != null && it.eventId !in publishedMediaEventIds }
+                    currentMediaPreviewItems
+                        .filter { it.eventId !in publishedMediaEventIds }
                         .forEach { item ->
                             port.roomMediaPreview(cmd.roomId, item.eventId)
                                 .onSuccess { imageBytes ->

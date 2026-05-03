@@ -17,7 +17,6 @@ import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
-import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.WearMainActivity
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
@@ -35,7 +34,6 @@ fun MessageDetailScreen(
     onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
-    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
         roomId = roomId,
@@ -48,7 +46,9 @@ fun MessageDetailScreen(
         ?: fallbackRoom?.displayName
         ?: ""
     val item = roomState.items.firstOrNull { it.eventId == eventId }
-    val mediaPreviewBytes = item?.let { mediaPreviewImages[mediaPreviewCacheKey(roomId, it.eventId)] }
+    val mediaPreviewBytes = item?.let { currentItem ->
+        bridge.mediaPreviewFlow(roomId, currentItem.eventId).collectAsState().value
+    }
 
     MessageDetailView(
         state = MessageDetailViewState(

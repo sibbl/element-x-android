@@ -21,8 +21,6 @@ import io.element.android.wearapp.bridge.WearBridgeClient
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 
-private const val MAX_TIMELINE_ITEMS = 100
-
 internal data class RoomTimelineState(
     val summary: WatchRoomSummary? = null,
     val items: List<WatchTimelineItem> = emptyList(),
@@ -60,17 +58,9 @@ internal fun rememberRoomTimelineState(
     LaunchedEffect(bridge, roomId) {
         bridge.syncEvents.filterIsInstance<WatchSync.TimelineDelta>()
             .filter { delta -> delta.roomId == roomId }
-            .collect { delta ->
+            .collect {
                 hasReceivedDelta = true
-                val updated = mergeTimelineItems(
-                    existing = items,
-                    incoming = delta.items,
-                )
-                    .filter { it.eventId !in delta.removedEventIds }
-                    .sortedBy { it.timestampMs }
-                    .takeLast(MAX_TIMELINE_ITEMS)
-                items = updated
-                bridge.cacheTimeline(roomId, updated, hasSnapshot = true)
+                items = bridge.getCachedTimeline(roomId)
             }
     }
 
@@ -97,12 +87,3 @@ internal fun WatchTimelineItem.reactionSummaryText(): String? =
     reactions.takeIf { it.isNotEmpty() }
         ?.joinToString(separator = "  ") { "${it.key} ${it.count}" }
 
-private fun mergeTimelineItems(
-    existing: List<WatchTimelineItem>,
-    incoming: List<WatchTimelineItem>,
-): List<WatchTimelineItem> {
-    return (existing + incoming)
-        .associateBy { it.eventId }
-        .values
-        .toList()
-}

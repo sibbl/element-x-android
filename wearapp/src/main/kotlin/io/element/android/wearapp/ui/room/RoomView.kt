@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,8 +45,12 @@ import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.ComposerBar
+import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -67,6 +72,9 @@ internal fun RoomView(
     onScrollRequestHandled: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
     listState: ScalingLazyListState? = null,
+    savedListPosition: SavedScalingListPosition? = null,
+    onListPositionChange: ((SavedScalingListPosition) -> Unit)? = null,
+    mediaPreviewFlowProvider: ((String, String) -> StateFlow<ByteArray?>)? = null,
 ) {
     val lazyListState = listState ?: rememberScalingLazyListState()
     val totalItemCount = lazyListState.layoutInfo.totalItemsCount
@@ -75,7 +83,11 @@ internal fun RoomView(
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
     var lastAutoScrolledEventId by remember(state.timelineKey) { mutableStateOf<String?>(null) }
     var lastHandledScrollRequestId by remember(state.timelineKey) { mutableStateOf<Long?>(null) }
+    var hasRestoredSavedPosition by remember(state.timelineKey, savedListPosition) {
+        mutableStateOf(savedListPosition == null)
+    }
     val scope = rememberCoroutineScope()
+    val shouldRestoreSavedPosition = savedListPosition != null && state.scrollRequestId == null
 
     val isAtBottom by remember {
         derivedStateOf {
@@ -89,6 +101,34 @@ internal fun RoomView(
             .collect { atBottom ->
                 shouldStickToBottom = atBottom
             }
+    }
+
+    LaunchedEffect(lazyListState, onListPositionChange, state.timelineKey) {
+        if (onListPositionChange == null) return@LaunchedEffect
+        snapshotFlow { lazyListState.isScrollInProgress to hasRestoredSavedPosition }
+            .distinctUntilChanged()
+            .filter { (isScrolling, restored) -> !isScrolling && restored }
+            .map {
+                SavedScalingListPosition(
+                    index = lazyListState.centerItemIndex,
+                    offset = lazyListState.centerItemScrollOffset,
+                )
+            }
+            .distinctUntilChanged()
+            .collect(onListPositionChange)
+    }
+
+    LaunchedEffect(savedListPosition, totalItemCount, state.scrollRequestId, state.timelineKey) {
+        val targetPosition = savedListPosition ?: return@LaunchedEffect
+        if (hasRestoredSavedPosition || !shouldRestoreSavedPosition || totalItemCount <= 0) return@LaunchedEffect
+
+        hasRestoredSavedPosition = true
+        val targetIndex = targetPosition.index.coerceIn(0, (totalItemCount - 1).coerceAtLeast(0))
+        if (targetIndex > 0 || targetPosition.offset != 0) {
+            lazyListState.scrollToItem(targetIndex, targetPosition.offset)
+        }
+        shouldStickToBottom = targetIndex >= totalItemCount - 2
+        lastAutoScrolledEventId = lastEventId
     }
 
     LaunchedEffect(
@@ -113,12 +153,14 @@ internal fun RoomView(
                 lastAutoScrolledEventId = lastEventId
             }
         }
+        hasRestoredSavedPosition = true
         lastHandledScrollRequestId = requestId
         onScrollRequestHandled?.invoke(requestId)
     }
 
     LaunchedEffect(state.timelineKey, lastEventId, totalItemCount, readMarkerAnchorEventId) {
         if (lastEventId == null || totalItemCount <= 0) return@LaunchedEffect
+        if (shouldRestoreSavedPosition && !hasRestoredSavedPosition) return@LaunchedEffect
 
         val initialScroll = lastAutoScrolledEventId == null
         val hasNewBottomItem = lastEventId != lastAutoScrolledEventId
@@ -172,6 +214,9 @@ internal fun RoomView(
                     val prevItem = state.items.getOrNull(index - 1)
                     val showDayDivider = prevItem == null || !isSameDay(prevItem.timestampMs, entry.timestampMs)
                     val showSender = prevItem == null || prevItem.senderId != entry.senderId || showDayDivider
+                    val mediaPreviewBytes = mediaPreviewFlowProvider?.let { provider ->
+                        provider(entry.roomId, entry.eventId).collectAsState().value
+                    } ?: state.mediaPreviewImages[mediaPreviewCacheKey(entry.roomId, entry.eventId)]
 
                     if (showDayDivider && index > 0) {
                         DayDivider(timestampMs = entry.timestampMs)
@@ -179,7 +224,7 @@ internal fun RoomView(
 
                     TimelineMessageRow(
                         item = entry,
-                        mediaPreviewBytes = state.mediaPreviewImages[mediaPreviewCacheKey(entry.roomId, entry.eventId)],
+                        mediaPreviewBytes = mediaPreviewBytes,
                         showSender = showSender,
                         onClick = { onMessageSelected(entry.eventId) },
                         onOpenThread = onOpenThread,

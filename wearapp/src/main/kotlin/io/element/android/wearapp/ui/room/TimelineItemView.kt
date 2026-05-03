@@ -8,6 +8,7 @@
 package io.element.android.wearapp.ui.room
 
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -51,6 +52,7 @@ import androidx.wear.compose.material.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.PressableWearChip
 import io.element.android.wearapp.ui.common.wearTapAndLongPress
 import kotlinx.coroutines.Dispatchers
@@ -259,6 +261,7 @@ private fun ImageMessagePreview(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         MediaPreviewImage(
+            cacheKey = mediaPreviewCacheKey(item.roomId, item.eventId),
             mediaPreviewBytes = mediaPreviewBytes,
             height = 72.dp,
             previewExpected = item.mediaPreview != null,
@@ -284,6 +287,7 @@ private fun ImageMessageDetailedView(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         MediaPreviewImage(
+            cacheKey = mediaPreviewCacheKey(item.roomId, item.eventId),
             mediaPreviewBytes = mediaPreviewBytes,
             height = 112.dp,
             previewExpected = item.mediaPreview != null,
@@ -300,12 +304,13 @@ private fun ImageMessageDetailedView(
 
 @Composable
 private fun MediaPreviewImage(
+    cacheKey: String,
     mediaPreviewBytes: ByteArray?,
     height: androidx.compose.ui.unit.Dp,
     previewExpected: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
-    val imageBitmap = rememberDecodedImageBitmap(mediaPreviewBytes)
+    val imageBitmap = rememberDecodedImageBitmap(cacheKey = cacheKey, imageBytes = mediaPreviewBytes)
     var shouldShowUnavailable by remember(previewExpected, mediaPreviewBytes) {
         mutableStateOf(mediaPreviewBytes == null && !previewExpected)
     }
@@ -371,14 +376,36 @@ private fun MediaPreviewImage(
     }
 }
 
+private object DecodedImageBitmapCache {
+    private const val MAX_ENTRIES = 64
+    private val cache = object : LruCache<String, ImageBitmap>(MAX_ENTRIES) {}
+
+    fun get(key: String): ImageBitmap? = synchronized(this) { cache.get(key) }
+
+    fun put(key: String, bitmap: ImageBitmap) {
+        synchronized(this) {
+            cache.put(key, bitmap)
+        }
+    }
+}
+
 @Composable
-internal fun rememberDecodedImageBitmap(imageBytes: ByteArray?): ImageBitmap? {
-    val decodedImage by produceState<ImageBitmap?>(initialValue = null, imageBytes) {
-        value = if (imageBytes == null) {
-            null
-        } else {
-            withContext(Dispatchers.Default) {
-                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)?.asImageBitmap()
+internal fun rememberDecodedImageBitmap(
+    cacheKey: String,
+    imageBytes: ByteArray?,
+): ImageBitmap? {
+    val decodedImage by produceState<ImageBitmap?>(
+        initialValue = DecodedImageBitmapCache.get(cacheKey),
+        cacheKey,
+        imageBytes,
+    ) {
+        value = when {
+            imageBytes == null -> null
+            value != null -> value
+            else -> withContext(Dispatchers.Default) {
+                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                    ?.asImageBitmap()
+                    ?.also { decoded -> DecodedImageBitmapCache.put(cacheKey, decoded) }
             }
         }
     }

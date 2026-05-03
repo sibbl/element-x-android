@@ -82,6 +82,8 @@ class WearMainActivity : ComponentActivity() {
     private var favoritesRequestedRoomCount by mutableIntStateOf(30)
     private var favoritesRestoredPage by mutableIntStateOf(-1)
     private val favoritesListPositions = mutableStateMapOf<String, SavedScalingListPosition>()
+    private val roomListPositions = mutableStateMapOf<String, SavedScalingListPosition>()
+    private val threadListPositions = mutableStateMapOf<String, SavedScalingListPosition>()
     private var hasRequestedNotificationPermissionThisSession = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -242,6 +244,8 @@ class WearMainActivity : ComponentActivity() {
                                         pendingRoomScrollRequest = null
                                     }
                                 },
+                                savedListPosition = roomListPositions[roomId],
+                                onListPositionChange = { roomListPositions[roomId] = it },
                                 onError = { transientErrorMessage = it },
                             )
                         }
@@ -291,6 +295,8 @@ class WearMainActivity : ComponentActivity() {
                                 roomId = roomId,
                                 threadRootEventId = rootId,
                                 activity = this@WearMainActivity,
+                                savedListPosition = threadListPositions["$roomId/$rootId"],
+                                onListPositionChange = { threadListPositions["$roomId/$rootId"] = it },
                                 onError = { transientErrorMessage = it },
                             )
                         }

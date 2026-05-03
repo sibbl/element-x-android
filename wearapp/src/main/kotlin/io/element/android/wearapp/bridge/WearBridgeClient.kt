@@ -37,9 +37,11 @@ import io.element.android.wearapp.tile.RecentContactsTileService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +63,8 @@ private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
 private const val MAX_CACHED_TIMELINE_ITEMS = 100
 private const val MAX_CACHED_THREAD_ITEMS = 50
 private const val VOICE_UPLOAD_TIMEOUT_MS = 60_000L
+private const val TILE_REFRESH_DEBOUNCE_MS = 250L
+private const val CACHE_PERSIST_DEBOUNCE_MS = 150L
 
 internal fun mediaPreviewCacheKey(roomId: String, eventId: String): String = "$roomId/$eventId"
 
@@ -108,6 +112,7 @@ class WearBridgeClient(private val context: Context) {
 
     private val _mediaPreviewImages = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val mediaPreviewImages: StateFlow<Map<String, ByteArray>> = _mediaPreviewImages.asStateFlow()
+    private val mediaPreviewStateFlows = ConcurrentHashMap<String, MutableStateFlow<ByteArray?>>()
 
     /** In-memory cache of last-known timeline items per room. Survives navigation. */
     private val _timelineCache = mutableMapOf<String, CachedTimeline>()
@@ -119,6 +124,12 @@ class WearBridgeClient(private val context: Context) {
     private val activeRoomSubscriptions = ConcurrentHashMap.newKeySet<String>()
     /** Thread subscriptions already requested during this app process. */
     private val activeThreadSubscriptions = ConcurrentHashMap.newKeySet<String>()
+    /** Latest pending cache envelope per logical cache key so bursts are coalesced. */
+    private val pendingCachePersists = ConcurrentHashMap<String, WatchSyncEnvelope>()
+    /** Outstanding debounce jobs for disk cache writes. */
+    private val pendingCachePersistJobs = ConcurrentHashMap<String, Job>()
+    /** Debounced tile refresh request to avoid hammering Wear tiles during sync bursts. */
+    private var pendingTileRefreshJob: Job? = null
 
     fun getCachedTimeline(roomId: String): List<io.element.android.watchbridge.contract.WatchTimelineItem> =
         _timelineCache[roomId]?.items.orEmpty()
@@ -137,6 +148,13 @@ class WearBridgeClient(private val context: Context) {
 
     fun getCachedMediaPreview(roomId: String, eventId: String): ByteArray? =
         _mediaPreviewImages.value[mediaPreviewCacheKey(roomId, eventId)]
+
+    fun mediaPreviewFlow(roomId: String, eventId: String): StateFlow<ByteArray?> {
+        val key = mediaPreviewCacheKey(roomId, eventId)
+        return mediaPreviewStateFlows.getOrPut(key) {
+            MutableStateFlow(getCachedMediaPreview(roomId, eventId))
+        }.asStateFlow()
+    }
 
     fun hasCachedThreadSnapshot(roomId: String, threadRootEventId: String): Boolean =
         _threadCache[threadCacheKey(roomId, threadRootEventId)]?.hasSnapshot == true
@@ -245,6 +263,11 @@ class WearBridgeClient(private val context: Context) {
         // here so in-flight request UIs keep observing acks on Activity restarts.
         activeRoomSubscriptions.clear()
         activeThreadSubscriptions.clear()
+        pendingTileRefreshJob?.cancel()
+        pendingTileRefreshJob = null
+        pendingCachePersistJobs.values.forEach(Job::cancel)
+        pendingCachePersistJobs.clear()
+        pendingCachePersists.clear()
     }
 
     fun refreshPhoneReachability() {
@@ -444,10 +467,7 @@ class WearBridgeClient(private val context: Context) {
             return
         }
         if (persist) {
-            scope.launch {
-                runCatching { cacheStore.persist(envelope) }
-                    .onFailure { Timber.w(it, "persist watch cache failed for %s", envelope.payload::class.simpleName) }
-            }
+            scheduleCachePersist(envelope)
         }
         when (val p = envelope.payload) {
             is WatchSync.FavoritesSnapshot -> {
@@ -469,10 +489,7 @@ class WearBridgeClient(private val context: Context) {
             }
             is WatchSync.MediaPreview -> {
                 val key = mediaPreviewCacheKey(p.roomId, p.eventId)
-                val imageBytes = p.imageBytes
-                _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
-                    if (imageBytes == null) remove(key) else put(key, imageBytes)
-                }
+                updateMediaPreviewState(key = key, imageBytes = p.imageBytes)
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.RoomSummary -> {
@@ -554,9 +571,7 @@ class WearBridgeClient(private val context: Context) {
                         _threadCache.remove(key)
                         activeThreadSubscriptions.remove(key)
                     }
-                _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
-                    keys.filter { it.startsWith("$roomId/") }.forEach(::remove)
-                }
+                clearMediaPreviewStateForRoom(roomId)
                 _avatarImages.value = _avatarImages.value.toMutableMap().apply { remove(roomId) }
                 requestTileRefresh()
             }
@@ -571,7 +586,7 @@ class WearBridgeClient(private val context: Context) {
             WatchSync.Invalidation.InvalidationScope.ALL -> {
                 _favorites.value = emptyList()
                 _avatarImages.value = emptyMap()
-                _mediaPreviewImages.value = emptyMap()
+                clearAllMediaPreviewState()
                 _summaryCache.clear()
                 _timelineCache.clear()
                 _threadCache.clear()
@@ -583,10 +598,14 @@ class WearBridgeClient(private val context: Context) {
     }
 
     private fun requestTileRefresh() {
-        runCatching {
-            TileService.getUpdater(context).requestUpdate(RecentContactsTileService::class.java)
-            TileService.getUpdater(context).requestUpdate(FavoriteContactsTileService::class.java)
-        }.onFailure { Timber.w(it, "tile refresh request failed") }
+        pendingTileRefreshJob?.cancel()
+        pendingTileRefreshJob = scope.launch {
+            delay(TILE_REFRESH_DEBOUNCE_MS)
+            runCatching {
+                TileService.getUpdater(context).requestUpdate(RecentContactsTileService::class.java)
+                TileService.getUpdater(context).requestUpdate(FavoriteContactsTileService::class.java)
+            }.onFailure { Timber.w(it, "tile refresh request failed") }
+        }
     }
 
     private fun decode(bytes: ByteArray): WatchSyncEnvelope? = runCatching {
@@ -595,9 +614,80 @@ class WearBridgeClient(private val context: Context) {
 
     private fun removeCachedMediaPreviews(roomId: String, eventIds: List<String>) {
         if (eventIds.isEmpty()) return
+        val previewKeys = eventIds.map { eventId -> mediaPreviewCacheKey(roomId, eventId) }
         _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
-            eventIds.forEach { eventId -> remove(mediaPreviewCacheKey(roomId, eventId)) }
+            previewKeys.forEach(::remove)
         }
+        previewKeys.forEach { key -> mediaPreviewStateFlows[key]?.value = null }
+    }
+
+    private fun clearMediaPreviewStateForRoom(roomId: String) {
+        val roomKeys = _mediaPreviewImages.value.keys.filter { it.startsWith("$roomId/") }
+        _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
+            roomKeys.forEach(::remove)
+        }
+        roomKeys.forEach { key -> mediaPreviewStateFlows[key]?.value = null }
+    }
+
+    private fun clearAllMediaPreviewState() {
+        val keys = _mediaPreviewImages.value.keys.toList()
+        _mediaPreviewImages.value = emptyMap()
+        keys.forEach { key -> mediaPreviewStateFlows[key]?.value = null }
+    }
+
+    private fun updateMediaPreviewState(key: String, imageBytes: ByteArray?) {
+        _mediaPreviewImages.value = _mediaPreviewImages.value.toMutableMap().apply {
+            if (imageBytes == null) remove(key) else put(key, imageBytes)
+        }
+        mediaPreviewStateFlows.getOrPut(key) { MutableStateFlow(imageBytes) }.value = imageBytes
+    }
+
+    private fun scheduleCachePersist(envelope: WatchSyncEnvelope) {
+        val key = cachePersistKey(envelope.payload) ?: return
+        val debounceMs = cachePersistDebounceMs(envelope.payload)
+        if (debounceMs <= 0L) {
+            pendingCachePersistJobs.remove(key)?.cancel()
+            pendingCachePersists.remove(key)
+            scope.launch { persistEnvelope(envelope) }
+            return
+        }
+
+        pendingCachePersists[key] = envelope
+        pendingCachePersistJobs.remove(key)?.cancel()
+        lateinit var persistJob: Job
+        persistJob = scope.launch {
+            delay(debounceMs)
+            val latestEnvelope = pendingCachePersists.remove(key) ?: envelope
+            persistEnvelope(latestEnvelope)
+            if (pendingCachePersistJobs[key] === persistJob) {
+                pendingCachePersistJobs.remove(key)
+            }
+        }
+        pendingCachePersistJobs[key] = persistJob
+    }
+
+    private suspend fun persistEnvelope(envelope: WatchSyncEnvelope) {
+        runCatching { cacheStore.persist(envelope) }
+            .onFailure { Timber.w(it, "persist watch cache failed for %s", envelope.payload::class.simpleName) }
+    }
+
+    private fun cachePersistKey(payload: WatchPayload): String? = when (payload) {
+        is WatchSync.FavoritesSnapshot -> "favorites"
+        is WatchSync.SettingsUpdate -> "settings"
+        is WatchSync.AvatarUpdate -> "avatar:${payload.roomId}"
+        is WatchSync.MediaPreview -> "media:${payload.roomId}/${payload.eventId}"
+        is WatchSync.RoomSummary -> "summary:${payload.summary.roomId}"
+        is WatchSync.TimelineDelta -> "timeline:${payload.roomId}"
+        is WatchSync.ThreadDelta -> "thread:${payload.roomId}/${payload.threadRootEventId}"
+        is WatchSync.Invalidation -> "invalidation:${payload.scope}:${payload.roomId.orEmpty()}"
+        is WatchSync.FullRefresh -> "full-refresh"
+        else -> null
+    }
+
+    private fun cachePersistDebounceMs(payload: WatchPayload): Long = when (payload) {
+        is WatchSync.Invalidation,
+        is WatchSync.FullRefresh -> 0L
+        else -> CACHE_PERSIST_DEBOUNCE_MS
     }
 
     private fun threadCacheKey(roomId: String, threadRootEventId: String): String = "$roomId/$threadRootEventId"

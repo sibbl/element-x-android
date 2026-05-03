@@ -33,6 +33,7 @@ class WearNotificationActionReceiver : BroadcastReceiver() {
                 WearNotificationDismissalStore(context).recordDismissal(notificationKey, generatedAtMs)
             }
 
+            ACTION_MARK_AS_READ,
             ACTION_REPLY -> {
                 val pendingResult = goAsync()
                 actionScope.launch {
@@ -67,6 +68,16 @@ class WearNotificationActionReceiver : BroadcastReceiver() {
         val bridgeClient = (context.applicationContext as WearApp).bridgeClient
         val result = runCatching {
             when (intent.action) {
+                ACTION_MARK_AS_READ -> {
+                    bridgeClient.sendAwaitTerminalAck { requestId ->
+                        WatchCommand.MarkAsRead(
+                            requestId = requestId,
+                            roomId = roomId,
+                            eventId = eventId,
+                        )
+                    }
+                }
+
                 ACTION_REPLY -> {
                     val replyText = RemoteInput.getResultsFromIntent(intent)
                         ?.getCharSequence(RESULT_KEY_REPLY_TEXT)
@@ -98,6 +109,7 @@ class WearNotificationActionReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        internal const val ACTION_MARK_AS_READ = "io.element.android.wearapp.notifications.MARK_AS_READ"
         internal const val ACTION_REPLY = "io.element.android.wearapp.notifications.REPLY"
         internal const val ACTION_DISMISS = "io.element.android.wearapp.notifications.DISMISS"
 

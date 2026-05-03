@@ -52,9 +52,11 @@ fun ImageViewerScreen(
     roomId: String,
     eventId: String,
 ) {
-    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
-    val imageBytes = mediaPreviewImages[mediaPreviewCacheKey(roomId, eventId)]
-    val imageBitmap = rememberDecodedImageBitmap(imageBytes)
+    val imageBytes by bridge.mediaPreviewFlow(roomId, eventId).collectAsState()
+    val imageBitmap = rememberDecodedImageBitmap(
+        cacheKey = mediaPreviewCacheKey(roomId, eventId),
+        imageBytes = imageBytes,
+    )
     var shouldShowUnavailable by remember(roomId, eventId, imageBytes) { mutableStateOf(false) }
 
     LaunchedEffect(roomId, eventId, imageBytes) {

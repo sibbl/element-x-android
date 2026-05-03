@@ -17,6 +17,7 @@ import androidx.wear.compose.material.MaterialTheme
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
+import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +76,50 @@ class RoomViewTest {
             assertThat(totalItems).isGreaterThan(0)
             assertThat(lastVisibleIndex).isEqualTo(totalItems - 1)
             assertThat(handledScrollRequestId).isEqualTo(99L)
+        }
+    }
+
+    @Test
+    fun `saved list position restores when reopening a room`() {
+        lateinit var listState: ScalingLazyListState
+        val items = (1..40).map { index ->
+            WatchTimelineItem(
+                eventId = "\$event-$index:server",
+                roomId = "!room:server",
+                senderId = "@alice:server",
+                senderDisplayName = "Alice",
+                timestampMs = index.toLong(),
+                kind = WatchTimelineItemKind.TEXT,
+                bodyText = "Message $index",
+            )
+        }
+
+        rule.setContent {
+            listState = rememberScalingLazyListState()
+            MaterialTheme {
+                RoomView(
+                    state = RoomViewState(
+                        timelineKey = "!room:server",
+                        displayName = "Latest room",
+                        items = items,
+                        isLoading = false,
+                    ),
+                    onMessageSelected = {},
+                    onOpenThread = null,
+                    onReply = {},
+                    onVoice = null,
+                    listState = listState,
+                    savedListPosition = SavedScalingListPosition(index = 18, offset = 0),
+                )
+            }
+        }
+
+        rule.waitUntil(timeoutMillis = 5_000L) {
+            listState.centerItemIndex >= 18
+        }
+
+        rule.runOnIdle {
+            assertThat(listState.centerItemIndex).isAtLeast(18)
         }
     }
 }

@@ -21,6 +21,7 @@ import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.launch
 
@@ -35,10 +36,11 @@ fun RoomScreen(
     scrollToEventId: String? = null,
     forceScrollToBottom: Boolean = false,
     onScrollRequestHandled: (Long) -> Unit = {},
+    savedListPosition: SavedScalingListPosition? = null,
+    onListPositionChange: (SavedScalingListPosition) -> Unit = {},
     onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
-    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val settings by bridge.companionSettings.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
@@ -61,11 +63,13 @@ fun RoomScreen(
             scrollRequestId = scrollRequestId,
             scrollToEventId = scrollToEventId,
             forceScrollToBottom = forceScrollToBottom,
-            mediaPreviewImages = mediaPreviewImages,
         ),
         onMessageSelected = onMessageSelected,
         onOpenThread = onOpenThread,
         onScrollRequestHandled = onScrollRequestHandled,
+        savedListPosition = savedListPosition,
+        onListPositionChange = onListPositionChange,
+        mediaPreviewFlowProvider = bridge::mediaPreviewFlow,
         onLongPressMessage = { item ->
             when (settings.longPressMessageAction) {
                 WatchLongPressMessageAction.READ_ALOUD -> tts.speak(item.displayText())

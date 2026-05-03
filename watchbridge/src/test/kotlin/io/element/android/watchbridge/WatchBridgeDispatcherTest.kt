@@ -69,6 +69,7 @@ class WatchBridgeDispatcherTest {
     ) : ElementXWatchPort {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
         val voiceDraftCalls = mutableListOf<Pair<WatchVoiceDraft, ByteArray>>()
+        val markAsReadCalls = mutableListOf<Pair<String, String>>()
         override fun favorites(): Flow<List<WatchFavoriteRoom>> = flowOf(favorites)
         override suspend fun ensureRoomListLoaded(minimumCount: Int) {
             ensureLoadedCalls += minimumCount
@@ -101,7 +102,10 @@ class WatchBridgeDispatcherTest {
             )
         override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> =
             if (avatarThumbnailResults.isEmpty()) Result.success(null) else avatarThumbnailResults.removeFirst()
-        override suspend fun markAsRead(roomId: String, eventId: String) = Result.success(Unit)
+        override suspend fun markAsRead(roomId: String, eventId: String): Result<Unit> {
+            markAsReadCalls += roomId to eventId
+            return Result.success(Unit)
+        }
     }
 
     @Test
@@ -210,6 +214,32 @@ class WatchBridgeDispatcherTest {
         advanceUntilIdle()
 
         assertThat(capturedReplyEventId).isEqualTo("\$root:server")
+    }
+
+    @Test
+    fun `mark as read command delegates to port and returns sent ack`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort()
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.MarkAsRead(
+                    requestId = "mark-read-1",
+                    roomId = "!a:s",
+                    eventId = "event-1",
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(port.markAsReadCalls).containsExactly("!a:s" to "event-1")
+        val sentAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Sent>()
+            .singleOrNull { it.requestId == "mark-read-1" }
+        assertThat(sentAck).isNotNull()
     }
 
     @Test
@@ -489,6 +519,57 @@ class WatchBridgeDispatcherTest {
         assertThat((mediaPublication!!.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
             .containsExactly(9.toByte(), 8.toByte(), 7.toByte())
             .inOrder()
+    }
+
+    @Test
+    fun `open room only publishes previews for the newest media items`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val mediaItems = (1..8).map { index ->
+            WatchTimelineItem(
+                eventId = "image-$index",
+                roomId = "!a:s",
+                senderId = "@alice:s",
+                senderDisplayName = "Alice",
+                timestampMs = index.toLong(),
+                kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE,
+                bodyText = "Photo $index",
+                mediaPreview = WatchMediaPreview(widthPx = 200, heightPx = 200, mimeType = "image/jpeg"),
+            )
+        }
+        val port = StubPort(
+            summary = WatchRoomSummary(
+                roomId = "!a:s",
+                displayName = "Room",
+                kind = WatchRoomKind.GROUP,
+                isEncrypted = false,
+                canSendMessages = true,
+                timelineVersion = 5L,
+                lastSyncTsMs = 0L,
+            ),
+            timelineFlow = flowOf(mediaItems),
+            roomMediaPreviewResult = Result.success(byteArrayOf(1, 2, 3)),
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 100L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.OpenRoom(requestId = "open-preview-window", roomId = "!a:s"),
+            ),
+        )
+        advanceUntilIdle()
+
+        val previewEventIds = transport.publications
+            .mapNotNull { (_, envelope) -> (envelope.payload as? WatchSync.MediaPreview)?.eventId }
+
+        assertThat(previewEventIds).containsExactly(
+            "image-3",
+            "image-4",
+            "image-5",
+            "image-6",
+            "image-7",
+            "image-8",
+        ).inOrder()
     }
 
     @Test

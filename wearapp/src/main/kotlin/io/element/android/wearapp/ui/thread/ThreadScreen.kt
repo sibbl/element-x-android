@@ -27,6 +27,7 @@ import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.room.RoomView
 import io.element.android.wearapp.ui.room.RoomViewState
 import io.element.android.wearapp.ui.room.displayText
@@ -42,6 +43,8 @@ fun ThreadScreen(
     threadRootEventId: String,
     activity: WearMainActivity,
     onMessageSelected: (String) -> Unit = {},
+    savedListPosition: SavedScalingListPosition? = null,
+    onListPositionChange: (SavedScalingListPosition) -> Unit = {},
     onError: (String) -> Unit = {},
 ) {
     val cachedItems = remember(roomId, threadRootEventId) {
@@ -53,10 +56,9 @@ fun ThreadScreen(
             bridge.hasCachedThreadSnapshot(roomId, threadRootEventId) || cachedItems.isNotEmpty(),
         )
     }
-    var initialBottomScrollRequestId by remember(roomId, threadRootEventId) {
-        mutableStateOf<Long?>(System.currentTimeMillis())
+    var initialBottomScrollRequestId by remember(roomId, threadRootEventId, savedListPosition) {
+        mutableStateOf(System.currentTimeMillis().takeIf { savedListPosition == null })
     }
-    val mediaPreviewImages by bridge.mediaPreviewImages.collectAsState()
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
 
@@ -74,22 +76,9 @@ fun ThreadScreen(
         }
         bridge.syncEvents.filterIsInstance<WatchSync.ThreadDelta>()
             .filter { delta -> delta.roomId == roomId && delta.threadRootEventId == threadRootEventId }
-            .collect { delta ->
+            .collect {
                 hasReceivedDelta = true
-                val updated = mergeThreadItems(
-                    existing = items,
-                    incoming = delta.items,
-                )
-                    .filter { it.eventId !in delta.removedEventIds }
-                    .sortedBy { it.timestampMs }
-                    .takeLast(50)
-                items = updated
-                bridge.cacheThread(
-                    roomId = roomId,
-                    threadRootEventId = threadRootEventId,
-                    items = updated,
-                    hasSnapshot = true,
-                )
+                items = bridge.getCachedThread(roomId, threadRootEventId)
             }
     }
 
@@ -109,7 +98,6 @@ fun ThreadScreen(
             emptyText = stringResource(R.string.screen_thread_empty_messages),
             scrollRequestId = initialBottomScrollRequestId,
             forceScrollToBottom = true,
-            mediaPreviewImages = mediaPreviewImages,
         ),
         onMessageSelected = onMessageSelected,
         // No nested-thread navigation inside a thread.
@@ -119,6 +107,9 @@ fun ThreadScreen(
                 initialBottomScrollRequestId = null
             }
         },
+        savedListPosition = savedListPosition,
+        onListPositionChange = onListPositionChange,
+        mediaPreviewFlowProvider = bridge::mediaPreviewFlow,
         onLongPressMessage = { item -> tts.speak(item.displayText()) },
         onReact = {
             timelineItems.lastOrNull()?.let { lastItem ->
@@ -178,13 +169,3 @@ private fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimelineI
     readableByTts = true,
     threadLastReplyText = null,
 )
-
-private fun mergeThreadItems(
-    existing: List<WatchThreadItem>,
-    incoming: List<WatchThreadItem>,
-): List<WatchThreadItem> {
-    return (existing + incoming)
-        .associateBy { it.eventId }
-        .values
-        .toList()
-}
