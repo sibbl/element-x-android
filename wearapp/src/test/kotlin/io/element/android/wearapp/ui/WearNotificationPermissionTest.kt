@@ -62,4 +62,13 @@ class WearNotificationPermissionTest {
 
         assertThat(packageInfo.requestedPermissions.orEmpty().toList()).contains(Manifest.permission.POST_NOTIFICATIONS)
     }
+
+    @Test
+    fun `wear manifest disables bridged phone notification mirroring`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        @Suppress("DEPRECATION")
+        val applicationInfo = context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
+
+        assertThat(applicationInfo.metaData?.getString("com.google.android.wearable.notificationBridgeMode")).isEqualTo("NO_BRIDGING")
+    }
 }

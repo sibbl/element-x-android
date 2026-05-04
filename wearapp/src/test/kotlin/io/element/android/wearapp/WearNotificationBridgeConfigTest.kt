@@ -8,7 +8,6 @@
 package io.element.android.wearapp
 
 import com.google.common.truth.Truth.assertThat
-import io.element.android.appconfig.NotificationConfig
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -17,10 +16,10 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 class WearNotificationBridgeConfigTest {
     @Test
-    fun `createWearNotificationBridgingConfig only allows explicitly tagged phone notifications`() {
+    fun `createWearNotificationBridgingConfig disables phone notification mirroring`() {
         val config = createWearNotificationBridgingConfig(RuntimeEnvironment.getApplication())
 
         assertThat(config.isBridgingEnabled).isFalse()
-        assertThat(config.excludedTags).contains(NotificationConfig.WEAR_BRIDGED_NOTIFICATION_TAG)
+        assertThat(config.excludedTags).isEmpty()
     }
 }

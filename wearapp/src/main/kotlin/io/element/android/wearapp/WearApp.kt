@@ -13,7 +13,6 @@ import android.content.pm.ApplicationInfo
 import androidx.wear.phone.interactions.notifications.BridgingConfig
 import androidx.wear.phone.interactions.notifications.BridgingManager
 import androidx.wear.tiles.TileService
-import io.element.android.appconfig.NotificationConfig
 import io.element.android.wearapp.tile.FavoriteContactsTileService
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.tile.RecentContactsTileService
@@ -56,7 +55,5 @@ class WearApp : Application() {
 }
 
 internal fun createWearNotificationBridgingConfig(context: Context): BridgingConfig {
-    return BridgingConfig.Builder(context, false)
-        .addExcludedTags(listOf(NotificationConfig.WEAR_BRIDGED_NOTIFICATION_TAG))
-        .build()
+    return BridgingConfig.Builder(context, false).build()
 }

@@ -35,6 +35,10 @@
             android:name="com.google.android.wearable.capability.element_x_watchbridge_watch"
             android:value="true" />
 
+        <meta-data
+            android:name="com.google.android.wearable.notificationBridgeMode"
+            android:value="NO_BRIDGING" />
+
         <activity
             android:name=".ui.WearMainActivity"
             android:exported="true"
