@@ -62,10 +62,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 private const val MAX_TILE_ROOMS = 7
-private const val AVATAR_SIZE_DP = 40f
-private const val AVATAR_GAP_DP = 4f
+private const val AVATAR_SIZE_DP = 52f
+private const val AVATAR_GAP_DP = 6f
 private const val TILE_BACKGROUND_RADIUS_DP = 100f
-private const val TITLE_SPACING_DP = 6f
 
 enum class ConversationTileMode(
     @StringRes val labelRes: Int,
@@ -177,9 +176,6 @@ abstract class ConversationTileServiceBase : TileService() {
             .setWidth(expand())
             .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
 
-        column.addContent(titleText(getString(tileMode.labelRes)))
-        column.addContent(Spacer.Builder().setHeight(dp(TITLE_SPACING_DP)).build())
-
         rowSizes.forEachIndexed { index, rowSize ->
             if (index > 0) {
                 column.addContent(Spacer.Builder().setHeight(dp(AVATAR_GAP_DP)).build())
@@ -197,8 +193,6 @@ abstract class ConversationTileServiceBase : TileService() {
             content = Column.Builder()
                 .setWidth(expand())
                 .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
-                .addContent(titleText(getString(tileMode.labelRes)))
-                .addContent(Spacer.Builder().setHeight(dp(TITLE_SPACING_DP)).build())
                 .addContent(textBody(getString(tileMode.emptyRes)))
                 .build(),
             clickable = openAppClickable(),
@@ -210,8 +204,6 @@ abstract class ConversationTileServiceBase : TileService() {
             content = Column.Builder()
                 .setWidth(expand())
                 .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
-                .addContent(titleText(getString(tileMode.labelRes)))
-                .addContent(Spacer.Builder().setHeight(dp(TITLE_SPACING_DP)).build())
                 .addContent(textBody(getString(tileMode.unavailableRes)))
                 .build(),
             clickable = openAppClickable(),
@@ -241,27 +233,13 @@ abstract class ConversationTileServiceBase : TileService() {
             .build()
     }
 
-    private fun titleText(text: String): LayoutElement {
-        return androidx.wear.protolayout.LayoutElementBuilders.Text.Builder()
-            .setText(text)
-            .setMaxLines(1)
-            .setFontStyle(
-                androidx.wear.protolayout.LayoutElementBuilders.FontStyle.Builder()
-                    .setSize(sp(12f))
-                    .setWeight(FONT_WEIGHT_BOLD)
-                    .setColor(argb(0xFFE8EEF5.toInt()))
-                    .build(),
-            )
-            .build()
-    }
-
     private fun textBody(text: String): LayoutElement {
         return androidx.wear.protolayout.LayoutElementBuilders.Text.Builder()
             .setText(text)
-            .setMaxLines(2)
+            .setMaxLines(3)
             .setFontStyle(
                 androidx.wear.protolayout.LayoutElementBuilders.FontStyle.Builder()
-                    .setSize(sp(12f))
+                    .setSize(sp(13f))
                     .setColor(argb(0xFFB8C1CC.toInt()))
                     .build(),
             )

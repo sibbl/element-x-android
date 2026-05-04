@@ -45,10 +45,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -66,6 +66,7 @@ import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.room.MessageDetailScreen
 import io.element.android.wearapp.ui.room.RoomScreen
 import io.element.android.wearapp.ui.thread.ThreadScreen
+import io.element.android.wearapp.ui.theme.WearAppTheme
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -154,151 +155,153 @@ class WearMainActivity : ComponentActivity() {
                     transientErrorMessage = null
                 }
             }
-            MaterialTheme {
-                Box {
-                    SwipeDismissableNavHost(navController = nav, startDestination = "favorites") {
-                        composable("favorites") {
-                            val settings by bridge.companionSettings.collectAsState()
-                            val scope = rememberCoroutineScope()
-                            val tts = remember { WearTextToSpeech(this@WearMainActivity) }
-                            FavoritesScreen(
-                                bridge = bridge,
-                                onRoomSelected = openRoomAtBottom,
-                                onLongPressRoom = { room ->
-                                    when (settings.longPressConversationAction) {
-                                        WatchLongPressConversationAction.READ_LATEST -> {
-                                            room.lastPreviewText?.let { tts.speak(it) }
-                                        }
-                                        WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> {
-                                            openRoomAtBottom(room.roomId)
-                                        }
-                                        WatchLongPressConversationAction.QUICK_REPLY_TEXT -> {
-                                            launchDictation { dictated ->
-                                                if (!dictated.isNullOrBlank()) {
-                                                    scope.launch {
-                                                        runCatching {
-                                                            bridge.sendAwaitTerminalAck {
-                                                                WatchCommand.SendText(
-                                                                    requestId = it,
-                                                                    roomId = room.roomId,
-                                                                    text = dictated,
-                                                                    source = WatchSendSource.DICTATION,
-                                                                    clientTsMs = System.currentTimeMillis(),
+            WearAppTheme {
+                AppScaffold {
+                    Box {
+                        SwipeDismissableNavHost(navController = nav, startDestination = "favorites") {
+                            composable("favorites") {
+                                val settings by bridge.companionSettings.collectAsState()
+                                val scope = rememberCoroutineScope()
+                                val tts = remember { WearTextToSpeech(this@WearMainActivity) }
+                                FavoritesScreen(
+                                    bridge = bridge,
+                                    onRoomSelected = openRoomAtBottom,
+                                    onLongPressRoom = { room ->
+                                        when (settings.longPressConversationAction) {
+                                            WatchLongPressConversationAction.READ_LATEST -> {
+                                                room.lastPreviewText?.let { tts.speak(it) }
+                                            }
+                                            WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> {
+                                                openRoomAtBottom(room.roomId)
+                                            }
+                                            WatchLongPressConversationAction.QUICK_REPLY_TEXT -> {
+                                                launchDictation { dictated ->
+                                                    if (!dictated.isNullOrBlank()) {
+                                                        scope.launch {
+                                                            runCatching {
+                                                                bridge.sendAwaitTerminalAck {
+                                                                    WatchCommand.SendText(
+                                                                        requestId = it,
+                                                                        roomId = room.roomId,
+                                                                        text = dictated,
+                                                                        source = WatchSendSource.DICTATION,
+                                                                        clientTsMs = System.currentTimeMillis(),
+                                                                    )
+                                                                }
+                                                            }.onFailure {
+                                                                transientErrorMessage = this@WearMainActivity.watchCommandErrorMessage(
+                                                                    it,
+                                                                    R.string.watch_error_send_failed,
                                                                 )
                                                             }
-                                                        }.onFailure {
-                                                            transientErrorMessage = this@WearMainActivity.watchCommandErrorMessage(
-                                                                it,
-                                                                R.string.watch_error_send_failed,
-                                                            )
                                                         }
                                                     }
                                                 }
                                             }
+                                            WatchLongPressConversationAction.QUICK_REPLY_VOICE -> {
+                                                startActivity(
+                                                    Intent(this@WearMainActivity, VoiceRecorderActivity::class.java)
+                                                        .putExtra("roomId", room.roomId)
+                                                        .putExtra("roomDisplayName", room.displayName),
+                                                )
+                                            }
+                                            WatchLongPressConversationAction.OPEN_LATEST -> {
+                                                openRoomAtBottom(room.roomId)
+                                            }
                                         }
-                                        WatchLongPressConversationAction.QUICK_REPLY_VOICE -> {
-                                            startActivity(
-                                                Intent(this@WearMainActivity, VoiceRecorderActivity::class.java)
-                                                    .putExtra("roomId", room.roomId)
-                                                    .putExtra("roomDisplayName", room.displayName),
-                                            )
+                                    },
+                                    onError = { transientErrorMessage = it },
+                                    requestedRoomCount = favoritesRequestedRoomCount,
+                                    restoredPage = favoritesRestoredPage.takeIf { it >= 0 },
+                                    savedFavoriteListPosition = favoritesListPositions[FAVORITES_PAGE_KEY],
+                                    savedRecentListPosition = favoritesListPositions[RECENTS_PAGE_KEY],
+                                    onRequestedRoomCountChange = { favoritesRequestedRoomCount = it.coerceAtLeast(favoritesRequestedRoomCount) },
+                                    onPageChanged = { favoritesRestoredPage = it },
+                                    onFavoriteListPositionChange = { favoritesListPositions[FAVORITES_PAGE_KEY] = it },
+                                    onRecentListPositionChange = { favoritesListPositions[RECENTS_PAGE_KEY] = it },
+                                )
+                            }
+                            composable("room?roomId={roomId}") { entry ->
+                                val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                                val roomScrollRequest = pendingRoomScrollRequest?.takeIf { it.roomId == roomId }
+                                RoomScreen(
+                                    bridge = bridge,
+                                    roomId = roomId,
+                                    activity = this@WearMainActivity,
+                                    onOpenThread = { rootId ->
+                                        nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
+                                            launchSingleTop = true
                                         }
-                                        WatchLongPressConversationAction.OPEN_LATEST -> {
-                                            openRoomAtBottom(room.roomId)
+                                    },
+                                    onMessageSelected = { eventId ->
+                                        nav.navigate(messageRoute(roomId = roomId, eventId = eventId)) {
+                                            launchSingleTop = true
                                         }
-                                    }
-                                },
-                                onError = { transientErrorMessage = it },
-                                requestedRoomCount = favoritesRequestedRoomCount,
-                                restoredPage = favoritesRestoredPage.takeIf { it >= 0 },
-                                savedFavoriteListPosition = favoritesListPositions[FAVORITES_PAGE_KEY],
-                                savedRecentListPosition = favoritesListPositions[RECENTS_PAGE_KEY],
-                                onRequestedRoomCountChange = { favoritesRequestedRoomCount = it.coerceAtLeast(favoritesRequestedRoomCount) },
-                                onPageChanged = { favoritesRestoredPage = it },
-                                onFavoriteListPositionChange = { favoritesListPositions[FAVORITES_PAGE_KEY] = it },
-                                onRecentListPositionChange = { favoritesListPositions[RECENTS_PAGE_KEY] = it },
-                            )
-                        }
-                        composable("room?roomId={roomId}") { entry ->
-                            val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
-                            val roomScrollRequest = pendingRoomScrollRequest?.takeIf { it.roomId == roomId }
-                            RoomScreen(
-                                bridge = bridge,
-                                roomId = roomId,
-                                activity = this@WearMainActivity,
-                                onOpenThread = { rootId ->
-                                    nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onMessageSelected = { eventId ->
-                                    nav.navigate(messageRoute(roomId = roomId, eventId = eventId)) {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                scrollRequestId = roomScrollRequest?.requestId,
-                                scrollToEventId = roomScrollRequest?.targetEventId,
-                                forceScrollToBottom = roomScrollRequest?.forceScrollToBottom == true,
-                                onScrollRequestHandled = { requestId ->
-                                    if (pendingRoomScrollRequest?.requestId == requestId) {
-                                        pendingRoomScrollRequest = null
-                                    }
-                                },
-                                savedListPosition = roomListPositions[roomId],
-                                onListPositionChange = { roomListPositions[roomId] = it },
-                                onError = { transientErrorMessage = it },
-                            )
-                        }
-                        composable("message?roomId={roomId}&eventId={eventId}") { entry ->
-                            val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
-                            val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
-                            MessageDetailScreen(
-                                bridge = bridge,
-                                roomId = roomId,
-                                eventId = eventId,
-                                activity = this@WearMainActivity,
-                                onOpenThread = { rootId ->
-                                    nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onOpenImage = { imageEventId ->
-                                    nav.navigate(imageRoute(roomId = roomId, eventId = imageEventId)) {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onReplySent = { sourceEventId, sourceWasLastMessage ->
-                                    pendingRoomScrollRequest = PendingRoomScrollRequest(
-                                        roomId = roomId,
-                                        targetEventId = sourceEventId.takeUnless { sourceWasLastMessage },
-                                        forceScrollToBottom = sourceWasLastMessage,
-                                    )
-                                    nav.popBackStack()
-                                },
-                                onError = { transientErrorMessage = it },
-                            )
-                        }
-                        composable("image?roomId={roomId}&eventId={eventId}") { entry ->
-                            val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
-                            val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
-                            ImageViewerScreen(
-                                bridge = bridge,
-                                roomId = roomId,
-                                eventId = eventId,
-                            )
-                        }
-                        composable("thread?roomId={roomId}&rootId={rootId}") { entry ->
-                            val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
-                            val rootId = entry.arguments?.getString("rootId")?.let(Uri::decode) ?: return@composable
-                            ThreadScreen(
-                                bridge = bridge,
-                                roomId = roomId,
-                                threadRootEventId = rootId,
-                                activity = this@WearMainActivity,
-                                savedListPosition = threadListPositions["$roomId/$rootId"],
-                                onListPositionChange = { threadListPositions["$roomId/$rootId"] = it },
-                                onError = { transientErrorMessage = it },
-                            )
+                                    },
+                                    scrollRequestId = roomScrollRequest?.requestId,
+                                    scrollToEventId = roomScrollRequest?.targetEventId,
+                                    forceScrollToBottom = roomScrollRequest?.forceScrollToBottom == true,
+                                    onScrollRequestHandled = { requestId ->
+                                        if (pendingRoomScrollRequest?.requestId == requestId) {
+                                            pendingRoomScrollRequest = null
+                                        }
+                                    },
+                                    savedListPosition = roomListPositions[roomId],
+                                    onListPositionChange = { roomListPositions[roomId] = it },
+                                    onError = { transientErrorMessage = it },
+                                )
+                            }
+                            composable("message?roomId={roomId}&eventId={eventId}") { entry ->
+                                val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                                val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                                MessageDetailScreen(
+                                    bridge = bridge,
+                                    roomId = roomId,
+                                    eventId = eventId,
+                                    activity = this@WearMainActivity,
+                                    onOpenThread = { rootId ->
+                                        nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onOpenImage = { imageEventId ->
+                                        nav.navigate(imageRoute(roomId = roomId, eventId = imageEventId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onReplySent = { sourceEventId, sourceWasLastMessage ->
+                                        pendingRoomScrollRequest = PendingRoomScrollRequest(
+                                            roomId = roomId,
+                                            targetEventId = sourceEventId.takeUnless { sourceWasLastMessage },
+                                            forceScrollToBottom = sourceWasLastMessage,
+                                        )
+                                        nav.popBackStack()
+                                    },
+                                    onError = { transientErrorMessage = it },
+                                )
+                            }
+                            composable("image?roomId={roomId}&eventId={eventId}") { entry ->
+                                val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                                val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                                ImageViewerScreen(
+                                    bridge = bridge,
+                                    roomId = roomId,
+                                    eventId = eventId,
+                                )
+                            }
+                            composable("thread?roomId={roomId}&rootId={rootId}") { entry ->
+                                val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                                val rootId = entry.arguments?.getString("rootId")?.let(Uri::decode) ?: return@composable
+                                ThreadScreen(
+                                    bridge = bridge,
+                                    roomId = roomId,
+                                    threadRootEventId = rootId,
+                                    activity = this@WearMainActivity,
+                                    savedListPosition = threadListPositions["$roomId/$rootId"],
+                                    onListPositionChange = { threadListPositions["$roomId/$rootId"] = it },
+                                    onError = { transientErrorMessage = it },
+                                )
+                            }
                         }
                     }
 
@@ -320,12 +323,12 @@ class WearMainActivity : ComponentActivity() {
                                 .align(Alignment.TopCenter)
                                 .padding(horizontal = 16.dp, vertical = 10.dp)
                                 .background(
-                                    color = MaterialTheme.colors.error,
+                                    color = MaterialTheme.colorScheme.errorContainer,
                                     shape = RoundedCornerShape(14.dp),
                                 )
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
-                            color = MaterialTheme.colors.onError,
-                            style = MaterialTheme.typography.caption2,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.labelSmall,
                         )
                     }
                 }
@@ -434,7 +437,7 @@ private fun NotificationPermissionPrompt(
         modifier = modifier
             .fillMaxWidth()
             .background(
-                color = MaterialTheme.colors.surface,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(16.dp),
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -442,23 +445,21 @@ private fun NotificationPermissionPrompt(
     ) {
         Text(
             text = stringResource(messageResId),
-            style = MaterialTheme.typography.caption2,
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Chip(
+        Button(
             modifier = Modifier.fillMaxWidth(),
-            label = {
-                Text(
-                    text = stringResource(actionResId),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
             onClick = action,
-            colors = ChipDefaults.primaryChipColors(),
-        )
+        ) {
+            Text(
+                text = stringResource(actionResId),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

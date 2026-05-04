@@ -41,8 +41,10 @@
     <string name="screen_voice_recorder_title">Voice message</string>
     <string name="screen_voice_recorder_permission">Allow microphone access to record voice messages.</string>
     <string name="screen_voice_recorder_recording">Recording…</string>
+    <string name="screen_voice_recorder_preparing">Preparing microphone…</string>
     <string name="screen_voice_recorder_sending">Sending voice message…</string>
     <string name="screen_voice_recorder_action_record">Record</string>
+    <string name="screen_voice_recorder_action_retry">Try again</string>
     <string name="screen_voice_recorder_action_send">Send</string>
     <string name="screen_voice_recorder_action_cancel">Cancel</string>
     <string name="screen_voice_recorder_action_hint">Tap Send to stop recording and send it.</string>

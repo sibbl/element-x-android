@@ -35,12 +35,11 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.FilledTonalIconButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
@@ -85,6 +84,15 @@ internal fun RoomView(
     var lastHandledScrollRequestId by remember(state.timelineKey) { mutableStateOf<Long?>(null) }
     var hasRestoredSavedPosition by remember(state.timelineKey, savedListPosition) {
         mutableStateOf(savedListPosition == null)
+    }
+
+    fun saveCurrentPosition() {
+        onListPositionChange?.invoke(
+            SavedScalingListPosition(
+                index = lazyListState.centerItemIndex,
+                offset = lazyListState.centerItemScrollOffset,
+            ),
+        )
     }
     val scope = rememberCoroutineScope()
     val shouldRestoreSavedPosition = savedListPosition != null && state.scrollRequestId == null
@@ -169,8 +177,9 @@ internal fun RoomView(
             lazyListState.scrollToItem(initialIndex)
             shouldStickToBottom = initialIndex >= totalItemCount - 1
             lastAutoScrolledEventId = lastEventId
-        } else if (shouldStickToBottom && hasNewBottomItem) {
+        } else if ((shouldStickToBottom || state.keepScrolledToBottom) && hasNewBottomItem) {
             lazyListState.scrollToItem(totalItemCount - 1)
+            shouldStickToBottom = true
             lastAutoScrolledEventId = lastEventId
         }
     }
@@ -197,7 +206,7 @@ internal fun RoomView(
                     item {
                         Text(
                             text = stringResource(R.string.screen_room_loading_messages),
-                            style = MaterialTheme.typography.body2,
+                            style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                         )
                     }
@@ -205,7 +214,7 @@ internal fun RoomView(
                     item {
                         Text(
                             text = state.emptyText ?: stringResource(R.string.screen_room_empty_messages),
-                            style = MaterialTheme.typography.body2,
+                            style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                         )
                     }
@@ -222,12 +231,22 @@ internal fun RoomView(
                         DayDivider(timestampMs = entry.timestampMs)
                     }
 
+                    val openThread = onOpenThread?.let { callback ->
+                        { rootEventId: String ->
+                            saveCurrentPosition()
+                            callback(rootEventId)
+                        }
+                    }
+
                     TimelineMessageRow(
                         item = entry,
                         mediaPreviewBytes = mediaPreviewBytes,
                         showSender = showSender,
-                        onClick = { onMessageSelected(entry.eventId) },
-                        onOpenThread = onOpenThread,
+                        onClick = {
+                            saveCurrentPosition()
+                            onMessageSelected(entry.eventId)
+                        },
+                        onOpenThread = openThread,
                         onLongPress = onLongPressMessage?.let { callback -> { callback(entry) } },
                     )
                 }
@@ -235,11 +254,11 @@ internal fun RoomView(
 
             // Scroll-to-bottom button
             if (!isAtBottom && state.items.size > 3) {
-                Button(
+                FilledTonalIconButton(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 4.dp)
-                        .size(32.dp),
+                        .size(40.dp),
                     onClick = {
                         scope.launch {
                             val total = lazyListState.layoutInfo.totalItemsCount
@@ -248,7 +267,6 @@ internal fun RoomView(
                             lastAutoScrolledEventId = lastEventId
                         }
                     },
-                    colors = ButtonDefaults.primaryButtonColors(),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
@@ -277,6 +295,7 @@ internal data class RoomViewState(
     val scrollRequestId: Long? = null,
     val scrollToEventId: String? = null,
     val forceScrollToBottom: Boolean = false,
+    val keepScrolledToBottom: Boolean = false,
     val mediaPreviewImages: Map<String, ByteArray> = emptyMap(),
 )
 
@@ -284,11 +303,11 @@ internal data class RoomViewState(
 private fun DayDivider(timestampMs: Long) {
     Text(
         text = dayLabel(timestampMs),
-        style = MaterialTheme.typography.caption2,
+        style = MaterialTheme.typography.labelSmall,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp, horizontal = 8.dp),
-        color = MaterialTheme.colors.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 

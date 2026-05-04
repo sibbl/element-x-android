@@ -11,12 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
-import androidx.wear.compose.material.MaterialTheme
 import io.element.android.watchbridge.contract.WatchReactionSummary
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.watchbridge.contract.WatchVoiceMeta
 import io.element.android.wearapp.ui.common.ComposerBar
+import io.element.android.wearapp.ui.theme.WearAppTheme
 
 /**
  * Multi-device Wear preview: small round, large round, and square watch faces against a black
@@ -47,7 +47,7 @@ internal annotation class WearPreviewDevices
 
 @Composable
 internal fun WearPreviewBox(content: @Composable () -> Unit) {
-    MaterialTheme(content = content)
+    WearAppTheme(content = content)
 }
 
 // ---- Demo data ---------------------------------------------------------------------------------

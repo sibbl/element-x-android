@@ -18,12 +18,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.wear.compose.material.MaterialTheme
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchMediaPreview
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.ui.theme.WearAppTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,7 +42,7 @@ class TimelineItemViewTest {
         val unavailableText = rule.activity.getString(R.string.screen_media_preview_unavailable)
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = anImageTimelineItem(),
                     mediaPreviewBytes = null,
@@ -62,7 +62,7 @@ class TimelineItemViewTest {
         val previewBytes = createPreviewBytes()
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = anImageTimelineItem(),
                     mediaPreviewBytes = previewBytes,
@@ -84,7 +84,7 @@ class TimelineItemViewTest {
 
         try {
             rule.setContent {
-                MaterialTheme {
+                WearAppTheme {
                     TimelineMessageRow(
                         item = anImageTimelineItem().copy(
                             mediaPreview = WatchMediaPreview(widthPx = 128, heightPx = 128, mimeType = "image/png"),
@@ -112,7 +112,7 @@ class TimelineItemViewTest {
         var openCount = 0
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 MessageDetailedBody(
                     item = anImageTimelineItem().copy(
                         mediaPreview = WatchMediaPreview(widthPx = 256, heightPx = 256, mimeType = "image/jpeg"),
@@ -136,7 +136,7 @@ class TimelineItemViewTest {
         val replyLabel = rule.activity.getString(R.string.thread_indicator_replies, 3)
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = aTextTimelineItem().copy(
                         hasThread = true,
@@ -163,7 +163,7 @@ class TimelineItemViewTest {
         var longPressed = false
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = aTextTimelineItem(),
                     onClick = {},

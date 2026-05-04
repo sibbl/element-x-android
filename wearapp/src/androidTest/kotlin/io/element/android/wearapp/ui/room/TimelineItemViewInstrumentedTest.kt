@@ -15,11 +15,11 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.wear.compose.material.MaterialTheme
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.ui.theme.WearAppTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,7 +35,7 @@ class TimelineItemViewInstrumentedTest {
         val unavailableText = rule.activity.getString(R.string.screen_media_preview_unavailable)
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = anImageTimelineItem(),
                     mediaPreviewBytes = null,
@@ -55,7 +55,7 @@ class TimelineItemViewInstrumentedTest {
         var clickCount = 0
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = anImageTimelineItem(),
                     mediaPreviewBytes = createPreviewBytes(),
@@ -77,7 +77,7 @@ class TimelineItemViewInstrumentedTest {
         val unavailableText = rule.activity.getString(R.string.screen_media_preview_unavailable)
 
         rule.setContent {
-            MaterialTheme {
+            WearAppTheme {
                 TimelineMessageRow(
                     item = anImageTimelineItem(),
                     mediaPreviewBytes = createPreviewBytes(),

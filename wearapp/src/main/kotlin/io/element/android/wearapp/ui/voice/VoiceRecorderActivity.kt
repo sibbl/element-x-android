@@ -51,21 +51,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.CircularProgressIndicator
-import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchVoiceDraft
 import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.audio.VoiceRecorder
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import io.element.android.wearapp.ui.theme.WearAppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
 import java.util.UUID
 import kotlin.math.PI
 import kotlin.math.ln
@@ -103,23 +103,25 @@ class VoiceRecorderActivity : ComponentActivity() {
         }
 
         setContent {
-            val favoriteRooms by bridge.favorites.collectAsState()
-            val roomDisplayName = roomDisplayNameExtra
-                ?.takeIf { it.isNotBlank() }
-                ?: bridge.getCachedSummary(roomId)?.displayName
-                ?: favoriteRooms.firstOrNull { it.roomId == roomId }?.displayName
-                ?: stringResource(R.string.screen_room_loading_title)
+            WearAppTheme {
+                val favoriteRooms by bridge.favorites.collectAsState()
+                val roomDisplayName = roomDisplayNameExtra
+                    ?.takeIf { it.isNotBlank() }
+                    ?: bridge.getCachedSummary(roomId)?.displayName
+                    ?: favoriteRooms.firstOrNull { it.roomId == roomId }?.displayName
+                    ?: stringResource(R.string.screen_room_loading_title)
 
-            VoiceRecorderUi(
-                bridge = bridge,
-                roomId = roomId,
-                roomDisplayName = roomDisplayName,
-                threadRootEventId = threadRootEventId,
-                inReplyToEventId = inReplyToEventId,
-                hasRecordPermission = hasRecordPermission,
-                onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                onDone = { finish() },
-            )
+                VoiceRecorderUi(
+                    bridge = bridge,
+                    roomId = roomId,
+                    roomDisplayName = roomDisplayName,
+                    threadRootEventId = threadRootEventId,
+                    inReplyToEventId = inReplyToEventId,
+                    hasRecordPermission = hasRecordPermission,
+                    onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                    onDone = { finish() },
+                )
+            }
         }
     }
 }
@@ -142,6 +144,7 @@ private fun VoiceRecorderUi(
     var elapsedMs by remember { mutableStateOf(0L) }
     var sending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var autoStartRecording by remember { mutableStateOf(true) }
     val waveform = remember { mutableStateListOf<Int>() }
 
     DisposableEffect(recorder) {
@@ -168,6 +171,20 @@ private fun VoiceRecorderUi(
         waveform.clear()
     }
 
+    fun beginRecording() {
+        if (recordingStartedAt != null || sending) return
+        runCatching {
+            recorder.start()
+        }.onSuccess {
+            errorMessage = null
+            waveform.clear()
+            elapsedMs = 0L
+            recordingStartedAt = System.currentTimeMillis()
+        }.onFailure {
+            errorMessage = context.watchCommandErrorMessage(it, R.string.watch_error_voice_send_failed)
+        }
+    }
+
     fun cancelRecording() {
         recorder.cancel()
         sending = false
@@ -175,97 +192,148 @@ private fun VoiceRecorderUi(
         resetRecordingState()
     }
 
+    fun cancelAndClose() {
+        cancelRecording()
+        onDone()
+    }
+
+    LaunchedEffect(hasRecordPermission, autoStartRecording, recordingStartedAt, sending) {
+        if (hasRecordPermission && autoStartRecording && recordingStartedAt == null && !sending) {
+            autoStartRecording = false
+            beginRecording()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = roomDisplayName,
-            style = MaterialTheme.typography.title3,
-            textAlign = TextAlign.Center,
+        Column(
             modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.screen_voice_recorder_title),
-            style = MaterialTheme.typography.caption2,
-            color = MaterialTheme.colors.onBackground.copy(alpha = 0.72f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        errorMessage?.let { message ->
-            Spacer(modifier = Modifier.height(10.dp))
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Text(
-                text = message,
-                color = MaterialTheme.colors.error,
-                style = MaterialTheme.typography.caption2,
+                text = roomDisplayName,
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = stringResource(R.string.screen_voice_recorder_title),
+                style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                when {
+                    sending -> {
+                        CircularProgressIndicator(modifier = Modifier.size(44.dp))
+                        Text(
+                            text = stringResource(R.string.screen_voice_recorder_sending),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+
+                    !hasRecordPermission -> {
+                        Text(
+                            text = stringResource(R.string.screen_voice_recorder_permission),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    recordingStartedAt != null -> {
+                        Text(
+                            text = stringResource(R.string.screen_voice_recorder_recording),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        RecordingVisualizer(levels = waveform.takeLast(9))
+                        Text(
+                            text = elapsedMs.formatAsDuration(),
+                            style = MaterialTheme.typography.numeralLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.screen_voice_recorder_action_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    autoStartRecording -> {
+                        CircularProgressIndicator(modifier = Modifier.size(38.dp))
+                        Text(
+                            text = stringResource(R.string.screen_voice_recorder_preparing),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+
+                    else -> {
+                        Text(
+                            text = stringResource(R.string.screen_voice_recorder_preparing),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
 
         when {
-            sending -> {
-                CircularProgressIndicator(modifier = Modifier.size(42.dp))
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = stringResource(R.string.screen_voice_recorder_sending),
-                    textAlign = TextAlign.Center,
-                )
-            }
+            sending -> Unit
 
             !hasRecordPermission -> {
-                Text(
-                    text = stringResource(R.string.screen_voice_recorder_permission),
-                    textAlign = TextAlign.Center,
+                Button(
                     modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Chip(
+                    onClick = {
+                        autoStartRecording = true
+                        onRequestPermission()
+                    },
+                ) {
+                    Text(stringResource(R.string.screen_voice_recorder_action_record))
+                }
+                FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.screen_voice_recorder_action_record)) },
-                    onClick = onRequestPermission,
-                    colors = ChipDefaults.primaryChipColors(),
-                )
+                    onClick = ::cancelAndClose,
+                ) {
+                    Text(stringResource(R.string.screen_voice_recorder_action_cancel))
+                }
             }
 
             recordingStartedAt != null -> {
-                Text(
-                    text = stringResource(R.string.screen_voice_recorder_recording),
-                    style = MaterialTheme.typography.caption1,
-                    color = MaterialTheme.colors.primary,
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                RecordingVisualizer(levels = waveform.takeLast(7))
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = elapsedMs.formatAsDuration(),
-                    style = MaterialTheme.typography.title2,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = stringResource(R.string.screen_voice_recorder_action_hint),
-                    style = MaterialTheme.typography.caption2,
-                    color = MaterialTheme.colors.onBackground.copy(alpha = 0.72f),
-                    textAlign = TextAlign.Center,
+                Button(
                     modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Chip(
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = null,
-                        )
-                    },
-                    label = { Text(stringResource(R.string.screen_voice_recorder_action_send)) },
                     onClick = {
                         val file = recorder.stop()
                         val durationMs = elapsedMs.coerceAtLeast(1L)
@@ -276,7 +344,7 @@ private fun VoiceRecorderUi(
                                 IllegalStateException("missing recording"),
                                 R.string.watch_error_voice_send_failed,
                             )
-                            return@Chip
+                            return@Button
                         }
                         scope.launch {
                             sending = true
@@ -307,45 +375,60 @@ private fun VoiceRecorderUi(
                             file.delete()
                         }
                     },
-                    colors = ChipDefaults.primaryChipColors(),
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Chip(
-                    modifier = Modifier.fillMaxWidth(0.72f),
-                    icon = {
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(stringResource(R.string.screen_voice_recorder_action_send))
+                            Text(
+                                text = elapsedMs.formatAsDuration(),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = ::cancelAndClose,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
                             contentDescription = null,
                         )
-                    },
-                    label = { Text(stringResource(R.string.screen_voice_recorder_action_cancel)) },
-                    onClick = { cancelRecording() },
-                    colors = ChipDefaults.secondaryChipColors(),
-                )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.screen_voice_recorder_action_cancel))
+                    }
+                }
             }
 
             else -> {
-                Chip(
+                Button(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.screen_voice_recorder_action_record)) },
                     onClick = {
-                        if (!hasRecordPermission) {
-                            onRequestPermission()
-                            return@Chip
-                        }
-                        runCatching {
-                            recorder.start()
-                        }.onSuccess {
-                            errorMessage = null
-                            waveform.clear()
-                            elapsedMs = 0L
-                            recordingStartedAt = System.currentTimeMillis()
-                        }.onFailure {
-                            errorMessage = context.watchCommandErrorMessage(it, R.string.watch_error_voice_send_failed)
-                        }
+                        autoStartRecording = false
+                        beginRecording()
                     },
-                    colors = ChipDefaults.primaryChipColors(),
-                )
+                ) {
+                    Text(stringResource(R.string.screen_voice_recorder_action_retry))
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = ::cancelAndClose,
+                ) {
+                    Text(stringResource(R.string.screen_voice_recorder_action_cancel))
+                }
             }
         }
     }
@@ -376,7 +459,7 @@ private fun RecordingVisualizer(levels: List<Int>) {
         Box(
             modifier = Modifier
                 .size(16.dp)
-                .background(MaterialTheme.colors.primary.copy(alpha = pulse), CircleShape),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = pulse), CircleShape),
         )
         Spacer(modifier = Modifier.height(12.dp))
         Row(
@@ -390,7 +473,7 @@ private fun RecordingVisualizer(levels: List<Int>) {
                         .width(8.dp)
                         .height(barHeight)
                         .background(
-                            color = MaterialTheme.colors.primary.copy(alpha = 0.35f + (level.coerceIn(0, 100) / 100f * 0.65f)),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f + (level.coerceIn(0, 100) / 100f * 0.65f)),
                             shape = CircleShape,
                         ),
                 )

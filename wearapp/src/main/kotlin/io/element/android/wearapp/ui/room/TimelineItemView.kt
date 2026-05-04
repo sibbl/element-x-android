@@ -44,17 +44,16 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.CircularProgressIndicator
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.OutlinedButton
+import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.PressableWearChip
-import io.element.android.wearapp.ui.common.wearTapAndLongPress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -74,6 +73,14 @@ internal fun TimelineMessageRow(
     onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val bubbleColor = if (item.isOwn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer
+    val primaryTextColor = if (item.isOwn) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (item.isOwn) {
+        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.82f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -81,7 +88,7 @@ internal fun TimelineMessageRow(
         PressableWearChip(
             onTap = onClick,
             onLongPress = onLongPress,
-            backgroundColor = if (item.isOwn) MaterialTheme.colors.primary else MaterialTheme.colors.surface,
+            backgroundColor = bubbleColor,
             modifier = Modifier
                 .fillMaxWidth(),
             label = if (showSender) {
@@ -90,9 +97,9 @@ internal fun TimelineMessageRow(
                         text = item.senderDisplayName ?: item.senderId,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.caption1.copy(
+                        style = MaterialTheme.typography.labelLarge.copy(
                             fontWeight = FontWeight.SemiBold,
-                            color = if (item.isOwn) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
+                            color = primaryTextColor,
                         ),
                     )
                 }
@@ -101,9 +108,9 @@ internal fun TimelineMessageRow(
                     MessagePreviewBody(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
-                        maxLines = 3,
-                        style = MaterialTheme.typography.caption2.copy(
-                            color = if (item.isOwn) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurfaceVariant,
+                        maxLines = 10,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = primaryTextColor,
                         ),
                     )
                 }
@@ -113,9 +120,9 @@ internal fun TimelineMessageRow(
                     MessagePreviewBody(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
-                        maxLines = 2,
-                        style = MaterialTheme.typography.caption2.copy(
-                            color = if (item.isOwn) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurfaceVariant,
+                        maxLines = 10,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = secondaryTextColor,
                         ),
                     )
                 }
@@ -145,15 +152,16 @@ internal fun MessagePreviewBody(
     item: WatchTimelineItem,
     mediaPreviewBytes: ByteArray? = null,
     maxLines: Int,
-    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.body2,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     modifier: Modifier = Modifier,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
 ) {
     when (item.kind) {
         WatchTimelineItemKind.VOICE -> Text(
             text = voiceLine(item),
             style = style,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.IMAGE -> ImageMessagePreview(
@@ -161,27 +169,28 @@ internal fun MessagePreviewBody(
             mediaPreviewBytes = mediaPreviewBytes,
             captionStyle = style,
             captionMaxLines = maxLines,
+            captionOverflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.VIDEO -> Text(
             text = "🎬  ${item.bodyText ?: stringResource(R.string.timeline_video)}",
             style = style,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.FILE -> Text(
             text = "📎  ${item.bodyText ?: stringResource(R.string.timeline_file)}",
             style = style,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.REDACTED -> Text(
             text = stringResource(R.string.timeline_redacted),
             style = style.copy(fontStyle = FontStyle.Italic),
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.STATE,
@@ -189,28 +198,28 @@ internal fun MessagePreviewBody(
             text = item.displayText(),
             style = style.copy(fontStyle = FontStyle.Italic),
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.EMOTE -> Text(
             text = "✶ ${item.senderDisplayName ?: item.senderId} ${item.displayText()}",
             style = style.copy(fontStyle = FontStyle.Italic),
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.NOTICE -> Text(
             text = item.displayText(),
             style = style.copy(fontStyle = FontStyle.Italic),
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
         WatchTimelineItemKind.TEXT -> Text(
             text = item.displayText(),
             style = style,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
             modifier = modifier,
         )
     }
@@ -235,15 +244,16 @@ internal fun MessageDetailedBody(
         )
         WatchTimelineItemKind.REDACTED -> Text(
             text = stringResource(R.string.timeline_redacted),
-            style = MaterialTheme.typography.body2.copy(fontStyle = FontStyle.Italic),
+            style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
             modifier = modifier,
         )
         else -> MessagePreviewBody(
             item = item,
             mediaPreviewBytes = mediaPreviewBytes,
-            maxLines = 12,
-            style = MaterialTheme.typography.body2,
+            maxLines = Int.MAX_VALUE,
+            style = MaterialTheme.typography.bodyMedium,
             modifier = modifier,
+            overflow = TextOverflow.Clip,
         )
     }
 }
@@ -254,6 +264,7 @@ private fun ImageMessagePreview(
     mediaPreviewBytes: ByteArray?,
     captionStyle: androidx.compose.ui.text.TextStyle,
     captionMaxLines: Int,
+    captionOverflow: TextOverflow,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -270,7 +281,7 @@ private fun ImageMessagePreview(
             text = item.bodyText ?: stringResource(R.string.timeline_image),
             style = captionStyle,
             maxLines = captionMaxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = captionOverflow,
         )
     }
 }
@@ -295,9 +306,9 @@ private fun ImageMessageDetailedView(
         )
         Text(
             text = item.bodyText ?: stringResource(R.string.timeline_image),
-            style = MaterialTheme.typography.body2,
-            maxLines = 6,
-            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = Int.MAX_VALUE,
+            overflow = TextOverflow.Clip,
         )
     }
 }
@@ -333,7 +344,7 @@ private fun MediaPreviewImage(
         .fillMaxWidth()
         .height(height)
         .clip(RoundedCornerShape(12.dp))
-        .background(MaterialTheme.colors.surface)
+        .background(MaterialTheme.colorScheme.surfaceContainerLow)
         .then(
             if (onClick != null) {
                 Modifier.clickable(onClick = onClick)
@@ -363,11 +374,11 @@ private fun MediaPreviewImage(
             ) {
                 Text(
                     text = "🖼",
-                    style = MaterialTheme.typography.title3,
+                    style = MaterialTheme.typography.titleLarge,
                 )
                 Text(
                     text = stringResource(R.string.screen_media_preview_unavailable),
-                    style = MaterialTheme.typography.caption3,
+                    style = MaterialTheme.typography.bodyExtraSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -425,24 +436,25 @@ private fun VoiceMessageDetailedView(
     ) {
         Text(
             text = "🎙  ${stringResource(R.string.timeline_voice_message)}",
-            style = MaterialTheme.typography.body2,
+            style = MaterialTheme.typography.titleSmall,
         )
         if (meta != null) {
             Text(
                 text = formatDurationLabel(meta.durationMs),
-                style = MaterialTheme.typography.caption2,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (meta.waveform.isNotEmpty()) {
                 WaveformView(waveform = meta.waveform)
             }
             val audioUrl = meta.audioUrl
             if (audioUrl != null && onPlay != null) {
-                Chip(
+                FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("▶  ${stringResource(R.string.play_voice_message)}") },
                     onClick = { onPlay(audioUrl) },
-                    colors = ChipDefaults.secondaryChipColors(),
-                )
+                ) {
+                    Text("▶  ${stringResource(R.string.play_voice_message)}")
+                }
             }
         }
     }
@@ -453,7 +465,7 @@ private fun WaveformView(
     waveform: List<Int>,
     modifier: Modifier = Modifier,
 ) {
-    val color = MaterialTheme.colors.primary
+    val color = MaterialTheme.colorScheme.primary
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -486,8 +498,8 @@ internal fun ReactionsRow(
     item: WatchTimelineItem,
     modifier: Modifier = Modifier,
 ) {
-    val baseColor = MaterialTheme.colors.surface
-    val highlightColor = MaterialTheme.colors.primary
+    val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val highlightColor = MaterialTheme.colorScheme.primaryDim
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -503,7 +515,7 @@ internal fun ReactionsRow(
             ) {
                 Text(
                     text = "${reaction.key} ${reaction.count}",
-                    style = MaterialTheme.typography.caption3,
+                    style = MaterialTheme.typography.bodyExtraSmall,
                 )
             }
         }
@@ -511,7 +523,7 @@ internal fun ReactionsRow(
             Spacer(modifier = Modifier.width(2.dp))
             Text(
                 text = "+${item.reactions.size - 5}",
-                style = MaterialTheme.typography.caption3,
+                style = MaterialTheme.typography.bodyExtraSmall,
             )
         }
     }
@@ -524,29 +536,31 @@ internal fun ThreadIndicatorChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Chip(
+    OutlinedButton(
         modifier = modifier.fillMaxWidth(),
-        label = {
+        onClick = onClick,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 text = stringResource(R.string.thread_indicator_replies, replyCount),
-                style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        },
-        secondaryLabel = lastReplyPreview?.takeIf { it.isNotBlank() }?.let { preview ->
-            {
+            lastReplyPreview?.takeIf { it.isNotBlank() }?.let { preview ->
                 Text(
                     text = preview,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.caption2,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        },
-        onClick = onClick,
-        colors = ChipDefaults.secondaryChipColors(),
-    )
+        }
+    }
 }
 
 @Composable

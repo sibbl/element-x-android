@@ -8,12 +8,15 @@
 package io.element.android.wearapp.ui.favorites
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -27,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,12 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.HorizontalPageIndicator
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.PageIndicatorState
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.wearapp.R
@@ -93,13 +94,6 @@ fun FavoritesScreen(
     // If no favorites, show All Rooms by default (page 1); otherwise Favorites first (page 0).
     val initialPage = restoredPage?.takeIf { it in 0..1 } ?: if (favoriteRooms.isEmpty()) 1 else 0
     val pagerState = rememberPagerState(initialPage = initialPage) { 2 }
-    val pageIndicatorState = remember {
-        object : PageIndicatorState {
-            override val pageCount: Int get() = 2
-            override val pageOffset: Float get() = pagerState.currentPageOffsetFraction
-            override val selectedPage: Int get() = pagerState.currentPage
-        }
-    }
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }
@@ -137,12 +131,39 @@ fun FavoritesScreen(
                 )
             }
         }
-        HorizontalPageIndicator(
-            pageIndicatorState = pageIndicatorState,
+        PagerDotsIndicator(
+            currentPage = pagerState.currentPage,
+            pageCount = 2,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 4.dp),
+                .padding(bottom = 6.dp),
         )
+    }
+}
+
+@Composable
+private fun PagerDotsIndicator(
+    currentPage: Int,
+    pageCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pageCount) { page ->
+            val active = page == currentPage
+            Box(
+                modifier = Modifier
+                    .size(if (active) 8.dp else 6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                    ),
+            )
+        }
     }
 }
 
@@ -224,14 +245,14 @@ private fun RoomListPage(
             item {
                 Text(
                     text = stringResource(R.string.no_phone),
-                    style = MaterialTheme.typography.body2,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         } else if (rooms.isEmpty()) {
             item {
                 Text(
                     text = emptyText,
-                    style = MaterialTheme.typography.body2,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         } else {
@@ -270,10 +291,15 @@ private fun FavoriteRoomChip(
             append(it)
         }
     }
+    val chipColor = when {
+        room.hasMentions -> MaterialTheme.colorScheme.secondaryContainer
+        room.unreadCount > 0 -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
     PressableWearChip(
         onTap = onClick,
         onLongPress = onLongPress,
-        backgroundColor = MaterialTheme.colors.surface,
+        backgroundColor = chipColor,
         modifier = Modifier
             .fillMaxWidth(),
         icon = {
@@ -281,7 +307,7 @@ private fun FavoriteRoomChip(
                 displayName = room.displayName,
                 avatarUrl = room.avatarUri,
                 avatarBytes = avatarBytes,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(32.dp),
             )
         },
         label = {
@@ -289,16 +315,18 @@ private fun FavoriteRoomChip(
                 text = room.displayName,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                color = MaterialTheme.colors.onSurface,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
             )
         },
         secondaryLabel = if (subtitle.isNotBlank()) {
             {
                 Text(
                     text = subtitle,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    color = MaterialTheme.colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         } else null,

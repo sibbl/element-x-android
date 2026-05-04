@@ -19,17 +19,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.OutlinedButton
+import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
 import io.element.android.wearapp.audio.WearVoicePlayer
@@ -90,7 +92,7 @@ internal fun MessageDetailView(
                             .padding(horizontal = 8.dp),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.caption1.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                     )
                 }
                 item {
@@ -100,8 +102,8 @@ internal fun MessageDetailView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp),
-                        style = MaterialTheme.typography.caption2,
-                        color = MaterialTheme.colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 item {
@@ -126,37 +128,40 @@ internal fun MessageDetailView(
                 }
                 if (item.readableByTts && (item.bodyText != null || item.formattedText != null)) {
                     item {
-                        Chip(
+                        FilledTonalButton(
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.read_aloud)) },
                             onClick = onReadAloud,
-                            colors = ChipDefaults.secondaryChipColors(),
-                        )
+                        ) {
+                            Text(stringResource(R.string.read_aloud))
+                        }
                     }
                 }
                 item {
-                    Chip(
+                    Button(
                         modifier = Modifier.fillMaxWidth(),
-                        label = {
+                        onClick = onOpenOrStartThread,
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
                             Text(
                                 text = stringResource(
                                     if (item.hasThread) R.string.screen_message_detail_open_thread
                                     else R.string.screen_message_detail_start_thread,
                                 ),
                             )
-                        },
-                        secondaryLabel = if (item.hasThread) {
-                            {
+                            if (item.hasThread) {
                                 Text(
                                     text = stringResource(R.string.thread) + " · ${item.threadReplyCount}",
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
                             }
-                        } else null,
-                        onClick = onOpenOrStartThread,
-                        colors = ChipDefaults.primaryChipColors(),
-                    )
+                        }
+                    }
                 }
                 item {
                     Text(
@@ -164,7 +169,8 @@ internal fun MessageDetailView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp),
-                        style = MaterialTheme.typography.caption2,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 QUICK_REACTIONS.chunked(3).forEach { reactions ->
@@ -174,12 +180,15 @@ internal fun MessageDetailView(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             reactions.forEach { reactionKey ->
-                                Chip(
+                                OutlinedButton(
                                     modifier = Modifier.weight(1f),
-                                    label = { Text(reactionKey) },
                                     onClick = { onSendReaction(reactionKey) },
-                                    colors = ChipDefaults.secondaryChipColors(),
-                                )
+                                ) {
+                                    Text(
+                                        text = reactionKey,
+                                        style = MaterialTheme.typography.titleSmall,
+                                    )
+                                }
                             }
                         }
                     }

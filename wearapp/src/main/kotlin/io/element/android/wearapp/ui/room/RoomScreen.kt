@@ -9,10 +9,13 @@ package io.element.android.wearapp.ui.room
 
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchLongPressMessageAction
 import io.element.android.watchbridge.contract.WatchSendSource
@@ -53,6 +56,19 @@ fun RoomScreen(
     val displayName = roomState.summary?.displayName
         ?: fallbackRoom?.displayName
         ?: ""
+    var keepScrolledToBottomUntilLiveDelta by remember(roomId) { mutableStateOf(false) }
+
+    LaunchedEffect(scrollRequestId, forceScrollToBottom) {
+        if (scrollRequestId != null && forceScrollToBottom) {
+            keepScrolledToBottomUntilLiveDelta = true
+        }
+    }
+
+    LaunchedEffect(roomState.hasReceivedLiveDelta) {
+        if (roomState.hasReceivedLiveDelta) {
+            keepScrolledToBottomUntilLiveDelta = false
+        }
+    }
 
     RoomView(
         state = RoomViewState(
@@ -63,6 +79,7 @@ fun RoomScreen(
             scrollRequestId = scrollRequestId,
             scrollToEventId = scrollToEventId,
             forceScrollToBottom = forceScrollToBottom,
+            keepScrolledToBottom = keepScrolledToBottomUntilLiveDelta,
         ),
         onMessageSelected = onMessageSelected,
         onOpenThread = onOpenThread,

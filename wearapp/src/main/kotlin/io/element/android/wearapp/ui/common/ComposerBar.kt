@@ -23,11 +23,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.FilledIconButton
+import androidx.wear.compose.material3.FilledTonalIconButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import io.element.android.wearapp.R
 
 /**
@@ -57,7 +57,8 @@ fun ComposerBar(
         contextLabel?.takeIf { it.isNotBlank() }?.let { label ->
             Text(
                 text = label,
-                style = MaterialTheme.typography.caption2,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -65,14 +66,13 @@ fun ComposerBar(
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onReact != null) {
-                Button(
-                    modifier = Modifier.size(40.dp),
+                FilledTonalIconButton(
+                    modifier = Modifier.size(44.dp),
                     onClick = onReact,
-                    colors = ButtonDefaults.secondaryButtonColors(),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.EmojiEmotions,
@@ -80,12 +80,9 @@ fun ComposerBar(
                     )
                 }
             }
-            Button(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp)
-                    .size(40.dp),
+            FilledIconButton(
+                modifier = Modifier.size(54.dp),
                 onClick = onReply,
-                colors = ButtonDefaults.primaryButtonColors(),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Reply,
@@ -93,10 +90,9 @@ fun ComposerBar(
                 )
             }
             if (onVoice != null) {
-                Button(
-                    modifier = Modifier.size(40.dp),
+                FilledTonalIconButton(
+                    modifier = Modifier.size(44.dp),
                     onClick = onVoice,
-                    colors = ButtonDefaults.secondaryButtonColors(),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Mic,
