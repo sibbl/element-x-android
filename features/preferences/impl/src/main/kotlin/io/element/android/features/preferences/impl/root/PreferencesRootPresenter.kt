@@ -8,6 +8,7 @@
 
 package io.element.android.features.preferences.impl.root
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -19,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import dev.zacsweers.metro.Inject
+import io.element.android.appconfig.hasWearCompanionSettingsActivity
 import io.element.android.features.enterprise.api.SessionEnterpriseService
 import io.element.android.features.logout.api.direct.DirectLogoutState
 import io.element.android.features.preferences.impl.userstatus.UserStatusState
@@ -27,6 +29,7 @@ import io.element.android.features.rageshake.api.RageshakeFeatureAvailability
 import io.element.android.libraries.architecture.Presenter
 import io.element.android.libraries.designsystem.utils.snackbar.SnackbarDispatcher
 import io.element.android.libraries.designsystem.utils.snackbar.collectSnackbarMessageAsState
+import io.element.android.libraries.di.annotations.ApplicationContext
 import io.element.android.libraries.featureflag.api.FeatureFlagService
 import io.element.android.libraries.featureflag.api.FeatureFlags
 import io.element.android.libraries.indicator.api.IndicatorService
@@ -46,6 +49,7 @@ import kotlinx.coroutines.launch
 
 @Inject
 class PreferencesRootPresenter(
+    @ApplicationContext private val context: Context,
     private val matrixClient: MatrixClient,
     private val sessionVerificationService: SessionVerificationService,
     private val analyticsService: AnalyticsService,
@@ -124,6 +128,7 @@ class PreferencesRootPresenter(
         }
 
         val showLabsItem = remember { featureFlagService.getAvailableFeatures(isInLabs = true).isNotEmpty() }
+        val showWatchCompanionSettings = remember { context.hasWearCompanionSettingsActivity() }
 
         val directLogoutState = directLogoutPresenter.present()
 
@@ -162,7 +167,7 @@ class PreferencesRootPresenter(
             showLabsItem = showLabsItem,
             directLogoutState = directLogoutState,
             snackbarMessage = snackbarMessage,
-            showWatchCompanionSettings = true,
+            showWatchCompanionSettings = showWatchCompanionSettings,
             eventSink = ::handleEvent,
         )
     }

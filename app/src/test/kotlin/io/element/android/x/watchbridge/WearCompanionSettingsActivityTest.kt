@@ -7,15 +7,30 @@
 
 package io.element.android.x.watchbridge
 
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import io.element.android.compound.theme.ElementTheme
 import io.element.android.watchbridge.contract.WatchCompanionSettings
+import io.element.android.watchbridge.contract.WatchConversationVibrationOverride
+import io.element.android.watchbridge.contract.WatchFavoriteRoom
+import io.element.android.watchbridge.contract.WatchLongPressMessageAction
+import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
+import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
+import io.element.android.watchbridge.contract.WatchRoomKind
+import io.element.android.watchbridge.contract.WatchTileConversationAction
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,36 +45,305 @@ class WearCompanionSettingsActivityTest {
     @get:Rule
     val composeRule = createEmptyComposeRule()
 
-    @Test
-    fun `send test notification action is exposed and clickable`() {
-        var invoked = false
+    private val appContext = ApplicationProvider.getApplicationContext<Context>()
 
+    @Test
+    fun `send test notification action is exposed per category and clickable`() {
+        var invokedCategory: WearCompanionVibrationCategory? = null
+
+        setWearContent(
+            onSendTestNotification = { invokedCategory = it },
+        )
+
+        composeRule.onNodeWithTag(wearCompanionTestNotificationTag(WearCompanionVibrationCategory.FAVORITE_DMS))
+            .performScrollTo()
+            .performClick()
+
+        composeRule.runOnIdle {
+            assertThat(invokedCategory).isEqualTo(WearCompanionVibrationCategory.FAVORITE_DMS)
+        }
+    }
+
+    @Test
+    fun `default vibration pattern helper updates settings`() {
+        val updatedSettings = WatchCompanionSettings().withNotificationVibration(
+            category = WearCompanionVibrationCategory.FAVORITE_DMS,
+            pattern = WatchNotificationVibrationPattern.ESCALATING,
+        )
+
+        assertThat(updatedSettings.notificationVibrations.favoriteDms)
+            .isEqualTo(WatchNotificationVibrationPattern.ESCALATING)
+    }
+
+    @Test
+    fun `custom category vibration helper stores pattern and waveform`() {
+        val updatedSettings = WatchCompanionSettings().withNotificationVibration(
+            category = WearCompanionVibrationCategory.GROUPS,
+            pattern = WatchNotificationVibrationPattern.CUSTOM,
+            customPattern = "120 60 240",
+        )
+
+        assertThat(updatedSettings.notificationVibrations.groups)
+            .isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
+        assertThat(updatedSettings.notificationVibrations.groupsCustomPattern)
+            .isEqualTo("120 60 240")
+    }
+
+    @Test
+    fun `switching category away from custom clears the stored waveform`() {
+        val initialSettings = WatchCompanionSettings(
+            notificationVibrations = WatchNotificationVibrationSettings(
+                groups = WatchNotificationVibrationPattern.CUSTOM,
+                groupsCustomPattern = "120 60 240",
+            ),
+        )
+
+        val updatedSettings = initialSettings.withNotificationVibration(
+            category = WearCompanionVibrationCategory.GROUPS,
+            pattern = WatchNotificationVibrationPattern.DOUBLE,
+        )
+
+        assertThat(updatedSettings.notificationVibrations.groups)
+            .isEqualTo(WatchNotificationVibrationPattern.DOUBLE)
+        assertThat(updatedSettings.notificationVibrations.groupsCustomPattern).isEmpty()
+    }
+
+    @Test
+    fun `message long press action can be updated`() {
+        val updatedSettings = WatchCompanionSettings().copy(
+            longPressMessageAction = WatchLongPressMessageAction.REPLY_VOICE,
+        )
+
+        assertThat(updatedSettings.longPressMessageAction)
+            .isEqualTo(WatchLongPressMessageAction.REPLY_VOICE)
+    }
+
+    @Test
+    fun `recent tile action can be updated`() {
+        val updatedSettings = WatchCompanionSettings().copy(
+            recentConversationsTileAction = WatchTileConversationAction.VOICE_RECORDING,
+        )
+
+        assertThat(updatedSettings.recentConversationsTileAction)
+            .isEqualTo(WatchTileConversationAction.VOICE_RECORDING)
+    }
+
+    @Test
+    fun `conversation selection helper adds selected room`() {
+        val roomId = "!dm:server"
+
+        val updatedSettings = WatchCompanionSettings().withConversationSelection(roomId)
+
+        assertThat(updatedSettings.notificationVibrations.conversationOverrides)
+            .containsExactly(WatchConversationVibrationOverride(roomId = roomId))
+    }
+
+    @Test
+    fun `custom conversation vibration helper stores pattern and waveform`() {
+        val roomId = "!room:server"
+        val initialSettings = WatchCompanionSettings(
+            notificationVibrations = WatchNotificationVibrationSettings(
+                conversationOverrides = listOf(
+                    WatchConversationVibrationOverride(roomId = roomId),
+                ),
+            ),
+        )
+
+        val updatedSettings = initialSettings.withConversationNotificationVibration(
+            roomId = roomId,
+            pattern = WatchNotificationVibrationPattern.CUSTOM,
+            customPattern = "120 60 240",
+        )
+
+        assertThat(updatedSettings.notificationVibrations.conversationOverrides)
+            .containsExactly(
+                WatchConversationVibrationOverride(
+                    roomId = roomId,
+                    pattern = WatchNotificationVibrationPattern.CUSTOM,
+                    customPattern = "120 60 240",
+                ),
+            )
+    }
+
+    @Test
+    fun `conversation vibration helper can reset to inherit`() {
+        val roomId = "!room:server"
+        val initialSettings = WatchCompanionSettings(
+            notificationVibrations = WatchNotificationVibrationSettings(
+                conversationOverrides = listOf(
+                    WatchConversationVibrationOverride(
+                        roomId = roomId,
+                        pattern = WatchNotificationVibrationPattern.DOUBLE,
+                    ),
+                ),
+            ),
+        )
+
+        val updatedSettings = initialSettings.withConversationNotificationVibration(
+            roomId = roomId,
+            pattern = null,
+        )
+
+        assertThat(updatedSettings.notificationVibrations.conversationOverrides)
+            .containsExactly(WatchConversationVibrationOverride(roomId = roomId))
+    }
+
+    @Test
+    fun `remove conversation button deletes the custom behavior`() {
+        var updatedSettings: WatchCompanionSettings? = null
+        val room = aRoom(roomId = "!room:server", displayName = "Team Wear", kind = WatchRoomKind.GROUP)
+        val initialSettings = WatchCompanionSettings(
+            notificationVibrations = WatchNotificationVibrationSettings(
+                conversationOverrides = listOf(
+                    WatchConversationVibrationOverride(
+                        roomId = room.roomId,
+                        pattern = WatchNotificationVibrationPattern.ESCALATING,
+                    ),
+                ),
+            ),
+        )
+
+        setWearContent(
+            initialSettings = initialSettings,
+            availableRooms = listOf(room),
+            onSettingsChanged = { updatedSettings = it },
+        )
+
+        composeRule.onNodeWithTag(wearCompanionConversationRemoveTag(room.roomId)).performScrollTo().performClick()
+
+        composeRule.runOnIdle {
+            assertThat(updatedSettings?.notificationVibrations?.conversationOverrides).isEmpty()
+        }
+        composeRule.onNodeWithTag(wearCompanionConversationVibrationSelectorTag(room.roomId)).assertDoesNotExist()
+    }
+
+    private fun setWearContent(
+        initialSettings: WatchCompanionSettings = WatchCompanionSettings(),
+        availableRooms: List<WatchFavoriteRoom> = emptyList(),
+        onSettingsChanged: (WatchCompanionSettings) -> Unit = {},
+        onSendTestNotification: (WearCompanionVibrationCategory) -> Unit = {},
+        onSendConversationPatternTest: (WatchFavoriteRoom, String) -> Unit = { _, _ -> },
+    ) {
         composeRule.runOnUiThread {
             Robolectric.buildActivity(ComponentActivity::class.java)
                 .setup()
                 .get()
                 .setContent {
-                    MaterialTheme {
+                    ElementTheme(applySystemBarsUpdate = false) {
+                        var currentSettings by remember { mutableStateOf(initialSettings) }
                         WearCompanionSettingsScreen(
-                            settings = WatchCompanionSettings(),
-                            onUpdateSettings = {},
-                            onSendTestNotification = { invoked = true },
+                            settings = currentSettings,
+                            availableRooms = availableRooms,
+                            onUpdateSettings = {
+                                currentSettings = it
+                                onSettingsChanged(it)
+                            },
+                            onSendTestNotification = onSendTestNotification,
+                            onSendConversationPatternTest = onSendConversationPatternTest,
                             onBack = {},
-                            notificationStrings = WearCompanionNotificationSectionStrings(
-                                sectionTitle = "Notification test",
-                                actionTitle = "Send test notification",
-                                actionDescription = "Mirror a diagnostic notification to your watch to verify notification forwarding.",
-                            ),
+                            usePreferencePage = false,
+                            usePlatformDialogs = false,
+                            screenTitle = "Wear OS companion",
+                            commonStrings = aCommonStrings(),
+                            longPressStrings = aLongPressSectionStrings(),
+                            notificationStrings = aNotificationSectionStrings(),
+                            vibrationStrings = aVibrationSectionStrings(),
+                            tileActionStrings = aTileActionSectionStrings(),
                         )
                     }
                 }
         }
+    }
 
-        composeRule.onNodeWithTag(WEAR_COMPANION_SEND_TEST_NOTIFICATION_TAG)
-            .performSemanticsAction(SemanticsActions.OnClick)
+    private fun aRoom(
+        roomId: String,
+        displayName: String,
+        kind: WatchRoomKind,
+        isFavorite: Boolean = false,
+    ): WatchFavoriteRoom {
+        return WatchFavoriteRoom(
+            roomId = roomId,
+            displayName = displayName,
+            kind = kind,
+            isFavorite = isFavorite,
+        )
+    }
 
-        composeRule.runOnIdle {
-            assertThat(invoked).isTrue()
-        }
+    private fun aLongPressSectionStrings(): WearCompanionLongPressSectionStrings {
+        return WearCompanionLongPressSectionStrings(
+            sectionTitle = "Long press behavior in conversation list",
+            messagesLabel = "Messages",
+            conversationsLabel = "Conversations",
+        )
+    }
+
+    private fun aCommonStrings(): WearCompanionCommonStrings {
+        return WearCompanionCommonStrings(
+            saveLabel = "Save",
+            cancelLabel = "Cancel",
+            searchLabel = "Search",
+        )
+    }
+
+    private fun aNotificationSectionStrings(): WearCompanionNotificationSectionStrings {
+        return WearCompanionNotificationSectionStrings(
+            sectionTitle = "Notification test",
+            actionDescriptionFormat = "Send a realistic sample notification using %1\$s vibration.",
+        )
+    }
+
+    private fun aVibrationSectionStrings(): WearCompanionVibrationSectionStrings {
+        return WearCompanionVibrationSectionStrings(
+            sectionTitle = "Vibration patterns",
+            conversationOverridesSectionTitle = "Conversation-specific vibration patterns",
+            conversationOverridesEmpty = "No conversations added yet.",
+            conversationPickerNoRooms = "Open the main app first to load conversations.",
+            conversationPickerEmpty = "No conversations match your search.",
+            conversationPickerAllAdded = "All loaded conversations already have custom behavior.",
+            conversationPickerTitle = "Choose conversation",
+            addConversationLabel = "Add conversation",
+            addConversationDescription = "Select a conversation and configure its own vibration behavior.",
+            conversationRemoveLabel = "Remove",
+            conversationRemoveDescription = "Delete this conversation-specific vibration behavior.",
+            inheritLabel = "Use category default",
+            inheritDescription = "Follow the default vibration for this conversation type.",
+            groupsLabel = "Group conversations",
+            dmsLabel = "Direct messages",
+            favoriteGroupsLabel = "Favorite group conversations",
+            favoriteDmsLabel = "Favorite direct messages",
+            silentLabel = "Silent",
+            silentDescription = "No vibration",
+            defaultLabel = "Default",
+            defaultDescription = "System default vibration",
+            doubleLabel = "Double",
+            doubleDescription = "Two short buzzes",
+            longLabel = "Long",
+            longDescription = "One long buzz",
+            tripleLabel = "Triple",
+            tripleDescription = "Three short buzzes",
+            pulseLabel = "Pulse",
+            pulseDescription = "Four even pulses",
+            escalatingLabel = "Escalating",
+            escalatingDescription = "Short buzzes that ramp up in strength",
+            customLabel = "Custom",
+            customDescription = "Create a custom vibration pattern.",
+            customPatternDialogTitle = "Custom vibration pattern",
+            customPatternFieldLabel = "Pattern timings",
+            customPatternDescription = "Enter vibration and pause lengths in milliseconds, for example: 120 60 240 60 360",
+            customPatternError = "Use only positive millisecond values separated by spaces, commas, or semicolons.",
+            customPatternTestLabel = "Send test notification",
+            customPatternTestDescription = "Try this pattern on your watch before saving.",
+        )
+    }
+
+    private fun aTileActionSectionStrings(): WearCompanionTileActionSectionStrings {
+        return WearCompanionTileActionSectionStrings(
+            sectionTitle = "Tile conversation buttons",
+            recentTileLabel = "Recent conversations tile",
+            favoriteTileLabel = "Favorite conversations tile",
+            openConversationLabel = "Open conversation",
+            directReplyLabel = "Start direct reply",
+            voiceRecordingLabel = "Start voice recording",
+        )
     }
 }

@@ -78,6 +78,7 @@ class WearMainActivity : ComponentActivity() {
     private var pendingDictationResult: ((String?) -> Unit)? = null
     private var notificationPermissionState by mutableStateOf(WearNotificationPermissionState.Granted)
     private var pendingDeepLink by mutableStateOf<WearCompanionDeepLink?>(null)
+    private var pendingTileDirectReplyRoomId by mutableStateOf<String?>(null)
     private var pendingRoomScrollRequest by mutableStateOf<PendingRoomScrollRequest?>(null)
     private var transientErrorMessage by mutableStateOf<String?>(null)
     private var favoritesRequestedRoomCount by mutableIntStateOf(30)
@@ -118,9 +119,11 @@ class WearMainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         refreshNotificationPermissionState()
         pendingDeepLink = consumePendingDeepLink(intent)
+        pendingTileDirectReplyRoomId = consumePendingTileDirectReplyRoomId(intent)
         val bridge = (application as WearApp).bridgeClient
         setContent {
             val nav = rememberSwipeDismissableNavController()
+            val scope = rememberCoroutineScope()
             val openRoomAtBottom: (String) -> Unit = { roomId ->
                 pendingRoomScrollRequest = PendingRoomScrollRequest(
                     roomId = roomId,
@@ -147,6 +150,33 @@ class WearMainActivity : ComponentActivity() {
                         }
                     }
                     pendingDeepLink = null
+                }
+            }
+            LaunchedEffect(pendingTileDirectReplyRoomId) {
+                pendingTileDirectReplyRoomId?.let { roomId ->
+                    launchDictation { dictated ->
+                        if (!dictated.isNullOrBlank()) {
+                            scope.launch {
+                                runCatching {
+                                    bridge.sendAwaitTerminalAck {
+                                        WatchCommand.SendText(
+                                            requestId = it,
+                                            roomId = roomId,
+                                            text = dictated,
+                                            source = WatchSendSource.DICTATION,
+                                            clientTsMs = System.currentTimeMillis(),
+                                        )
+                                    }
+                                }.onFailure {
+                                    transientErrorMessage = this@WearMainActivity.watchCommandErrorMessage(
+                                        it,
+                                        R.string.watch_error_send_failed,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    pendingTileDirectReplyRoomId = null
                 }
             }
             LaunchedEffect(transientErrorMessage) {
@@ -346,6 +376,7 @@ class WearMainActivity : ComponentActivity() {
         setIntent(intent)
         // When already running and a notification opens us, store deep link for next recomposition.
         pendingDeepLink = consumePendingDeepLink(intent)
+        pendingTileDirectReplyRoomId = consumePendingTileDirectReplyRoomId(intent)
     }
 
     private fun refreshNotificationPermissionState() {

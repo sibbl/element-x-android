@@ -21,7 +21,27 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
-class WearNotificationActionReceiver : BroadcastReceiver() {
+class WearNotificationActionReceiver : BroadcastReceiver {
+
+    private val executor: WearNotificationActionExecutor
+    private val uiController: WearNotificationActionUiController
+    private val actionScope: CoroutineScope
+
+    constructor() : super() {
+        executor = BridgeWearNotificationActionExecutor()
+        uiController = SystemWearNotificationActionUiController()
+        actionScope = defaultActionScope
+    }
+
+    internal constructor(
+        executor: WearNotificationActionExecutor,
+        uiController: WearNotificationActionUiController,
+        actionScope: CoroutineScope = defaultActionScope,
+    ) : super() {
+        this.executor = executor
+        this.uiController = uiController
+        this.actionScope = actionScope
+    }
 
     override fun onReceive(context: Context, intent: Intent) {
         val notificationKey = intent.getStringExtra(EXTRA_NOTIFICATION_KEY) ?: return
@@ -30,11 +50,14 @@ class WearNotificationActionReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             ACTION_DISMISS -> {
-                WearNotificationDismissalStore(context).recordDismissal(notificationKey, generatedAtMs)
+                uiController.dismiss(notificationKey, notificationId, generatedAtMs, context)
             }
 
             ACTION_MARK_AS_READ,
             ACTION_REPLY -> {
+                if (intent.action == ACTION_MARK_AS_READ) {
+                    uiController.dismiss(notificationKey, notificationId, generatedAtMs, context)
+                }
                 val pendingResult = goAsync()
                 actionScope.launch {
                     try {
@@ -66,45 +89,113 @@ class WearNotificationActionReceiver : BroadcastReceiver() {
         if (roomId.isBlank() || eventId.isBlank()) return
 
         val bridgeClient = (context.applicationContext as WearApp).bridgeClient
-        val result = runCatching {
-            when (intent.action) {
-                ACTION_MARK_AS_READ -> {
-                    bridgeClient.sendAwaitTerminalAck { requestId ->
-                        WatchCommand.MarkAsRead(
-                            requestId = requestId,
-                            roomId = roomId,
-                            eventId = eventId,
-                        )
-                    }
-                }
-
-                ACTION_REPLY -> {
-                    val replyText = RemoteInput.getResultsFromIntent(intent)
-                        ?.getCharSequence(RESULT_KEY_REPLY_TEXT)
-                        ?.toString()
-                        ?.trim()
-                        .orEmpty()
-                    if (replyText.isBlank()) return
-                    bridgeClient.sendAwaitTerminalAck { requestId ->
-                        WatchCommand.SendText(
-                            requestId = requestId,
-                            roomId = roomId,
-                            threadRootEventId = threadRootEventId,
-                            inReplyToEventId = eventId.takeUnless { threadRootEventId != null },
-                            text = replyText,
-                            source = WatchSendSource.QUICK_REPLY,
-                            clientTsMs = System.currentTimeMillis(),
-                        )
-                    }
-                }
+        val result = when (intent.action) {
+            ACTION_MARK_AS_READ -> executor.markAsRead(
+                context = context,
+                roomId = roomId,
+                eventId = eventId,
+            )
+            ACTION_REPLY -> {
+                val replyText = RemoteInput.getResultsFromIntent(intent)
+                    ?.getCharSequence(RESULT_KEY_REPLY_TEXT)
+                    ?.toString()
+                    ?.trim()
+                    .orEmpty()
+                if (replyText.isBlank()) return
+                executor.reply(
+                    context = context,
+                    roomId = roomId,
+                    eventId = eventId,
+                    threadRootEventId = threadRootEventId,
+                    replyText = replyText,
+                )
             }
+            else -> return
         }
 
         result.onSuccess {
-            WearNotificationDismissalStore(context).recordDismissal(notificationKey, generatedAtMs)
-            NotificationManagerCompat.from(context).cancel(notificationId)
+            if (intent.action == ACTION_REPLY) {
+                uiController.dismiss(notificationKey, notificationId, generatedAtMs, context)
+            }
         }.onFailure {
             Timber.w(it, "Watch notification action failed action=%s roomId=%s eventId=%s", intent.action, roomId, eventId)
+        }
+    }
+
+    internal interface WearNotificationActionExecutor {
+        suspend fun markAsRead(
+            context: Context,
+            roomId: String,
+            eventId: String,
+        ): Result<Unit>
+
+        suspend fun reply(
+            context: Context,
+            roomId: String,
+            eventId: String,
+            threadRootEventId: String?,
+            replyText: String,
+        ): Result<Unit>
+    }
+
+    internal interface WearNotificationActionUiController {
+        fun dismiss(
+            notificationKey: String,
+            notificationId: Int,
+            generatedAtMs: Long,
+            context: Context,
+        )
+    }
+
+    internal class BridgeWearNotificationActionExecutor : WearNotificationActionExecutor {
+        override suspend fun markAsRead(
+            context: Context,
+            roomId: String,
+            eventId: String,
+        ): Result<Unit> = runCatching {
+            val bridgeClient = (context.applicationContext as WearApp).bridgeClient
+            bridgeClient.sendAwaitTerminalAck { requestId ->
+                WatchCommand.MarkAsRead(
+                    requestId = requestId,
+                    roomId = roomId,
+                    eventId = eventId,
+                )
+            }
+            Unit
+        }
+
+        override suspend fun reply(
+            context: Context,
+            roomId: String,
+            eventId: String,
+            threadRootEventId: String?,
+            replyText: String,
+        ): Result<Unit> = runCatching {
+            val bridgeClient = (context.applicationContext as WearApp).bridgeClient
+            bridgeClient.sendAwaitTerminalAck { requestId ->
+                WatchCommand.SendText(
+                    requestId = requestId,
+                    roomId = roomId,
+                    threadRootEventId = threadRootEventId,
+                    inReplyToEventId = eventId.takeUnless { threadRootEventId != null },
+                    text = replyText,
+                    source = WatchSendSource.QUICK_REPLY,
+                    clientTsMs = System.currentTimeMillis(),
+                )
+            }
+            Unit
+        }
+    }
+
+    internal class SystemWearNotificationActionUiController : WearNotificationActionUiController {
+        override fun dismiss(
+            notificationKey: String,
+            notificationId: Int,
+            generatedAtMs: Long,
+            context: Context,
+        ) {
+            WearNotificationDismissalStore(context).recordDismissal(notificationKey, generatedAtMs)
+            NotificationManagerCompat.from(context).cancel(notificationId)
         }
     }
 
@@ -122,6 +213,6 @@ class WearNotificationActionReceiver : BroadcastReceiver() {
 
         internal const val RESULT_KEY_REPLY_TEXT = "result_key_reply_text"
 
-        private val actionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        private val defaultActionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 }

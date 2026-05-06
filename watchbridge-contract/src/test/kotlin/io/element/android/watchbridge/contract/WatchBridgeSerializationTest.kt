@@ -112,11 +112,26 @@ class WatchBridgeSerializationTest {
                     eventId = "\$event:server",
                     threadRootEventId = "\$root:server",
                     roomDisplayName = "Team Wear",
+                    roomKind = WatchRoomKind.DM,
                     senderDisplayName = "Bob",
                     bodyText = "Hello there",
                     timestampMs = 12L,
                     messageCount = 3,
+                    previewMessages = listOf(
+                        WatchNotificationMessagePreview(
+                            senderDisplayName = "Bob",
+                            bodyText = "Hello there",
+                            timestampMs = 10L,
+                        ),
+                        WatchNotificationMessagePreview(
+                            senderDisplayName = "Bob",
+                            bodyText = "Are we still testing the watch build?",
+                            timestampMs = 12L,
+                        ),
+                    ),
                     isNoisy = true,
+                    vibrationPatternOverride = WatchNotificationVibrationPattern.ESCALATING,
+                    customVibrationPattern = "120 60 240",
                 ),
             ),
         )
@@ -125,6 +140,84 @@ class WatchBridgeSerializationTest {
 
         assertThat(decoded).isEqualTo(envelope)
         assertThat((decoded.payload as WatchSync.MessageNotification).notification.messageCount).isEqualTo(3)
+        assertThat((decoded.payload as WatchSync.MessageNotification).notification.previewMessages)
+            .containsExactlyElementsIn((envelope.payload as WatchSync.MessageNotification).notification.previewMessages)
+            .inOrder()
+    }
+
+    @Test
+    fun `message notification image preview bytes roundtrip`() {
+        val envelope = WatchSyncEnvelope(
+            generatedAtMs = 55L,
+            payload = WatchSync.MessageNotification(
+                notification = WatchMessageNotification(
+                    notificationKey = "message:@alice:server:!room:server",
+                    roomId = "!room:server",
+                    eventId = "\$image:server",
+                    roomDisplayName = "Team Wear",
+                    bodyText = "Image",
+                    timestampMs = 12L,
+                    imagePreviewBytes = byteArrayOf(1, 2, 3),
+                ),
+            ),
+        )
+
+        val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+        val notification = (decoded.payload as WatchSync.MessageNotification).notification
+
+        assertThat(notification.imagePreviewBytes?.toList()).containsExactly(1.toByte(), 2.toByte(), 3.toByte()).inOrder()
+    }
+
+    @Test
+    fun `settings update with notification vibration patterns roundtrips`() {
+        val envelope = WatchSyncEnvelope(
+            generatedAtMs = 99L,
+            payload = WatchSync.SettingsUpdate(
+                settings = WatchCompanionSettings(
+                    recentConversationsTileAction = WatchTileConversationAction.DIRECT_REPLY,
+                    favoriteConversationsTileAction = WatchTileConversationAction.VOICE_RECORDING,
+                    notificationVibrations = WatchNotificationVibrationSettings(
+                        groups = WatchNotificationVibrationPattern.CUSTOM,
+                        groupsCustomPattern = "120 60 240",
+                        dms = WatchNotificationVibrationPattern.PULSE,
+                        dmsCustomPattern = "",
+                        favoriteGroups = WatchNotificationVibrationPattern.ESCALATING,
+                        favoriteGroupsCustomPattern = "",
+                        favoriteDms = WatchNotificationVibrationPattern.CUSTOM,
+                        favoriteDmsCustomPattern = "90 45 180",
+                        conversationOverrides = listOf(
+                            WatchConversationVibrationOverride(
+                                roomId = "!fav:server",
+                                pattern = WatchNotificationVibrationPattern.CUSTOM,
+                                customPattern = "120 60 240",
+                            ),
+                            WatchConversationVibrationOverride(
+                                roomId = "!inherit:server",
+                                pattern = null,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+
+        assertThat(decoded).isEqualTo(envelope)
+    }
+
+    @Test
+    fun `custom vibration parser accepts a valid waveform string`() {
+        val parsed = parseCustomWatchNotificationVibrationPattern("120 60 240 80")
+
+        assertThat(parsed?.toList()).containsExactly(0L, 120L, 60L, 240L, 80L).inOrder()
+    }
+
+    @Test
+    fun `custom vibration parser rejects invalid values`() {
+        assertThat(parseCustomWatchNotificationVibrationPattern("120 nope 240")).isNull()
+        assertThat(parseCustomWatchNotificationVibrationPattern("0 120 240")).isNull()
+        assertThat(parseCustomWatchNotificationVibrationPattern(" ")).isNull()
     }
 
     @Test

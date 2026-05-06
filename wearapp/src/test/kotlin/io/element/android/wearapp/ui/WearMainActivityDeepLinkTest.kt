@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.appconfig.WearCompanionDeepLink
+import io.element.android.watchbridge.contract.WatchTileConversationAction
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -70,5 +71,31 @@ class WearMainActivityDeepLinkTest {
         assertThat(parseOpenRoomTileClickableId(clickableId)).isEqualTo("!room:server")
         assertThat(isOpenAppTileClickableId(openAppTileClickableId())).isTrue()
         assertThat(parseOpenRoomTileClickableId(openAppTileClickableId())).isNull()
+    }
+
+    @Test
+    fun `tile clickable ids round-trip room ids with explicit tile actions`() {
+        val clickableId = roomTileClickableId(
+            roomId = "!room:server",
+            action = WatchTileConversationAction.VOICE_RECORDING,
+        )
+
+        assertThat(parseRoomTileClickableId(clickableId)).isEqualTo(
+            TileConversationClickable(
+                roomId = "!room:server",
+                action = WatchTileConversationAction.VOICE_RECORDING,
+            ),
+        )
+    }
+
+    @Test
+    fun `consume pending tile direct reply room id clears extra after first use`() {
+        val intent = buildWearTileDirectReplyIntent(
+            context = ApplicationProvider.getApplicationContext(),
+            roomId = "!room:server",
+        )
+
+        assertThat(consumePendingTileDirectReplyRoomId(intent)).isEqualTo("!room:server")
+        assertThat(consumePendingTileDirectReplyRoomId(intent)).isNull()
     }
 }

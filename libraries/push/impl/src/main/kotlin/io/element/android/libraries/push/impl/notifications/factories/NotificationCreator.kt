@@ -22,6 +22,7 @@ import androidx.core.app.Person
 import coil3.ImageLoader
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
+import io.element.android.appconfig.hasOpenOnWearActivity
 import io.element.android.appconfig.NotificationConfig
 import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.libraries.core.meta.BuildMeta
@@ -151,11 +152,15 @@ class DefaultNotificationCreator(
         val quickReplyAction = events.lastOrNull()?.eventId
             ?.takeIf { !roomInfo.hasSmartReplyError }
             ?.let { latestEventId -> quickReplyActionFactory.create(roomInfo, latestEventId, threadId) }
-        val openOnWearAction = openOnWearActionFactory.create(
-            roomId = roomInfo.roomId,
-            eventId = eventId,
-            threadId = threadId,
-        )
+        val openOnWearAction = if (context.hasOpenOnWearActivity()) {
+            openOnWearActionFactory.create(
+                roomId = roomInfo.roomId,
+                eventId = eventId,
+                threadId = threadId,
+            )
+        } else {
+            null
+        }
         val openIntent = when {
             threadId != null -> pendingIntentFactory.createOpenThreadPendingIntent(roomInfo.sessionId, roomInfo.roomId, eventId, threadId)
             else -> pendingIntentFactory.createOpenRoomPendingIntent(
@@ -236,8 +241,11 @@ class DefaultNotificationCreator(
                 ),
                 configure = {
                     quickReplyAction?.let(::addAction)
-                    addAction(openOnWearAction)
-                    setContentAction(if (quickReplyAction != null) 1 else 0)
+                    openOnWearAction?.let(::addAction)
+                    when {
+                        quickReplyAction != null && openOnWearAction != null -> setContentAction(1)
+                        quickReplyAction != null || openOnWearAction != null -> setContentAction(0)
+                    }
                     setStartScrollBottom(true)
                     setContentIntentAvailableOffline(false)
                 },

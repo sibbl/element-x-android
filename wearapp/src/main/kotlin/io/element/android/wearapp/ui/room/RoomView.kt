@@ -74,12 +74,14 @@ internal fun RoomView(
     savedListPosition: SavedScalingListPosition? = null,
     onListPositionChange: ((SavedScalingListPosition) -> Unit)? = null,
     mediaPreviewFlowProvider: ((String, String) -> StateFlow<ByteArray?>)? = null,
+    onRequestMediaPreview: ((String, String) -> Unit)? = null,
 ) {
     val lazyListState = listState ?: rememberScalingLazyListState()
     val totalItemCount = lazyListState.layoutInfo.totalItemsCount
     val lastEventId = state.items.lastOrNull()?.eventId
     val readMarkerAnchorEventId = state.items.firstOrNull { it.isReadMarkerAnchor }?.eventId
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
+    var followLatestAfterBottomRequest by remember(state.timelineKey) { mutableStateOf(false) }
     var lastAutoScrolledEventId by remember(state.timelineKey) { mutableStateOf<String?>(null) }
     var lastHandledScrollRequestId by remember(state.timelineKey) { mutableStateOf<Long?>(null) }
     var hasRestoredSavedPosition by remember(state.timelineKey, savedListPosition) {
@@ -102,12 +104,24 @@ internal fun RoomView(
             isAtBottom(lazyListState)
         }
     }
+    val visibleMediaPreviewEventIds by remember(lazyListState, state.items) {
+        derivedStateOf {
+            if (lastAutoScrolledEventId == null || lazyListState.isScrollInProgress) {
+                emptySet()
+            } else {
+                visibleTimelineEventIds(lazyListState, state.items)
+            }
+        }
+    }
 
     LaunchedEffect(lazyListState, state.timelineKey) {
         snapshotFlow { isAtBottom(lazyListState) }
             .distinctUntilChanged()
             .collect { atBottom ->
                 shouldStickToBottom = atBottom
+                if (!atBottom) {
+                    followLatestAfterBottomRequest = false
+                }
             }
     }
 
@@ -152,12 +166,14 @@ internal fun RoomView(
         if (state.forceScrollToBottom) {
             lazyListState.scrollToItem(totalItemCount - 1)
             shouldStickToBottom = true
+            followLatestAfterBottomRequest = true
             lastAutoScrolledEventId = lastEventId
         } else {
             val targetIndex = timelineListIndexForEvent(state.items, state.scrollToEventId)
             if (targetIndex != null) {
                 lazyListState.scrollToItem(targetIndex)
                 shouldStickToBottom = false
+                followLatestAfterBottomRequest = false
                 lastAutoScrolledEventId = lastEventId
             }
         }
@@ -177,9 +193,10 @@ internal fun RoomView(
             lazyListState.scrollToItem(initialIndex)
             shouldStickToBottom = initialIndex >= totalItemCount - 1
             lastAutoScrolledEventId = lastEventId
-        } else if ((shouldStickToBottom || state.keepScrolledToBottom) && hasNewBottomItem) {
+        } else if ((shouldStickToBottom || followLatestAfterBottomRequest) && hasNewBottomItem) {
             lazyListState.scrollToItem(totalItemCount - 1)
             shouldStickToBottom = true
+            followLatestAfterBottomRequest = false
             lastAutoScrolledEventId = lastEventId
         }
     }
@@ -242,6 +259,13 @@ internal fun RoomView(
                         item = entry,
                         mediaPreviewBytes = mediaPreviewBytes,
                         showSender = showSender,
+                        onRequestMediaPreview = onRequestMediaPreview?.let { requestPreview ->
+                            if (entry.eventId in visibleMediaPreviewEventIds) {
+                                { requestPreview(entry.roomId, entry.eventId) }
+                            } else {
+                                null
+                            }
+                        },
                         onClick = {
                             saveCurrentPosition()
                             onMessageSelected(entry.eventId)
@@ -295,7 +319,6 @@ internal data class RoomViewState(
     val scrollRequestId: Long? = null,
     val scrollToEventId: String? = null,
     val forceScrollToBottom: Boolean = false,
-    val keepScrolledToBottom: Boolean = false,
     val mediaPreviewImages: Map<String, ByteArray> = emptyMap(),
 )
 
@@ -337,6 +360,16 @@ private fun isAtBottom(listState: androidx.wear.compose.foundation.lazy.ScalingL
     val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
     val totalItems = info.totalItemsCount
     return totalItems <= 1 || lastVisible >= totalItems - 2
+}
+
+private fun visibleTimelineEventIds(
+    listState: androidx.wear.compose.foundation.lazy.ScalingLazyListState,
+    items: List<WatchTimelineItem>,
+): Set<String> {
+    if (items.isEmpty()) return emptySet()
+    return listState.layoutInfo.visibleItemsInfo
+        .mapNotNull { visibleItem -> items.getOrNull(visibleItem.index - 1)?.eventId }
+        .toSet()
 }
 
 private fun timelineListIndexForEvent(items: List<WatchTimelineItem>, eventId: String?): Int? {

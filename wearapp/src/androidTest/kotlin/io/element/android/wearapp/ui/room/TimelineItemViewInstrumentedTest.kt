@@ -46,6 +46,10 @@ class TimelineItemViewInstrumentedTest {
             }
         }
 
+        rule.waitUntil(timeoutMillis = 5_000L) {
+            rule.onAllNodesWithText(unavailableText, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         rule.onNodeWithText(unavailableText).assertExists()
         rule.onNodeWithText("Vacation photo").assertExists()
     }

@@ -9,7 +9,6 @@
 package io.element.android.features.preferences.impl.root
 
 import android.app.Activity
-import android.content.Intent
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -19,6 +18,7 @@ import com.bumble.appyx.core.plugin.Plugin
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedInject
 import io.element.android.annotations.ContributesNode
+import io.element.android.appconfig.createWearCompanionSettingsIntent
 import io.element.android.compound.theme.ElementTheme
 import io.element.android.features.logout.api.direct.DirectLogoutEvents
 import io.element.android.features.logout.api.direct.DirectLogoutView
@@ -105,9 +105,7 @@ class PreferencesRootNode(
             onDeactivateClick = callback::startAccountDeactivationFlow,
             onOpenWatchCompanionSettings = {
                 runCatching {
-                    val intent = Intent()
-                        .setClassName(activity, "io.element.android.x.watchbridge.WearCompanionSettingsActivity")
-                    activity.startActivity(intent)
+                    activity.startActivity(activity.createWearCompanionSettingsIntent())
                 }
             },
         )

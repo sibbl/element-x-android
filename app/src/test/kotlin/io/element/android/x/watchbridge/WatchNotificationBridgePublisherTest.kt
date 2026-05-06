@@ -14,7 +14,11 @@ import io.element.android.libraries.matrix.api.core.SessionId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.push.impl.notifications.model.NotifiableMessageEvent
+import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchDataPaths
+import io.element.android.watchbridge.contract.WatchNotificationMessagePreview
+import io.element.android.watchbridge.contract.WatchProtocol
+import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.transport.WatchChannel
@@ -46,7 +50,74 @@ class WatchNotificationBridgePublisherTest {
         val payload = envelope.payload as WatchSync.MessageNotification
         assertThat(payload.notification.eventId).isEqualTo("\$second:server")
         assertThat(payload.notification.messageCount).isEqualTo(2)
+        assertThat(payload.notification.previewMessages).containsExactly(
+            WatchNotificationMessagePreview(
+                senderDisplayName = "Bob",
+                bodyText = "First",
+                timestampMs = 1L,
+            ),
+            WatchNotificationMessagePreview(
+                senderDisplayName = "Bob",
+                bodyText = "Second",
+                timestampMs = 2L,
+            ),
+        ).inOrder()
+        assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.GROUP)
         assertThat(envelope.expiresAtMs).isEqualTo(100L + 24L * 60L * 60L * 1000L)
+    }
+
+    @Test
+    fun `preview history keeps the latest four messages in timestamp order`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(eventId = "\$first:server", timestamp = 1L, body = "First"),
+                aNotifiableMessageEvent(eventId = "\$second:server", timestamp = 2L, body = "Second"),
+                aNotifiableMessageEvent(eventId = "\$third:server", timestamp = 3L, body = "Third"),
+                aNotifiableMessageEvent(eventId = "\$fourth:server", timestamp = 4L, body = "Fourth"),
+                aNotifiableMessageEvent(eventId = "\$fifth:server", timestamp = 5L, body = "Fifth"),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+
+        assertThat(payload.notification.messageCount).isEqualTo(5)
+        assertThat(payload.notification.previewMessages.map { it.bodyText }).containsExactly(
+            "Second",
+            "Third",
+            "Fourth",
+            "Fifth",
+        ).inOrder()
+    }
+
+    @Test
+    fun `direct room notifications preserve dm room kind`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(
+                    eventId = "\$dm:server",
+                    timestamp = 2L,
+                    body = "Hello Alice",
+                    roomIsDm = true,
+                ),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.DM)
     }
 
     @Test
@@ -80,11 +151,70 @@ class WatchNotificationBridgePublisherTest {
         )
     }
 
+    @Test
+    fun `image notification carries compact preview bytes`() = runTest {
+        val previewBytes = byteArrayOf(9, 8, 7)
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            imagePreviewLoader = { previewBytes },
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(
+                    eventId = "\$image:server",
+                    timestamp = 5L,
+                    body = null,
+                    imageUriString = "content://images/1",
+                    imageMimeType = "image/jpeg",
+                ),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.bodyText).isEqualTo("Image")
+        assertThat(payload.notification.imagePreviewBytes?.toList()).containsExactly(9.toByte(), 8.toByte(), 7.toByte()).inOrder()
+    }
+
+    @Test
+    fun `oversized image preview is dropped before publishing`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            imagePreviewLoader = { ByteArray(90 * 1024) { 1 } },
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(
+                    eventId = "\$image:server",
+                    timestamp = 5L,
+                    body = null,
+                    imageUriString = "content://images/1",
+                    imageMimeType = "image/jpeg",
+                ),
+            ),
+        )
+
+        val envelope = transport.published.single().second
+        val payload = envelope.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.imagePreviewBytes).isNull()
+        assertThat(WatchBridgeSerialization.encodeEnvelopeToBytes(envelope).size).isAtMost(WatchProtocol.MAX_PAYLOAD_BYTES)
+    }
+
     private fun aNotifiableMessageEvent(
         eventId: String,
         timestamp: Long,
-        body: String,
+        body: String?,
         threadId: ThreadId? = null,
+        imageUriString: String? = null,
+        imageMimeType: String? = null,
+        roomIsDm: Boolean = false,
     ): NotifiableMessageEvent = NotifiableMessageEvent(
         sessionId = SessionId("@alice:server"),
         roomId = RoomId("!room:server"),
@@ -96,10 +226,11 @@ class WatchNotificationBridgePublisherTest {
         timestamp = timestamp,
         senderDisambiguatedDisplayName = "Bob",
         body = body,
-        imageUriString = null,
-        imageMimeType = null,
+        imageUriString = imageUriString,
+        imageMimeType = imageMimeType,
         threadId = threadId,
         roomName = "Team Wear",
+        roomIsDm = roomIsDm,
     )
 
     private class RecordingTransport : WatchTransport {

@@ -11,37 +11,106 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import io.element.android.watchbridge.contract.WatchCompanionSettings
+import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchMessageNotification
+import io.element.android.watchbridge.contract.WatchNotificationMessagePreview
+import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
+import io.element.android.watchbridge.contract.WatchRoomKind
+import io.element.android.watchbridge.contract.parseCustomWatchNotificationVibrationPattern
 import io.element.android.wearapp.R
+import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.ui.buildWearLaunchIntent
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 
+internal data class WearResolvedNotificationVibration(
+    val pattern: WatchNotificationVibrationPattern,
+    val customTimingsMs: List<Long> = emptyList(),
+)
+
 internal class WearLocalNotificationFactory(
     private val context: Context,
+    private val roomAvatarProvider: (String) -> ByteArray? = { roomId ->
+        (context.applicationContext as? WearApp)?.bridgeClient?.getCachedAvatar(roomId)
+    },
+    private val imagePreviewProvider: (WatchMessageNotification) -> ByteArray? = { notification ->
+        notification.imagePreviewBytes
+            ?: (context.applicationContext as? WearApp)?.bridgeClient?.getCachedMediaPreview(notification.roomId, notification.eventId)
+    },
+    private val settingsProvider: () -> WatchCompanionSettings = {
+        (context.applicationContext as? WearApp)?.bridgeClient?.companionSettings?.value ?: WatchCompanionSettings()
+    },
+    private val roomInfoProvider: (String) -> WatchFavoriteRoom? = { roomId ->
+        (context.applicationContext as? WearApp)?.bridgeClient?.favorites?.value?.firstOrNull { room -> room.roomId == roomId }
+    },
 ) {
+
+    internal fun selectedVibration(notification: WatchMessageNotification): WearResolvedNotificationVibration {
+        val settings = settingsProvider()
+        notification.vibrationPatternOverride?.let {
+            return resolveConfiguredVibration(
+                pattern = it,
+                customPatternSpec = notification.customVibrationPattern.orEmpty(),
+            )
+        }
+        settings.notificationVibrations.conversationOverrides
+            .firstOrNull { it.roomId == notification.roomId }
+            ?.let { roomOverride ->
+                roomOverride.pattern?.let { pattern ->
+                    return resolveConfiguredVibration(
+                        pattern = pattern,
+                        customPatternSpec = roomOverride.customPattern,
+                    )
+                }
+            }
+        val roomInfo = roomInfoProvider(notification.roomId)
+        val roomKind = roomInfo?.kind ?: notification.roomKind
+        val isFavorite = roomInfo?.isFavorite == true
+        val patterns = settings.notificationVibrations
+        val pattern = when {
+            isFavorite && roomKind == WatchRoomKind.DM -> patterns.favoriteDms
+            isFavorite && roomKind == WatchRoomKind.GROUP -> patterns.favoriteGroups
+            roomKind == WatchRoomKind.DM -> patterns.dms
+            else -> patterns.groups
+        }
+        val customPatternSpec = when {
+            isFavorite && roomKind == WatchRoomKind.DM -> patterns.favoriteDmsCustomPattern
+            isFavorite && roomKind == WatchRoomKind.GROUP -> patterns.favoriteGroupsCustomPattern
+            roomKind == WatchRoomKind.DM -> patterns.dmsCustomPattern
+            else -> patterns.groupsCustomPattern
+        }
+        return resolveConfiguredVibration(
+            pattern = pattern,
+            customPatternSpec = customPatternSpec,
+        )
+    }
 
     fun build(
         notification: WatchMessageNotification,
         generatedAtMs: Long,
         expiresAtMs: Long?,
     ): Notification {
-        val title = notification.roomDisplayName.takeIf { it.isNotBlank() }
-            ?: notification.senderDisplayName
-            ?: context.getString(R.string.app_name)
-        val contentText = notification.bodyText?.takeIf { it.isNotBlank() }
-            ?: notification.senderDisplayName
-            ?: title
+        val title = notificationTitle(notification)
+        val contentText = notificationContentText(notification, title)
+        val imagePreview = imagePreview(notification)
 
-        return NotificationCompat.Builder(context, WearLocalNotificationManager.CHANNEL_ID)
+        return NotificationCompat.Builder(context, notificationChannelId(notification))
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
             .setContentText(contentText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setStyle(notificationStyle(notification, title, contentText, imagePreview))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
-            .setSilent(!notification.isNoisy)
+            // Watch-local alerting is controlled by the selected watch notification channel.
+            // Do not inherit phone-side silence here: the phone app may be muted while the
+            // watch companion stays enabled and should still vibrate according to the watch
+            // companion settings.
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setWhen(notification.timestampMs)
             .setShowWhen(true)
             .setNumber(notification.messageCount)
@@ -52,9 +121,142 @@ internal class WearLocalNotificationFactory(
             .addAction(threadAction(notification))
             .addAction(replyAction(notification, generatedAtMs))
             .apply {
+                largeIcon(notification)?.let(::setLargeIcon)
                 val timeoutAfterMs = expiresAtMs?.minus(System.currentTimeMillis())?.takeIf { it > 0L }
                 timeoutAfterMs?.let(::setTimeoutAfter)
             }
+            .build()
+    }
+
+    private fun notificationChannelId(notification: WatchMessageNotification): String {
+        return wearLocalNotificationChannelId(selectedVibration(notification).pattern)
+    }
+
+    private fun resolveConfiguredVibration(
+        pattern: WatchNotificationVibrationPattern,
+        customPatternSpec: String,
+    ): WearResolvedNotificationVibration {
+        if (pattern != WatchNotificationVibrationPattern.CUSTOM) {
+            return WearResolvedNotificationVibration(pattern = pattern)
+        }
+        val customTimings = parseCustomWatchNotificationVibrationPattern(customPatternSpec)
+            ?.toList()
+            .orEmpty()
+        return if (customTimings.isEmpty()) {
+            WearResolvedNotificationVibration(pattern = WatchNotificationVibrationPattern.DEFAULT)
+        } else {
+            WearResolvedNotificationVibration(
+                pattern = WatchNotificationVibrationPattern.CUSTOM,
+                customTimingsMs = customTimings,
+            )
+        }
+    }
+
+    private fun notificationTitle(notification: WatchMessageNotification): String {
+        val roomTitle = notification.roomDisplayName.takeIf { it.isNotBlank() }
+        val senderTitle = notification.senderDisplayName?.takeIf { it.isNotBlank() }
+        return when {
+            senderTitle != null && roomTitle != null && roomTitle != senderTitle -> "$senderTitle · $roomTitle"
+            roomTitle != null -> roomTitle
+            senderTitle != null -> senderTitle
+            else -> context.getString(R.string.app_name)
+        }
+    }
+
+    private fun notificationContentText(
+        notification: WatchMessageNotification,
+        fallbackTitle: String,
+    ): String {
+        return notification.bodyText?.takeIf { it.isNotBlank() }
+            ?: notification.senderDisplayName?.takeIf { it.isNotBlank() }
+            ?: notification.roomDisplayName.takeIf { it.isNotBlank() }
+            ?: fallbackTitle
+    }
+
+    private fun largeIcon(notification: WatchMessageNotification): Bitmap? {
+        val imageBytes = roomAvatarProvider(notification.roomId) ?: return null
+        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+    }
+
+    private fun imagePreview(notification: WatchMessageNotification): Bitmap? {
+        val imageBytes = imagePreviewProvider(notification) ?: return null
+        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+    }
+
+    private fun notificationStyle(
+        notification: WatchMessageNotification,
+        title: String,
+        contentText: String,
+        imagePreview: Bitmap?,
+    ): NotificationCompat.Style {
+        return if (imagePreview != null) {
+            NotificationCompat.BigPictureStyle()
+                .setBigContentTitle(title)
+                .setSummaryText(contentText)
+                .bigPicture(imagePreview)
+        } else {
+            messagingStyle(notification, contentText)
+        }
+    }
+
+    private fun messagingStyle(
+        notification: WatchMessageNotification,
+        fallbackContentText: String,
+    ): NotificationCompat.MessagingStyle {
+        val style = NotificationCompat.MessagingStyle(
+            Person.Builder()
+                .setName(context.getString(R.string.app_name))
+                .setKey("wear-local-notification")
+                .build(),
+        )
+        style.setGroupConversation(notification.threadRootEventId != null || notification.roomKind == WatchRoomKind.GROUP)
+        notificationPreviewMessages(notification, fallbackContentText).forEach { preview ->
+            style.addMessage(
+                NotificationCompat.MessagingStyle.Message(
+                    preview.bodyText,
+                    preview.timestampMs.takeIf { it > 0L } ?: notification.timestampMs,
+                    previewPerson(preview, notification),
+                ),
+            )
+        }
+        return style
+    }
+
+    private fun notificationPreviewMessages(
+        notification: WatchMessageNotification,
+        fallbackContentText: String,
+    ): List<WatchNotificationMessagePreview> {
+        val previewMessages = notification.previewMessages.filter { it.bodyText.isNotBlank() }
+        if (previewMessages.isNotEmpty()) return previewMessages
+        return listOf(
+            WatchNotificationMessagePreview(
+                senderDisplayName = notification.senderDisplayName,
+                bodyText = fallbackContentText,
+                timestampMs = notification.timestampMs,
+            ),
+        )
+    }
+
+    private fun previewPerson(
+        preview: WatchNotificationMessagePreview,
+        notification: WatchMessageNotification,
+    ): Person {
+        val senderName = preview.senderDisplayName?.takeIf { it.isNotBlank() }
+            ?: notification.senderDisplayName?.takeIf { it.isNotBlank() }
+            ?: notification.roomDisplayName.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.app_name)
+        val senderKey = buildString {
+            append(notification.notificationKey)
+            append(':')
+            append(senderName)
+            append(':')
+            append(preview.timestampMs)
+            append(':')
+            append(preview.bodyText.hashCode())
+        }
+        return Person.Builder()
+            .setName(senderName)
+            .setKey(senderKey)
             .build()
     }
 
@@ -101,7 +303,7 @@ internal class WearLocalNotificationFactory(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Action.Builder(
-            android.R.drawable.ic_menu_delete,
+            android.R.drawable.checkbox_on_background,
             context.getString(R.string.screen_wear_notification_mark_as_read),
             pendingIntent,
         )

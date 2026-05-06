@@ -38,22 +38,32 @@ class TimelineItemViewTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun `timeline image row shows unavailable placeholder when preview bytes are missing`() {
+    fun `timeline image row shows unavailable placeholder after preview timeout when bytes are missing`() {
         val unavailableText = rule.activity.getString(R.string.screen_media_preview_unavailable)
+        rule.mainClock.autoAdvance = false
 
-        rule.setContent {
-            WearAppTheme {
-                TimelineMessageRow(
-                    item = anImageTimelineItem(),
-                    mediaPreviewBytes = null,
-                    onClick = {},
-                    onOpenThread = null,
-                )
+        try {
+            rule.setContent {
+                WearAppTheme {
+                    TimelineMessageRow(
+                        item = anImageTimelineItem(),
+                        mediaPreviewBytes = null,
+                        onClick = {},
+                        onOpenThread = null,
+                    )
+                }
             }
-        }
 
-        rule.onNodeWithText(unavailableText).assertExists()
-        rule.onNodeWithText("Vacation photo").assertExists()
+            rule.onNodeWithText(unavailableText).assertDoesNotExist()
+
+            rule.mainClock.advanceTimeBy(4_100L)
+            rule.waitForIdle()
+
+            rule.onNodeWithText(unavailableText).assertExists()
+            rule.onNodeWithText("Vacation photo").assertExists()
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
     }
 
     @Test
@@ -98,12 +108,38 @@ class TimelineItemViewTest {
 
             rule.onNodeWithText(unavailableText).assertDoesNotExist()
 
-            rule.mainClock.advanceTimeBy(1_600L)
+            rule.mainClock.advanceTimeBy(3_500L)
+            rule.waitForIdle()
+
+            rule.onNodeWithText(unavailableText).assertDoesNotExist()
+
+            rule.mainClock.advanceTimeBy(600L)
             rule.waitForIdle()
 
             rule.onNodeWithText(unavailableText).assertExists()
         } finally {
             rule.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun `timeline image row requests preview when bytes are missing`() {
+        var requestCount = 0
+
+        rule.setContent {
+            WearAppTheme {
+                TimelineMessageRow(
+                    item = anImageTimelineItem(),
+                    mediaPreviewBytes = null,
+                    onRequestMediaPreview = { requestCount += 1 },
+                    onClick = {},
+                    onOpenThread = null,
+                )
+            }
+        }
+
+        rule.runOnIdle {
+            assertThat(requestCount).isEqualTo(1)
         }
     }
 
@@ -133,7 +169,7 @@ class TimelineItemViewTest {
     @Test
     fun `timeline row thread indicator opens thread root`() {
         var openedThreadRoot: String? = null
-        val replyLabel = rule.activity.getString(R.string.thread_indicator_replies, 3)
+        val replyLabel = rule.activity.resources.getQuantityString(R.plurals.thread_indicator_replies, 3, 3)
 
         rule.setContent {
             WearAppTheme {

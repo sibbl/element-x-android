@@ -29,9 +29,55 @@ enum class WatchLongPressConversationAction {
     OPEN_LATEST,
 }
 
+/** Primary action when a conversation is tapped from a Wear tile. */
+@Serializable
+enum class WatchTileConversationAction {
+    OPEN_CONVERSATION,
+    DIRECT_REPLY,
+    VOICE_RECORDING,
+}
+
+/** Built-in vibration profiles available for watch-local notifications. */
+@Serializable
+enum class WatchNotificationVibrationPattern {
+    SILENT,
+    DEFAULT,
+    DOUBLE,
+    LONG,
+    TRIPLE,
+    PULSE,
+    ESCALATING,
+    CUSTOM,
+}
+
+/** Room-specific vibration override that wins over the category default. */
+@Serializable
+data class WatchConversationVibrationOverride(
+    val roomId: String,
+    val pattern: WatchNotificationVibrationPattern? = null,
+    val customPattern: String = "",
+)
+
+/** Notification vibration settings grouped by conversation type. */
+@Serializable
+data class WatchNotificationVibrationSettings(
+    val groups: WatchNotificationVibrationPattern = WatchNotificationVibrationPattern.DEFAULT,
+    val groupsCustomPattern: String = "",
+    val dms: WatchNotificationVibrationPattern = WatchNotificationVibrationPattern.DEFAULT,
+    val dmsCustomPattern: String = "",
+    val favoriteGroups: WatchNotificationVibrationPattern = WatchNotificationVibrationPattern.DEFAULT,
+    val favoriteGroupsCustomPattern: String = "",
+    val favoriteDms: WatchNotificationVibrationPattern = WatchNotificationVibrationPattern.DEFAULT,
+    val favoriteDmsCustomPattern: String = "",
+    val conversationOverrides: List<WatchConversationVibrationOverride> = emptyList(),
+)
+
 /** Settings controlling watch companion behavior, configured from the phone app. */
 @Serializable
 data class WatchCompanionSettings(
     val longPressMessageAction: WatchLongPressMessageAction = WatchLongPressMessageAction.READ_ALOUD,
     val longPressConversationAction: WatchLongPressConversationAction = WatchLongPressConversationAction.READ_LATEST,
+    val recentConversationsTileAction: WatchTileConversationAction = WatchTileConversationAction.OPEN_CONVERSATION,
+    val favoriteConversationsTileAction: WatchTileConversationAction = WatchTileConversationAction.OPEN_CONVERSATION,
+    val notificationVibrations: WatchNotificationVibrationSettings = WatchNotificationVibrationSettings(),
 )

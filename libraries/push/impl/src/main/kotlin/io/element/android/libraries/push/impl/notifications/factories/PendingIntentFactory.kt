@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import dev.zacsweers.metro.Inject
+import io.element.android.appconfig.createOpenOnWearActivityIntent
 import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.libraries.androidutils.uri.createIgnoredUri
 import io.element.android.libraries.di.annotations.ApplicationContext
@@ -127,8 +128,7 @@ class PendingIntentFactory(
         eventId: EventId?,
         threadId: ThreadId?,
     ): PendingIntent {
-        val intent = Intent(WearCompanionConfig.ACTION_OPEN_ON_WEAR)
-            .setPackage(context.packageName)
+        val intent = context.createOpenOnWearActivityIntent()
             .setData(
                 createIgnoredUri(
                     buildString {

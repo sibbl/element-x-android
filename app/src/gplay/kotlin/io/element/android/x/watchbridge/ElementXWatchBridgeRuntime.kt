@@ -79,11 +79,13 @@ import io.element.android.x.di.AppGraph
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -169,46 +171,65 @@ object ElementXWatchBridgeRuntime {
         }
     }
 
+    fun visibleWatchRooms(context: Context): Flow<List<WatchFavoriteRoom>> = flow {
+        val appContext = context.applicationContext
+        val port = createRoomListWatchPort(appContext)
+        if (port == null) {
+            emit(emptyList())
+            return@flow
+        }
+        port.ensureRoomListLoaded(ROOM_LIST_PAGE_SIZE * 2)
+        emitAll(port.favorites())
+    }.flowOn(Dispatchers.Default)
+
     private suspend fun getOrCreateDispatcher(context: Context): WatchBridgeDispatcher? = mutex.withLock {
         Timber.d("WatchBridge initializing dispatcher")
         val graph = ((context.applicationContext as? DependencyInjectionGraphOwner)?.graph as? AppGraph)
-        if (graph == null) {
-            Timber.e("WatchBridge graph is null")
-            return@withLock null
-        }
-        val sessionId = graph.activeSessionId()
-        if (sessionId == null) {
-            Timber.e("WatchBridge sessionId is null")
-            return@withLock null
-        }
+            ?: return@withLock null
+        val sessionId = graph.activeSessionId() ?: return@withLock null
         activeBridge?.takeIf { it.sessionId == sessionId }?.let { return@withLock it.dispatcher }
 
         activeBridge?.dispatcher?.stop()
-        val clientResult = graph.matrixClientProvider.getOrRestore(sessionId)
-        if (clientResult.isFailure) {
-            Timber.e(clientResult.exceptionOrNull(), "WatchBridge matrix client restoration failed")
-            return@withLock null
-        }
-        val client = clientResult.getOrNull()
-        if (client == null) {
-            Timber.e("WatchBridge matrix client is null after restore")
-            return@withLock null
-        }
+        val roomPort = createRoomListWatchPort(context) ?: return@withLock null
         val dispatcher = WatchBridgeDispatcher(
-            port = MatrixRoomListWatchPort(
-                context = context,
-                client = client,
-                imageLoader = graph.imageLoaderHolder.get(client),
-                notificationBitmapLoader = graph.notificationBitmapLoader,
-            ),
+            port = roomPort,
             transport = PlayServicesWatchTransport(context),
-            scope = client.sessionCoroutineScope,
+            scope = roomPort.client.sessionCoroutineScope,
             settingsStore = settingsStore(context),
         )
         dispatcher.start()
         activeBridge = ActiveBridge(sessionId, dispatcher)
         Timber.d("WatchBridge dispatcher started for session=%s", sessionId.value)
         dispatcher
+    }
+
+    private suspend fun createRoomListWatchPort(context: Context): MatrixRoomListWatchPort? {
+        val graph = ((context.applicationContext as? DependencyInjectionGraphOwner)?.graph as? AppGraph)
+        if (graph == null) {
+            Timber.e("WatchBridge graph is null")
+            return null
+        }
+        val sessionId = graph.activeSessionId()
+        if (sessionId == null) {
+            Timber.e("WatchBridge sessionId is null")
+            return null
+        }
+        val clientResult = graph.matrixClientProvider.getOrRestore(sessionId)
+        if (clientResult.isFailure) {
+            Timber.e(clientResult.exceptionOrNull(), "WatchBridge matrix client restoration failed")
+            return null
+        }
+        val client = clientResult.getOrNull()
+        if (client == null) {
+            Timber.e("WatchBridge matrix client is null after restore")
+            return null
+        }
+        return MatrixRoomListWatchPort(
+            context = context,
+            client = client,
+            imageLoader = graph.imageLoaderHolder.get(client),
+            notificationBitmapLoader = graph.notificationBitmapLoader,
+        )
     }
 
     private suspend fun AppGraph.activeSessionId(): SessionId? {
@@ -227,7 +248,7 @@ object ElementXWatchBridgeRuntime {
 
 private class MatrixRoomListWatchPort(
     private val context: Context,
-    private val client: MatrixClient,
+    internal val client: MatrixClient,
     private val imageLoader: ImageLoader,
     private val notificationBitmapLoader: NotificationBitmapLoader,
 ) : ElementXWatchPort {
@@ -276,18 +297,26 @@ private class MatrixRoomListWatchPort(
     override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = flow {
         val room = joinedRoom(roomId) ?: return@flow
         room.subscribeToSync()
-        // Kick off backward pagination to ensure items are loaded (especially for encrypted rooms
-        // where the live timeline may initially be empty until decryption completes).
         val timeline = room.liveTimeline
-        runCatching { timeline.paginate(io.element.android.libraries.matrix.api.timeline.Timeline.PaginationDirection.BACKWARDS) }
-            .onFailure { Timber.d(it, "WatchBridge initial back-paginate for room=%s", roomId) }
-        emitAll(
-            room.liveTimeline.timelineItems.map { items ->
-                val projection = items.toWatchTimelineProjection(roomId = roomId, limit = limit)
-                mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
-                projection.items
+        coroutineScope {
+            // Backward pagination can be slow for encrypted / media-heavy rooms; do it alongside
+            // the live projection so the watch gets the current slice without waiting for it.
+            val paginationJob = launch {
+                runCatching { timeline.paginate(io.element.android.libraries.matrix.api.timeline.Timeline.PaginationDirection.BACKWARDS) }
+                    .onFailure { Timber.d(it, "WatchBridge initial back-paginate for room=%s", roomId) }
             }
-        )
+            try {
+                emitAll(
+                    timeline.timelineItems.map { items ->
+                        val projection = items.toWatchTimelineProjection(roomId = roomId, limit = limit)
+                        mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
+                        projection.items
+                    }
+                )
+            } finally {
+                paginationJob.cancel()
+            }
+        }
     }
 
     override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> {
@@ -302,16 +331,24 @@ private class MatrixRoomListWatchPort(
     override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>> = flow {
         val room = joinedRoom(roomId) ?: return@flow
         val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrNull() ?: return@flow
-        runCatching { timeline.paginate(io.element.android.libraries.matrix.api.timeline.Timeline.PaginationDirection.BACKWARDS) }
-            .onFailure { Timber.d(it, "WatchBridge initial back-paginate for thread=%s/%s", roomId, threadRootEventId) }
         try {
-            emitAll(
-                timeline.timelineItems.map { items ->
-                    val projection = items.toWatchThreadProjection(roomId, threadRootEventId, limit)
-                    mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
-                    projection.items
+            coroutineScope {
+                val paginationJob = launch {
+                    runCatching { timeline.paginate(io.element.android.libraries.matrix.api.timeline.Timeline.PaginationDirection.BACKWARDS) }
+                        .onFailure { Timber.d(it, "WatchBridge initial back-paginate for thread=%s/%s", roomId, threadRootEventId) }
                 }
-            )
+                try {
+                    emitAll(
+                        timeline.timelineItems.map { items ->
+                            val projection = items.toWatchThreadProjection(roomId, threadRootEventId, limit)
+                            mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
+                            projection.items
+                        }
+                    )
+                } finally {
+                    paginationJob.cancel()
+                }
+            }
         } finally {
             timeline.close()
         }

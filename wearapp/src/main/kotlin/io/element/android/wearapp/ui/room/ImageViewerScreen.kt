@@ -63,8 +63,9 @@ fun ImageViewerScreen(
         if (imageBytes != null) {
             shouldShowUnavailable = false
         } else {
+            bridge.requestMediaPreview(roomId, eventId)
             shouldShowUnavailable = false
-            delay(1_500L)
+            delay(4_000L)
             shouldShowUnavailable = true
         }
     }

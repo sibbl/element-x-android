@@ -9,12 +9,14 @@
 package io.element.android.libraries.push.impl.notifications.factories
 
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.google.common.truth.Truth.assertThat
 import io.element.android.appconfig.NotificationConfig
+import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.features.enterprise.api.EnterpriseService
 import io.element.android.features.enterprise.test.FakeEnterpriseService
 import io.element.android.libraries.core.meta.BuildMeta
@@ -50,6 +52,7 @@ import io.element.android.tests.testutils.robolectric.RobolectricTest
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 
 class DefaultNotificationCreatorTest : RobolectricTest() {
     @Test
@@ -301,8 +304,75 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
         result.commonAssertions()
         result.wearAssertions(
             expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, null)}",
-            expectedContentAction = 1,
-            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE, OPEN_ON_WEAR_ACTION_TITLE),
+            expectedContentAction = 0,
+            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE),
+        )
+    }
+
+    @Test
+    fun `test createMessagesListNotification includes open on wear when activity is packaged`() = runTest {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val component = ComponentName(context.packageName, WearCompanionConfig.OPEN_ON_WEAR_ACTIVITY_CLASS_NAME)
+        shadowOf(context.packageManager).addActivityIfNotPresent(component)
+        try {
+            val sut = createNotificationCreator(context = context)
+            val result = sut.createMessagesListNotification(
+                notificationAccountParams = aNotificationAccountParams(),
+                roomInfo = RoomEventGroupInfo(
+                    sessionId = A_SESSION_ID,
+                    roomId = A_ROOM_ID,
+                    roomDisplayName = "roomDisplayName",
+                    hasSmartReplyError = false,
+                    shouldBing = false,
+                    customSound = null,
+                    isUpdated = false,
+                ),
+                threadId = null,
+                largeIcon = null,
+                lastMessageTimestamp = 123_456L,
+                tickerText = "tickerText",
+                existingNotification = null,
+                imageLoader = FakeImageLoader(),
+                events = listOf(aNotifiableMessageEvent()),
+            )
+            result.commonAssertions()
+            result.wearAssertions(
+                expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, null)}",
+                expectedContentAction = 1,
+                expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE, OPEN_ON_WEAR_ACTION_TITLE),
+            )
+        } finally {
+            shadowOf(context.packageManager).removeActivity(component)
+        }
+    }
+
+    @Test
+    fun `test createMessagesListNotification omits open on wear when activity is missing`() = runTest {
+        val sut = createNotificationCreator()
+        val result = sut.createMessagesListNotification(
+            notificationAccountParams = aNotificationAccountParams(),
+            roomInfo = RoomEventGroupInfo(
+                sessionId = A_SESSION_ID,
+                roomId = A_ROOM_ID,
+                roomDisplayName = "roomDisplayName",
+                hasSmartReplyError = false,
+                shouldBing = false,
+                customSound = null,
+                isUpdated = false,
+            ),
+            threadId = null,
+            largeIcon = null,
+            lastMessageTimestamp = 123_456L,
+            tickerText = "tickerText",
+            existingNotification = null,
+            imageLoader = FakeImageLoader(),
+            events = listOf(aNotifiableMessageEvent()),
+        )
+
+        result.wearAssertions(
+            expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, null)}",
+            expectedContentAction = 0,
+            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE),
         )
     }
 
@@ -335,8 +405,8 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
         result.commonAssertions()
         result.wearAssertions(
             expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, A_THREAD_ID)}",
-            expectedContentAction = 1,
-            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE, OPEN_ON_WEAR_ACTION_TITLE),
+            expectedContentAction = 0,
+            expectedWearActionTitles = listOf(QUICK_REPLY_ACTION_TITLE),
         )
     }
 

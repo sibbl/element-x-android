@@ -39,7 +39,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,13 +49,13 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.PressableWearChip
+import io.element.android.wearapp.ui.common.wearTapAndLongPress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -67,6 +69,7 @@ import kotlinx.coroutines.withContext
 internal fun TimelineMessageRow(
     item: WatchTimelineItem,
     mediaPreviewBytes: ByteArray? = null,
+    onRequestMediaPreview: (() -> Unit)? = null,
     onClick: () -> Unit,
     onOpenThread: ((String) -> Unit)?,
     showSender: Boolean = true,
@@ -97,7 +100,7 @@ internal fun TimelineMessageRow(
                         text = item.senderDisplayName ?: item.senderId,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelLarge.copy(
+                        style = MaterialTheme.typography.bodySmall.copy(
                             fontWeight = FontWeight.SemiBold,
                             color = primaryTextColor,
                         ),
@@ -108,6 +111,7 @@ internal fun TimelineMessageRow(
                     MessagePreviewBody(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
+                        onRequestMediaPreview = onRequestMediaPreview,
                         maxLines = 10,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = primaryTextColor,
@@ -120,6 +124,7 @@ internal fun TimelineMessageRow(
                     MessagePreviewBody(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
+                        onRequestMediaPreview = onRequestMediaPreview,
                         maxLines = 10,
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = secondaryTextColor,
@@ -151,6 +156,7 @@ internal fun TimelineMessageRow(
 internal fun MessagePreviewBody(
     item: WatchTimelineItem,
     mediaPreviewBytes: ByteArray? = null,
+    onRequestMediaPreview: (() -> Unit)? = null,
     maxLines: Int,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     modifier: Modifier = Modifier,
@@ -167,6 +173,7 @@ internal fun MessagePreviewBody(
         WatchTimelineItemKind.IMAGE -> ImageMessagePreview(
             item = item,
             mediaPreviewBytes = mediaPreviewBytes,
+            onRequestPreview = onRequestMediaPreview,
             captionStyle = style,
             captionMaxLines = maxLines,
             captionOverflow = overflow,
@@ -230,6 +237,7 @@ internal fun MessagePreviewBody(
 internal fun MessageDetailedBody(
     item: WatchTimelineItem,
     mediaPreviewBytes: ByteArray? = null,
+    onRequestMediaPreview: (() -> Unit)? = null,
     onOpenImage: (() -> Unit)? = null,
     onPlayVoice: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -239,6 +247,7 @@ internal fun MessageDetailedBody(
         WatchTimelineItemKind.IMAGE -> ImageMessageDetailedView(
             item = item,
             mediaPreviewBytes = mediaPreviewBytes,
+            onRequestPreview = onRequestMediaPreview,
             onOpenImage = onOpenImage,
             modifier = modifier,
         )
@@ -250,6 +259,7 @@ internal fun MessageDetailedBody(
         else -> MessagePreviewBody(
             item = item,
             mediaPreviewBytes = mediaPreviewBytes,
+            onRequestMediaPreview = onRequestMediaPreview,
             maxLines = Int.MAX_VALUE,
             style = MaterialTheme.typography.bodyMedium,
             modifier = modifier,
@@ -262,6 +272,7 @@ internal fun MessageDetailedBody(
 private fun ImageMessagePreview(
     item: WatchTimelineItem,
     mediaPreviewBytes: ByteArray?,
+    onRequestPreview: (() -> Unit)?,
     captionStyle: androidx.compose.ui.text.TextStyle,
     captionMaxLines: Int,
     captionOverflow: TextOverflow,
@@ -275,7 +286,7 @@ private fun ImageMessagePreview(
             cacheKey = mediaPreviewCacheKey(item.roomId, item.eventId),
             mediaPreviewBytes = mediaPreviewBytes,
             height = 72.dp,
-            previewExpected = item.mediaPreview != null,
+            onRequestPreview = onRequestPreview,
         )
         Text(
             text = item.bodyText ?: stringResource(R.string.timeline_image),
@@ -290,6 +301,7 @@ private fun ImageMessagePreview(
 private fun ImageMessageDetailedView(
     item: WatchTimelineItem,
     mediaPreviewBytes: ByteArray?,
+    onRequestPreview: (() -> Unit)?,
     onOpenImage: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -301,8 +313,8 @@ private fun ImageMessageDetailedView(
             cacheKey = mediaPreviewCacheKey(item.roomId, item.eventId),
             mediaPreviewBytes = mediaPreviewBytes,
             height = 112.dp,
-            previewExpected = item.mediaPreview != null,
             onClick = onOpenImage,
+            onRequestPreview = onRequestPreview,
         )
         Text(
             text = item.bodyText ?: stringResource(R.string.timeline_image),
@@ -318,25 +330,27 @@ private fun MediaPreviewImage(
     cacheKey: String,
     mediaPreviewBytes: ByteArray?,
     height: androidx.compose.ui.unit.Dp,
-    previewExpected: Boolean = false,
     onClick: (() -> Unit)? = null,
+    onRequestPreview: (() -> Unit)? = null,
 ) {
     val imageBitmap = rememberDecodedImageBitmap(cacheKey = cacheKey, imageBytes = mediaPreviewBytes)
-    var shouldShowUnavailable by remember(previewExpected, mediaPreviewBytes) {
-        mutableStateOf(mediaPreviewBytes == null && !previewExpected)
+    var shouldShowUnavailable by remember(mediaPreviewBytes) {
+        mutableStateOf(false)
     }
 
-    LaunchedEffect(previewExpected, mediaPreviewBytes) {
-        when {
-            mediaPreviewBytes != null -> shouldShowUnavailable = false
-            previewExpected -> {
-                shouldShowUnavailable = false
-                delay(1_500L)
-                if (mediaPreviewBytes == null) {
-                    shouldShowUnavailable = true
-                }
-            }
-            else -> shouldShowUnavailable = true
+    LaunchedEffect(cacheKey, mediaPreviewBytes) {
+        if (mediaPreviewBytes == null) {
+            onRequestPreview?.invoke()
+        }
+    }
+
+    LaunchedEffect(mediaPreviewBytes) {
+        if (mediaPreviewBytes != null) {
+            shouldShowUnavailable = false
+        } else {
+            shouldShowUnavailable = false
+            delay(4_000L)
+            shouldShowUnavailable = true
         }
     }
 
@@ -364,7 +378,7 @@ private fun MediaPreviewImage(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-        } else if (mediaPreviewBytes != null || (previewExpected && !shouldShowUnavailable)) {
+        } else if (!shouldShowUnavailable) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp))
         } else {
             Column(
@@ -388,8 +402,12 @@ private fun MediaPreviewImage(
 }
 
 private object DecodedImageBitmapCache {
-    private const val MAX_ENTRIES = 64
-    private val cache = object : LruCache<String, ImageBitmap>(MAX_ENTRIES) {}
+    private const val MAX_BYTES = 4 * 1024 * 1024
+    private val cache = object : LruCache<String, ImageBitmap>(MAX_BYTES) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int {
+            return value.width * value.height * 4
+        }
+    }
 
     fun get(key: String): ImageBitmap? = synchronized(this) { cache.get(key) }
 
@@ -536,17 +554,25 @@ internal fun ThreadIndicatorChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedButton(
+    Box(
         modifier = modifier.fillMaxWidth(),
-        onClick = onClick,
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .wearTapAndLongPress(onTap = onClick)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .semantics(mergeDescendants = true) {},
+        ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = stringResource(R.string.thread_indicator_replies, replyCount),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    text = pluralStringResource(R.plurals.thread_indicator_replies, replyCount, replyCount),
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -555,10 +581,11 @@ internal fun ThreadIndicatorChip(
                     text = preview,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
         }
     }
 }

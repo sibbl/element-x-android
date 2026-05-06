@@ -110,6 +110,7 @@ fun ThreadScreen(
         savedListPosition = savedListPosition,
         onListPositionChange = onListPositionChange,
         mediaPreviewFlowProvider = bridge::mediaPreviewFlow,
+        onRequestMediaPreview = bridge::requestMediaPreview,
         onLongPressMessage = { item -> tts.speak(item.displayText()) },
         onReact = {
             timelineItems.lastOrNull()?.let { lastItem ->

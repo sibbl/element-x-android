@@ -81,7 +81,7 @@ fun ComposerBar(
                 }
             }
             FilledIconButton(
-                modifier = Modifier.size(54.dp),
+                modifier = Modifier.size(44.dp),
                 onClick = onReply,
             ) {
                 Icon(

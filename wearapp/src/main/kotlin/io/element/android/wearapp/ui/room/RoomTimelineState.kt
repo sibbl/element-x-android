@@ -25,7 +25,6 @@ internal data class RoomTimelineState(
     val summary: WatchRoomSummary? = null,
     val items: List<WatchTimelineItem> = emptyList(),
     val hasReceivedDelta: Boolean = false,
-    val hasReceivedLiveDelta: Boolean = false,
 )
 
 @Composable
@@ -40,7 +39,6 @@ internal fun rememberRoomTimelineState(
     var hasReceivedDelta by remember(roomId) {
         mutableStateOf(bridge.hasCachedTimelineSnapshot(roomId) || cachedItems.isNotEmpty())
     }
-    var hasReceivedLiveDelta by remember(roomId) { mutableStateOf(false) }
 
     LaunchedEffect(bridge, roomId) {
         runCatching {
@@ -61,7 +59,6 @@ internal fun rememberRoomTimelineState(
         bridge.syncEvents.filterIsInstance<WatchSync.TimelineDelta>()
             .filter { delta -> delta.roomId == roomId }
             .collect {
-                hasReceivedLiveDelta = true
                 hasReceivedDelta = true
                 items = bridge.getCachedTimeline(roomId)
             }
@@ -71,7 +68,6 @@ internal fun rememberRoomTimelineState(
         summary = summary,
         items = items,
         hasReceivedDelta = hasReceivedDelta,
-        hasReceivedLiveDelta = hasReceivedLiveDelta,
     )
 }
 

@@ -39,6 +39,6 @@ interface CompanionNotificationBridge {
 @BindingContainer
 @ContributesTo(AppScope::class)
 interface CompanionNotificationBridgeModule {
-    @Multibinds
+    @Multibinds(allowEmpty = true)
     fun companionNotificationBridges(): Set<@JvmSuppressWildcards CompanionNotificationBridge>
 }

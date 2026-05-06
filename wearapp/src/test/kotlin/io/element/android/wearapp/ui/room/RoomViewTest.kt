@@ -189,7 +189,7 @@ class RoomViewTest {
     }
 
     @Test
-    fun `keep scrolled to bottom follows fresh items after open`() {
+    fun `force scroll request follows first fresh item after open`() {
         lateinit var listState: ScalingLazyListState
         var handledScrollRequestId: Long? = null
         val initialItems = (1..20).map { index ->
@@ -211,7 +211,6 @@ class RoomViewTest {
                 isLoading = false,
                 scrollRequestId = 7L,
                 forceScrollToBottom = true,
-                keepScrolledToBottom = true,
             ),
         )
 

@@ -10,8 +10,12 @@
 
 package io.element.android.features.preferences.impl.root
 
+import android.content.ComponentName
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.ReceiveTurbine
 import com.google.common.truth.Truth.assertThat
+import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.features.enterprise.api.SessionEnterpriseService
 import io.element.android.features.enterprise.test.FakeSessionEnterpriseService
 import io.element.android.features.logout.api.direct.aDirectLogoutState
@@ -52,7 +56,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
+@RunWith(RobolectricTestRunner::class)
 class PreferencesRootPresenterTest {
     @get:Rule
     val warmUpRule = WarmUpRule()
@@ -320,12 +328,45 @@ class PreferencesRootPresenterTest {
         }
     }
 
+    @Test
+    fun `present - watch companion settings are hidden when settings activity is missing`() = runTest {
+        createPresenter(
+            matrixClient = FakeMatrixClient(
+                canDeactivateAccountResult = { true },
+            ),
+        ).test {
+            val state = awaitFirstItem()
+            assertThat(state.showWatchCompanionSettings).isFalse()
+        }
+    }
+
+    @Test
+    fun `present - watch companion settings are shown when settings activity is packaged`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val component = ComponentName(context.packageName, WearCompanionConfig.SETTINGS_ACTIVITY_CLASS_NAME)
+        shadowOf(context.packageManager).addActivityIfNotPresent(component)
+        try {
+            createPresenter(
+                context = context,
+                matrixClient = FakeMatrixClient(
+                    canDeactivateAccountResult = { true },
+                ),
+            ).test {
+                val state = awaitFirstItem()
+                assertThat(state.showWatchCompanionSettings).isTrue()
+            }
+        } finally {
+            shadowOf(context.packageManager).removeActivity(component)
+        }
+    }
+
     private suspend fun <T> ReceiveTurbine<T>.awaitFirstItem(): T {
         skipItems(1)
         return awaitItem()
     }
 
     private fun createPresenter(
+        context: Context = ApplicationProvider.getApplicationContext(),
         matrixClient: FakeMatrixClient = FakeMatrixClient(),
         sessionVerificationService: FakeSessionVerificationService = FakeSessionVerificationService(),
         showDeveloperSettingsProvider: ShowDeveloperSettingsProvider = ShowDeveloperSettingsProvider(aBuildMeta(BuildType.DEBUG)),
@@ -335,6 +376,7 @@ class PreferencesRootPresenterTest {
         sessionStore: SessionStore = InMemorySessionStore(),
         sessionEnterpriseService: SessionEnterpriseService = FakeSessionEnterpriseService(),
     ) = PreferencesRootPresenter(
+        context = context,
         matrixClient = matrixClient,
         sessionVerificationService = sessionVerificationService,
         analyticsService = FakeAnalyticsService(),

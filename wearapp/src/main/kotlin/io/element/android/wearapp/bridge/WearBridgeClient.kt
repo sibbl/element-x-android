@@ -113,6 +113,7 @@ class WearBridgeClient(private val context: Context) {
     private val _mediaPreviewImages = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
     val mediaPreviewImages: StateFlow<Map<String, ByteArray>> = _mediaPreviewImages.asStateFlow()
     private val mediaPreviewStateFlows = ConcurrentHashMap<String, MutableStateFlow<ByteArray?>>()
+    private val pendingMediaPreviewRequests = ConcurrentHashMap.newKeySet<String>()
 
     /** In-memory cache of last-known timeline items per room. Survives navigation. */
     private val _timelineCache = mutableMapOf<String, CachedTimeline>()
@@ -149,11 +150,35 @@ class WearBridgeClient(private val context: Context) {
     fun getCachedMediaPreview(roomId: String, eventId: String): ByteArray? =
         _mediaPreviewImages.value[mediaPreviewCacheKey(roomId, eventId)]
 
+    fun getCachedAvatar(roomId: String): ByteArray? = _avatarImages.value[roomId]
+
     fun mediaPreviewFlow(roomId: String, eventId: String): StateFlow<ByteArray?> {
         val key = mediaPreviewCacheKey(roomId, eventId)
         return mediaPreviewStateFlows.getOrPut(key) {
             MutableStateFlow(getCachedMediaPreview(roomId, eventId))
         }.asStateFlow()
+    }
+
+    fun requestMediaPreview(roomId: String, eventId: String) {
+        val key = mediaPreviewCacheKey(roomId, eventId)
+        if (getCachedMediaPreview(roomId, eventId) != null) return
+        if (!pendingMediaPreviewRequests.add(key)) return
+
+        scope.launch {
+            try {
+                sendAwaitTerminalAck { requestId ->
+                    WatchCommand.RequestMediaPreview(
+                        requestId = requestId,
+                        roomId = roomId,
+                        eventId = eventId,
+                    )
+                }
+            } catch (failure: Throwable) {
+                Timber.w(failure, "request media preview failed for room=%s event=%s", roomId, eventId)
+            } finally {
+                pendingMediaPreviewRequests.remove(key)
+            }
+        }
     }
 
     fun hasCachedThreadSnapshot(roomId: String, threadRootEventId: String): Boolean =
@@ -537,6 +562,23 @@ class WearBridgeClient(private val context: Context) {
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.MessageNotification -> {
+                p.notification.imagePreviewBytes?.let { imageBytes ->
+                    updateMediaPreviewState(
+                        key = mediaPreviewCacheKey(p.notification.roomId, p.notification.eventId),
+                        imageBytes = imageBytes,
+                    )
+                    if (persist) {
+                        scheduleCachePersist(
+                            envelope.copy(
+                                payload = WatchSync.MediaPreview(
+                                    roomId = p.notification.roomId,
+                                    eventId = p.notification.eventId,
+                                    imageBytes = imageBytes,
+                                ),
+                            ),
+                        )
+                    }
+                }
                 localNotificationManager.show(
                     notification = p.notification,
                     generatedAtMs = envelope.generatedAtMs,

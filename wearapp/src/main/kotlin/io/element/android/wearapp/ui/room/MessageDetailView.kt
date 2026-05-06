@@ -50,6 +50,7 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "🎉", "🙏", "
 internal fun MessageDetailView(
     state: MessageDetailViewState,
     mediaPreviewBytes: ByteArray? = null,
+    onRequestMediaPreview: (() -> Unit)? = null,
     onReply: () -> Unit,
     onVoice: (() -> Unit)?,
     onReadAloud: () -> Unit,
@@ -110,6 +111,7 @@ internal fun MessageDetailView(
                     MessageDetailedBody(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
+                        onRequestMediaPreview = onRequestMediaPreview,
                         onOpenImage = onOpenImage,
                         onPlayVoice = { url ->
                             if (voiceState == WearVoicePlayer.State.PLAYING) {

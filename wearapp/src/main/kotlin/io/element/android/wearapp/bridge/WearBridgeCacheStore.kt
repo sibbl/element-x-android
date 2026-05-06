@@ -9,6 +9,7 @@ package io.element.android.wearapp.bridge
 
 import android.content.Context
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
+import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
@@ -91,6 +92,16 @@ internal class WearBridgeCacheStore(
                 ?.decodeEnvelope()
                 ?.payload as? WatchSync.FavoritesSnapshot
             payload?.rooms.orEmpty()
+        }
+    }
+
+    suspend fun readSettings(): WatchCompanionSettings = withContext(ioDispatcher) {
+        mutex.withLock {
+            val payload = settingsFile()
+                .takeIf(File::exists)
+                ?.decodeEnvelope()
+                ?.payload as? WatchSync.SettingsUpdate
+            payload?.settings ?: WatchCompanionSettings()
         }
     }
 

@@ -7,8 +7,8 @@
 
 package io.element.android.wearapp.tile
 
-import android.content.Intent
 import android.content.ComponentName
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.BitmapShader
@@ -46,15 +46,19 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.wearapp.ui.buildWearLaunchIntent
+import io.element.android.wearapp.ui.buildWearTileDirectReplyIntent
 import io.element.android.wearapp.ui.isOpenAppTileClickableId
 import io.element.android.wearapp.ui.openAppTileClickableId
-import io.element.android.wearapp.ui.openRoomTileClickableId
-import io.element.android.wearapp.ui.parseOpenRoomTileClickableId
+import io.element.android.wearapp.ui.parseRoomTileClickableId
+import io.element.android.wearapp.ui.roomTileClickableId
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
+import io.element.android.watchbridge.contract.WatchTileConversationAction
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeCacheStore
 import io.element.android.wearapp.ui.common.toInitials
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
@@ -110,7 +114,7 @@ abstract class ConversationTileServiceBase : TileService() {
             TileBuilders.Tile.Builder()
                 .setResourcesVersion(snapshot.resourcesVersion)
                 .setFreshnessIntervalMillis(60_000L)
-                .setTileTimeline(Timeline.fromLayoutElement(buildLayout(snapshot.rooms)))
+                .setTileTimeline(Timeline.fromLayoutElement(buildLayout(snapshot.rooms, snapshot.tileAction)))
                 .build()
         }.onFailure {
             Timber.e(it, "tile request failed")
@@ -165,11 +169,17 @@ abstract class ConversationTileServiceBase : TileService() {
         )
     }
 
-    private fun buildLayout(rooms: List<WatchFavoriteRoom>): LayoutElement {
-        return if (rooms.isEmpty()) buildEmptyLayout() else buildRoomsLayout(rooms)
+    private fun buildLayout(
+        rooms: List<WatchFavoriteRoom>,
+        tileAction: WatchTileConversationAction,
+    ): LayoutElement {
+        return if (rooms.isEmpty()) buildEmptyLayout() else buildRoomsLayout(rooms, tileAction)
     }
 
-    private fun buildRoomsLayout(rooms: List<WatchFavoriteRoom>): LayoutElement {
+    private fun buildRoomsLayout(
+        rooms: List<WatchFavoriteRoom>,
+        tileAction: WatchTileConversationAction,
+    ): LayoutElement {
         val rowSizes = honeycombRows(rooms.size)
         var cursor = 0
         val column = Column.Builder()
@@ -182,7 +192,7 @@ abstract class ConversationTileServiceBase : TileService() {
             }
             val rowRooms = rooms.subList(cursor, cursor + rowSize)
             cursor += rowSize
-            column.addContent(avatarRow(rowRooms))
+            column.addContent(avatarRow(rowRooms, tileAction))
         }
 
         return container(column.build())
@@ -246,7 +256,10 @@ abstract class ConversationTileServiceBase : TileService() {
             .build()
     }
 
-    private fun avatarRow(rowRooms: List<WatchFavoriteRoom>): LayoutElement {
+    private fun avatarRow(
+        rowRooms: List<WatchFavoriteRoom>,
+        tileAction: WatchTileConversationAction,
+    ): LayoutElement {
         val row = Row.Builder()
             .setWidth(wrap())
             .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
@@ -254,7 +267,7 @@ abstract class ConversationTileServiceBase : TileService() {
             if (index > 0) {
                 row.addContent(Spacer.Builder().setWidth(dp(AVATAR_GAP_DP)).build())
             }
-            row.addContent(avatarImage(room))
+            row.addContent(avatarImage(room, tileAction))
         }
         return Box.Builder()
             .setWidth(expand())
@@ -263,7 +276,10 @@ abstract class ConversationTileServiceBase : TileService() {
             .build()
     }
 
-    private fun avatarImage(room: WatchFavoriteRoom): LayoutElement {
+    private fun avatarImage(
+        room: WatchFavoriteRoom,
+        tileAction: WatchTileConversationAction,
+    ): LayoutElement {
         return Image.Builder()
             .setResourceId(avatarResourceId(room.roomId))
             .setWidth(dp(AVATAR_SIZE_DP))
@@ -271,15 +287,18 @@ abstract class ConversationTileServiceBase : TileService() {
             .setContentScaleMode(CONTENT_SCALE_MODE_CROP)
             .setModifiers(
                 Modifiers.Builder()
-                    .setClickable(openRoomClickable(room.roomId))
+                    .setClickable(openRoomClickable(room.roomId, tileAction))
                     .build(),
             )
             .build()
     }
 
-    private fun openRoomClickable(roomId: String): Clickable {
+    private fun openRoomClickable(
+        roomId: String,
+        tileAction: WatchTileConversationAction,
+    ): Clickable {
         return Clickable.Builder()
-            .setId(openRoomTileClickableId(roomId))
+            .setId(roomTileClickableId(roomId, tileAction))
             .setOnClick(ActionBuilders.LoadAction.Builder().build())
             .build()
     }
@@ -295,8 +314,26 @@ abstract class ConversationTileServiceBase : TileService() {
         val clickableId = requestParams.currentState.lastClickableId
         when {
             isOpenAppTileClickableId(clickableId) -> launchIntent(buildWearLaunchIntent(this))
-            else -> parseOpenRoomTileClickableId(clickableId)?.let { roomId ->
-                launchIntent(buildWearLaunchIntent(context = this, roomId = roomId))
+            else -> parseRoomTileClickableId(clickableId)?.let { target ->
+                when (target.action) {
+                    WatchTileConversationAction.OPEN_CONVERSATION -> {
+                        launchIntent(buildWearLaunchIntent(context = this, roomId = target.roomId))
+                    }
+                    WatchTileConversationAction.DIRECT_REPLY -> {
+                        launchIntent(buildWearTileDirectReplyIntent(context = this, roomId = target.roomId))
+                    }
+                    WatchTileConversationAction.VOICE_RECORDING -> {
+                        launchIntent(
+                            Intent(this, VoiceRecorderActivity::class.java)
+                                .putExtra("roomId", target.roomId)
+                                .addFlags(
+                                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                                ),
+                        )
+                    }
+                }
             }
         }
     }
@@ -308,6 +345,7 @@ abstract class ConversationTileServiceBase : TileService() {
 
     private fun readTileSnapshot(): TileSnapshot = runBlocking {
         val cacheStore = WearBridgeCacheStore(this@ConversationTileServiceBase)
+        val settings = cacheStore.readSettings()
         val rooms = cacheStore.readFavorites()
             .filter(tileMode::matches)
             .sortedByDescending { it.lastActivityTsMs }
@@ -317,8 +355,16 @@ abstract class ConversationTileServiceBase : TileService() {
         TileSnapshot(
             rooms = rooms,
             avatarBytes = avatarBytes,
+            tileAction = tileMode.tileAction(settings),
             resourcesVersion = buildResourcesVersion(rooms, avatarBytes),
         )
+    }
+
+    private fun ConversationTileMode.tileAction(settings: WatchCompanionSettings): WatchTileConversationAction {
+        return when (this) {
+            ConversationTileMode.RECENT -> settings.recentConversationsTileAction
+            ConversationTileMode.FAVORITES -> settings.favoriteConversationsTileAction
+        }
     }
 
     private fun buildResourcesVersion(
@@ -424,6 +470,7 @@ abstract class ConversationTileServiceBase : TileService() {
     private data class TileSnapshot(
         val rooms: List<WatchFavoriteRoom> = emptyList(),
         val avatarBytes: Map<String, ByteArray> = emptyMap(),
+        val tileAction: WatchTileConversationAction = WatchTileConversationAction.OPEN_CONVERSATION,
         val resourcesVersion: String = "conversation-tile-v4-empty",
     )
 }

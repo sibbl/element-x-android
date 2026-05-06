@@ -18,7 +18,10 @@
     <string name="screen_message_detail_reactions">Quick reactions</string>
     <string name="screen_wear_notification_mark_as_read">Mark as read</string>
     <string name="screen_thread_title">Thread</string>
-    <string name="thread_indicator_replies">%1$d replies</string>
+    <plurals name="thread_indicator_replies">
+        <item quantity="one">%1$d reply</item>
+        <item quantity="other">%1$d replies</item>
+    </plurals>
     <string name="timeline_voice_message">Voice message</string>
     <string name="play_voice_message">Play voice message</string>
     <string name="timeline_image">Image</string>
@@ -38,6 +41,14 @@
     <string name="screen_wear_notifications_action_allow">Allow notifications</string>
     <string name="screen_wear_notifications_action_settings">Open settings</string>
     <string name="screen_wear_local_notifications_channel_name">Wear conversations</string>
+    <string name="screen_wear_local_notifications_channel_name_default">Wear conversations (Default)</string>
+    <string name="screen_wear_local_notifications_channel_name_silent">Wear conversations (Silent)</string>
+    <string name="screen_wear_local_notifications_channel_name_double">Wear conversations (Double)</string>
+    <string name="screen_wear_local_notifications_channel_name_long">Wear conversations (Long)</string>
+    <string name="screen_wear_local_notifications_channel_name_triple">Wear conversations (Triple)</string>
+    <string name="screen_wear_local_notifications_channel_name_pulse">Wear conversations (Pulse)</string>
+    <string name="screen_wear_local_notifications_channel_name_escalating">Wear conversations (Escalating)</string>
+    <string name="screen_wear_local_notifications_channel_name_custom">Wear conversations (Custom)</string>
     <string name="screen_voice_recorder_title">Voice message</string>
     <string name="screen_voice_recorder_permission">Allow microphone access to record voice messages.</string>
     <string name="screen_voice_recorder_recording">Recording…</string>

@@ -85,6 +85,14 @@ sealed interface WatchCommand : WatchPayload {
     ) : WatchCommand
 
     @Serializable
+    @SerialName("cmd.requestMediaPreview")
+    data class RequestMediaPreview(
+        override val requestId: String,
+        val roomId: String,
+        val eventId: String,
+    ) : WatchCommand
+
+    @Serializable
     @SerialName("cmd.markAsRead")
     data class MarkAsRead(
         override val requestId: String,

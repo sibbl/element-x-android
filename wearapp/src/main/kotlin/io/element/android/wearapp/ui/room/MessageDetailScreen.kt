@@ -56,6 +56,9 @@ fun MessageDetailScreen(
             item = item,
         ),
         mediaPreviewBytes = mediaPreviewBytes,
+        onRequestMediaPreview = item?.let { currentItem ->
+            { bridge.requestMediaPreview(roomId, currentItem.eventId) }
+        },
         onReply = {
             if (item != null) {
                 activity.launchDictation { dictated ->

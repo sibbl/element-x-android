@@ -7,7 +7,12 @@
 
 package io.element.android.appconfig
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 
 data class WearCompanionDeepLink(
     val roomId: String,
@@ -17,6 +22,8 @@ data class WearCompanionDeepLink(
 
 object WearCompanionConfig {
     const val ACTION_OPEN_ON_WEAR = "io.element.android.action.OPEN_ON_WEAR"
+    const val SETTINGS_ACTIVITY_CLASS_NAME = "io.element.android.x.watchbridge.WearCompanionSettingsActivity"
+    const val OPEN_ON_WEAR_ACTIVITY_CLASS_NAME = "io.element.android.x.watchbridge.OpenOnWearActivity"
 
     const val EXTRA_ROOM_ID = "io.element.android.wear.roomId"
     const val EXTRA_EVENT_ID = "io.element.android.wear.eventId"
@@ -24,6 +31,31 @@ object WearCompanionConfig {
 
     const val DEEP_LINK_SCHEME = "elementxwear"
     const val DEEP_LINK_HOST = "open"
+}
+
+fun Context.createWearCompanionSettingsIntent(): Intent =
+    Intent().setClassName(packageName, WearCompanionConfig.SETTINGS_ACTIVITY_CLASS_NAME)
+
+fun Context.createOpenOnWearActivityIntent(): Intent =
+    Intent(WearCompanionConfig.ACTION_OPEN_ON_WEAR)
+        .setClassName(packageName, WearCompanionConfig.OPEN_ON_WEAR_ACTIVITY_CLASS_NAME)
+
+fun Context.hasWearCompanionSettingsActivity(): Boolean =
+    hasActivity(WearCompanionConfig.SETTINGS_ACTIVITY_CLASS_NAME)
+
+fun Context.hasOpenOnWearActivity(): Boolean =
+    hasActivity(WearCompanionConfig.OPEN_ON_WEAR_ACTIVITY_CLASS_NAME)
+
+private fun Context.hasActivity(className: String): Boolean {
+    val componentName = ComponentName(packageName, className)
+    return runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getActivityInfo(componentName, PackageManager.ComponentInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getActivityInfo(componentName, 0)
+        }
+    }.isSuccess
 }
 
 fun buildWearCompanionDeepLink(

@@ -68,6 +68,7 @@ class WatchBridgeDispatcherTest {
         val avatarThumbnailResults: ArrayDeque<Result<ByteArray?>> = ArrayDeque(),
     ) : ElementXWatchPort {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
+        val roomMediaPreviewCalls = mutableListOf<Pair<String, String>>()
         val voiceDraftCalls = mutableListOf<Pair<WatchVoiceDraft, ByteArray>>()
         val markAsReadCalls = mutableListOf<Pair<String, String>>()
         override fun favorites(): Flow<List<WatchFavoriteRoom>> = flowOf(favorites)
@@ -78,7 +79,13 @@ class WatchBridgeDispatcherTest {
         override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = timelineFlow ?: flowOf(timeline)
         override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = threadFlow ?: flowOf(thread)
         override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> =
-            if (roomMediaPreviewResults.isEmpty()) roomMediaPreviewResult else roomMediaPreviewResults.removeFirst()
+            if (roomMediaPreviewResults.isEmpty()) {
+                roomMediaPreviewCalls += roomId to eventId
+                roomMediaPreviewResult
+            } else {
+                roomMediaPreviewCalls += roomId to eventId
+                roomMediaPreviewResults.removeFirst()
+            }
         override suspend fun sendText(
             roomId: String,
             threadRootEventId: String?,
@@ -316,7 +323,7 @@ class WatchBridgeDispatcherTest {
     }
 
     @Test
-    fun `fetch thread waits for real timeline items before publishing and sends media preview`() = runTest(StandardTestDispatcher()) {
+    fun `fetch thread waits for real timeline items before publishing without eager media preview`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
         val imageItem = WatchThreadItem(
             eventId = "image-1",
@@ -358,16 +365,12 @@ class WatchBridgeDispatcherTest {
 
         val threadPublication = transport.publications
             .singleOrNull { it.first == WatchDataPaths.thread("!a:s", "root") }
-        val mediaPublication = transport.publications
-            .singleOrNull { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }
 
         assertThat(threadPublication).isNotNull()
-        assertThat(mediaPublication).isNotNull()
         assertThat((threadPublication!!.second.payload as WatchSync.ThreadDelta).items.map { it.eventId })
             .containsExactly("image-1")
-        assertThat((mediaPublication!!.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
-            .containsExactly(8.toByte(), 9.toByte(), 10.toByte())
-            .inOrder()
+        assertThat(transport.publications.none { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }).isTrue()
+        assertThat(port.roomMediaPreviewCalls).isEmpty()
     }
 
     @Test
@@ -409,7 +412,7 @@ class WatchBridgeDispatcherTest {
     }
 
     @Test
-    fun `open room publishes media previews with ttl and removed event ids`() = runTest(StandardTestDispatcher()) {
+    fun `open room publishes timeline removed event ids without eager media preview`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
         val imageItem = WatchTimelineItem(
             eventId = "image-1",
@@ -456,45 +459,20 @@ class WatchBridgeDispatcherTest {
         )
         advanceUntilIdle()
 
-        val mediaPublication = transport.publications
-            .singleOrNull { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }
         val secondTimelineDelta = transport.publications
             .map { it.second.payload }
             .filterIsInstance<WatchSync.TimelineDelta>()
             .last()
 
-        assertThat(mediaPublication).isNotNull()
-        assertThat(mediaPublication!!.second.expiresAtMs).isEqualTo(100L + 7L * 24L * 60L * 60L * 1000L)
-        assertThat((mediaPublication.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
-            .containsExactly(4.toByte(), 5.toByte(), 6.toByte())
-            .inOrder()
+        assertThat(transport.publications.none { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }).isTrue()
+        assertThat(port.roomMediaPreviewCalls).isEmpty()
         assertThat(secondTimelineDelta.removedEventIds).containsExactly("text-1")
     }
 
     @Test
-    fun `open room retries media preview publication after initial failure`() = runTest(StandardTestDispatcher()) {
+    fun `request media preview retries publication after initial failure`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
-        val imageItem = WatchTimelineItem(
-            eventId = "image-1",
-            roomId = "!a:s",
-            senderId = "@alice:s",
-            senderDisplayName = "Alice",
-            timestampMs = 2L,
-            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE,
-            bodyText = "Photo",
-            mediaPreview = WatchMediaPreview(widthPx = 200, heightPx = 200, mimeType = "image/jpeg"),
-        )
         val port = StubPort(
-            summary = WatchRoomSummary(
-                roomId = "!a:s",
-                displayName = "Room",
-                kind = WatchRoomKind.GROUP,
-                isEncrypted = false,
-                canSendMessages = true,
-                timelineVersion = 5L,
-                lastSyncTsMs = 0L,
-            ),
-            timelineFlow = flowOf(listOf(imageItem)),
             roomMediaPreviewResults = ArrayDeque<Result<ByteArray?>>().apply {
                 add(Result.failure(IllegalStateException("temporary failure")))
                 add(Result.success(byteArrayOf(9, 8, 7)))
@@ -505,10 +483,14 @@ class WatchBridgeDispatcherTest {
         dispatcher.onEnvelope(
             WatchSyncEnvelope(
                 generatedAtMs = 0L,
-                payload = WatchCommand.OpenRoom(requestId = "open-media-retry", roomId = "!a:s"),
+                payload = WatchCommand.RequestMediaPreview(
+                    requestId = "preview-retry",
+                    roomId = "!a:s",
+                    eventId = "image-1",
+                ),
             ),
         )
-        advanceTimeBy(1_500L)
+        advanceTimeBy(1_000L)
         runCurrent()
         advanceUntilIdle()
 
@@ -519,10 +501,52 @@ class WatchBridgeDispatcherTest {
         assertThat((mediaPublication!!.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
             .containsExactly(9.toByte(), 8.toByte(), 7.toByte())
             .inOrder()
+        assertThat(port.roomMediaPreviewCalls).containsExactly("!a:s" to "image-1", "!a:s" to "image-1").inOrder()
     }
 
     @Test
-    fun `open room only publishes previews for the newest media items`() = runTest(StandardTestDispatcher()) {
+    fun `request media preview publishes preview payload and payload-ready ack`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort(
+            roomMediaPreviewResults = ArrayDeque<Result<ByteArray?>>().apply {
+                add(Result.success(null))
+                add(Result.success(byteArrayOf(3, 2, 1)))
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 100L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.RequestMediaPreview(
+                    requestId = "preview-1",
+                    roomId = "!a:s",
+                    eventId = "image-1",
+                ),
+            ),
+        )
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+        advanceUntilIdle()
+
+        val mediaPublication = transport.publications
+            .singleOrNull { it.first == WatchDataPaths.mediaPreview("!a:s", "image-1") }
+        val payloadReadyAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.PayloadReady>()
+            .singleOrNull { it.requestId == "preview-1" }
+
+        assertThat(mediaPublication).isNotNull()
+        assertThat((mediaPublication!!.second.payload as WatchSync.MediaPreview).imageBytes?.toList())
+            .containsExactly(3.toByte(), 2.toByte(), 1.toByte())
+            .inOrder()
+        assertThat(payloadReadyAck).isNotNull()
+        assertThat(payloadReadyAck!!.dataPath).isEqualTo(WatchDataPaths.mediaPreview("!a:s", "image-1"))
+    }
+
+    @Test
+    fun `open room does not materialize media previews until requested`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
         val mediaItems = (1..8).map { index ->
             WatchTimelineItem(
@@ -561,15 +585,13 @@ class WatchBridgeDispatcherTest {
 
         val previewEventIds = transport.publications
             .mapNotNull { (_, envelope) -> (envelope.payload as? WatchSync.MediaPreview)?.eventId }
+        val timelineEventIds = transport.publications
+            .mapNotNull { (_, envelope) -> (envelope.payload as? WatchSync.TimelineDelta)?.items?.map { it.eventId } }
+            .last()
 
-        assertThat(previewEventIds).containsExactly(
-            "image-3",
-            "image-4",
-            "image-5",
-            "image-6",
-            "image-7",
-            "image-8",
-        ).inOrder()
+        assertThat(previewEventIds).isEmpty()
+        assertThat(timelineEventIds).containsExactlyElementsIn(mediaItems.map { it.eventId }).inOrder()
+        assertThat(port.roomMediaPreviewCalls).isEmpty()
     }
 
     @Test
