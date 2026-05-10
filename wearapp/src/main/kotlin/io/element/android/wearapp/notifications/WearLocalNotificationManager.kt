@@ -13,8 +13,8 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Vibrator
 import android.os.VibrationEffect
+import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
@@ -32,7 +32,11 @@ internal class WearLocalNotificationManager(
     private val notificationsAllowedProvider: () -> Boolean = {
         defaultCanNotify(context, notificationManagerCompat)
     },
+    private val manualHapticsAllowedProvider: () -> Boolean = {
+        defaultCanPlayManualHaptics(context)
+    },
 ) {
+    private var channelsEnsured = false
 
     fun show(
         notification: WatchMessageNotification,
@@ -57,7 +61,7 @@ internal class WearLocalNotificationManager(
             wearLocalNotificationId(notification.notificationKey),
             factory.build(notification, generatedAtMs, expiresAtMs),
         )
-        if (resolvedVibration.usesManualWatchHaptics()) {
+        if (resolvedVibration.usesManualWatchHaptics() && manualHapticsAllowedProvider()) {
             hapticPlayer.play(resolvedVibration)
         }
     }
@@ -67,16 +71,18 @@ internal class WearLocalNotificationManager(
     }
 
     private fun ensureChannels() {
+        if (channelsEnsured) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         buildWearLocalNotificationChannels(context).forEach(manager::createNotificationChannel)
+        channelsEnsured = true
     }
 
     companion object {
         // Versioned so previously created silent/broken channels do not keep overriding the
         // restored default vibration behavior on upgraded installs, and so updated custom
-        // channel recipes actually apply when we tweak them. Bumped again so the watch picks
-        // up high-importance peeking behavior for local companion notifications.
-        internal const val CHANNEL_ID = "wear_companion_messages_v7_default"
+        // channel recipes actually apply when we tweak them. Bumped again so manual haptic
+        // channels still give Wear OS a tiny system vibration signal for peek presentation.
+        internal const val CHANNEL_ID = "wear_companion_messages_v8_default"
     }
 }
 
@@ -113,6 +119,15 @@ private fun defaultCanNotify(
         notificationManagerCompat.areNotificationsEnabled()
 }
 
+private fun defaultCanPlayManualHaptics(context: Context): Boolean {
+    val notificationManager = context.getSystemService(NotificationManager::class.java) ?: return true
+    return when (notificationManager.currentInterruptionFilter) {
+        NotificationManager.INTERRUPTION_FILTER_ALL,
+        NotificationManager.INTERRUPTION_FILTER_UNKNOWN -> true
+        else -> false
+    }
+}
+
 private fun WearResolvedNotificationVibration.usesManualWatchHaptics(): Boolean {
     return pattern != WatchNotificationVibrationPattern.SILENT && pattern != WatchNotificationVibrationPattern.DEFAULT
 }
@@ -135,19 +150,22 @@ internal fun buildWearLocalNotificationChannel(
     when (pattern) {
         WatchNotificationVibrationPattern.SILENT -> enableVibration(false)
         WatchNotificationVibrationPattern.DEFAULT -> enableVibration(true)
-        else -> enableVibration(false)
+        else -> {
+            enableVibration(true)
+            setVibrationPattern(longArrayOf(0L, 1L))
+        }
     }
 }
 
 internal fun wearLocalNotificationChannelId(pattern: WatchNotificationVibrationPattern): String = when (pattern) {
     WatchNotificationVibrationPattern.DEFAULT -> WearLocalNotificationManager.CHANNEL_ID
-    WatchNotificationVibrationPattern.SILENT -> "wear_companion_messages_v7_silent"
-    WatchNotificationVibrationPattern.DOUBLE -> "wear_companion_messages_v7_double"
-    WatchNotificationVibrationPattern.LONG -> "wear_companion_messages_v7_long"
-    WatchNotificationVibrationPattern.TRIPLE -> "wear_companion_messages_v7_triple"
-    WatchNotificationVibrationPattern.PULSE -> "wear_companion_messages_v7_pulse"
-    WatchNotificationVibrationPattern.ESCALATING -> "wear_companion_messages_v7_escalating"
-    WatchNotificationVibrationPattern.CUSTOM -> "wear_companion_messages_v7_custom"
+    WatchNotificationVibrationPattern.SILENT -> "wear_companion_messages_v8_silent"
+    WatchNotificationVibrationPattern.DOUBLE -> "wear_companion_messages_v8_double"
+    WatchNotificationVibrationPattern.LONG -> "wear_companion_messages_v8_long"
+    WatchNotificationVibrationPattern.TRIPLE -> "wear_companion_messages_v8_triple"
+    WatchNotificationVibrationPattern.PULSE -> "wear_companion_messages_v8_pulse"
+    WatchNotificationVibrationPattern.ESCALATING -> "wear_companion_messages_v8_escalating"
+    WatchNotificationVibrationPattern.CUSTOM -> "wear_companion_messages_v8_custom"
 }
 
 private fun wearLocalNotificationChannelName(

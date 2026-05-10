@@ -49,7 +49,6 @@ internal class WearLocalNotificationFactory(
         (context.applicationContext as? WearApp)?.bridgeClient?.favorites?.value?.firstOrNull { room -> room.roomId == roomId }
     },
 ) {
-
     internal fun selectedVibration(notification: WatchMessageNotification): WearResolvedNotificationVibration {
         val settings = settingsProvider()
         notification.vibrationPatternOverride?.let {
@@ -126,6 +125,10 @@ internal class WearLocalNotificationFactory(
                 timeoutAfterMs?.let(::setTimeoutAfter)
             }
             .build()
+            .also {
+                it.extras.putCharSequence(Notification.EXTRA_TITLE, title)
+                it.extras.putCharSequence(Notification.EXTRA_TEXT, contentText)
+            }
     }
 
     private fun notificationChannelId(notification: WatchMessageNotification): String {
@@ -155,10 +158,11 @@ internal class WearLocalNotificationFactory(
     private fun notificationTitle(notification: WatchMessageNotification): String {
         val roomTitle = notification.roomDisplayName.takeIf { it.isNotBlank() }
         val senderTitle = notification.senderDisplayName?.takeIf { it.isNotBlank() }
+        val isGroupConversation = notification.threadRootEventId != null || notification.roomKind == WatchRoomKind.GROUP
         return when {
-            senderTitle != null && roomTitle != null && roomTitle != senderTitle -> "$senderTitle · $roomTitle"
-            roomTitle != null -> roomTitle
+            isGroupConversation && roomTitle != null -> roomTitle
             senderTitle != null -> senderTitle
+            roomTitle != null -> roomTitle
             else -> context.getString(R.string.app_name)
         }
     }
@@ -167,10 +171,15 @@ internal class WearLocalNotificationFactory(
         notification: WatchMessageNotification,
         fallbackTitle: String,
     ): String {
-        return notification.bodyText?.takeIf { it.isNotBlank() }
-            ?: notification.senderDisplayName?.takeIf { it.isNotBlank() }
-            ?: notification.roomDisplayName.takeIf { it.isNotBlank() }
-            ?: fallbackTitle
+        val bodyText = notification.bodyText?.takeIf { it.isNotBlank() }
+        val senderTitle = notification.senderDisplayName?.takeIf { it.isNotBlank() }
+        val isGroupConversation = notification.threadRootEventId != null || notification.roomKind == WatchRoomKind.GROUP
+        return when {
+            isGroupConversation && senderTitle != null && bodyText != null -> "$senderTitle: $bodyText"
+            bodyText != null -> bodyText
+            senderTitle != null -> senderTitle
+            else -> notification.roomDisplayName.takeIf { it.isNotBlank() } ?: fallbackTitle
+        }
     }
 
     private fun largeIcon(notification: WatchMessageNotification): Bitmap? {
@@ -209,7 +218,13 @@ internal class WearLocalNotificationFactory(
                 .setKey("wear-local-notification")
                 .build(),
         )
-        style.setGroupConversation(notification.threadRootEventId != null || notification.roomKind == WatchRoomKind.GROUP)
+        val isGroupConversation = notification.threadRootEventId != null || notification.roomKind == WatchRoomKind.GROUP
+        style.setGroupConversation(isGroupConversation)
+        if (isGroupConversation) {
+            notification.roomDisplayName.takeIf { it.isNotBlank() }?.let {
+                style.conversationTitle = it
+            }
+        }
         notificationPreviewMessages(notification, fallbackContentText).forEach { preview ->
             style.addMessage(
                 NotificationCompat.MessagingStyle.Message(
@@ -264,8 +279,6 @@ internal class WearLocalNotificationFactory(
         val intent = buildWearLaunchIntent(
             context = context,
             roomId = notification.roomId,
-            eventId = notification.eventId,
-            threadRootEventId = notification.threadRootEventId,
         )
         return PendingIntent.getActivity(
             context,
@@ -295,8 +308,8 @@ internal class WearLocalNotificationFactory(
             notificationKey = notification.notificationKey,
             generatedAtMs = generatedAtMs,
             notification = notification,
-        )
-        val pendingIntent = PendingIntent.getBroadcast(
+        ).setClass(context, WearNotificationActionActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
             context,
             requestCode(notification.notificationKey, WearNotificationActionReceiver.ACTION_MARK_AS_READ),
             markAsReadIntent,
@@ -308,7 +321,7 @@ internal class WearLocalNotificationFactory(
             pendingIntent,
         )
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
-            .setShowsUserInterface(false)
+            .setShowsUserInterface(true)
             .build()
     }
 

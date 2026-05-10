@@ -34,7 +34,6 @@ import java.io.ByteArrayOutputStream
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class WearLocalNotificationFactoryTest {
-
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
     private val factory = WearLocalNotificationFactory(context)
 
@@ -56,12 +55,15 @@ class WearLocalNotificationFactoryTest {
         val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = 1_000L)
 
         assertThat(notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
-            .contains("Bob")
+            .startsWith("Team Wear")
+        assertThat(notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+            .isEqualTo("Bob: Hello from thread")
 
         val contentIntent = shadowOf(notification.contentIntent).savedIntent
         val deepLink = parseWearCompanionDeepLink(contentIntent.data)
         assertThat(deepLink?.roomId).isEqualTo("!room:server")
-        assertThat(deepLink?.threadRootEventId).isEqualTo("\$root:server")
+        assertThat(deepLink?.eventId).isNull()
+        assertThat(deepLink?.threadRootEventId).isNull()
 
         val actions = notification.actions.orEmpty()
         assertThat(actions.map { it.title.toString() }).containsExactly(
@@ -72,6 +74,7 @@ class WearLocalNotificationFactoryTest {
         ).inOrder()
         val markAsReadIntent = shadowOf(actions[0].actionIntent as PendingIntent).savedIntent
         assertThat(markAsReadIntent.action).isEqualTo(WearNotificationActionReceiver.ACTION_MARK_AS_READ)
+        assertThat(markAsReadIntent.component?.className).isEqualTo(WearNotificationActionActivity::class.java.name)
         assertThat(actions[0].semanticAction).isEqualTo(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
 
         val voiceIntent = shadowOf(actions[1].actionIntent as PendingIntent).savedIntent
@@ -105,7 +108,9 @@ class WearLocalNotificationFactoryTest {
         val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = null)
 
         assertThat(notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
-            .contains("Bob")
+            .startsWith("Team Wear")
+        assertThat(notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+            .isEqualTo("Bob: Hello there")
 
         val threadIntent = shadowOf(notification.actions.orEmpty()[2].actionIntent as PendingIntent).savedIntent
         val threadDeepLink = parseWearCompanionDeepLink(threadIntent.data)
@@ -154,7 +159,10 @@ class WearLocalNotificationFactoryTest {
         assertThat(messagingStyle).isNotNull()
         val extractedMessagingStyle = checkNotNull(messagingStyle)
         assertThat(notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
-            .contains("Bob")
+            .startsWith("Team Wear")
+        assertThat(notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+            .isEqualTo("Bob: Latest update")
+        assertThat(extractedMessagingStyle.conversationTitle?.toString()).isEqualTo("Team Wear")
         assertThat(extractedMessagingStyle.messages.map { it.text.toString() }).containsExactly(
             "First update",
             "Second update",

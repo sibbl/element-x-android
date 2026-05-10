@@ -8,6 +8,7 @@
 package io.element.android.wearapp.ui.room
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +21,9 @@ import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.bridge.WearBridgeClient
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
+
+private val COLLAPSIBLE_INLINE_WHITESPACE = Regex("[\\t\\x0B\\f ]+")
+private val EXCESSIVE_BLANK_LINES = Regex("\\n{3,}")
 
 internal data class RoomTimelineState(
     val summary: WatchRoomSummary? = null,
@@ -44,6 +48,12 @@ internal fun rememberRoomTimelineState(
         runCatching {
             bridge.ensureRoomSubscription(roomId = roomId)
         }.onFailure { onOpenFailure?.invoke(it) }
+    }
+
+    DisposableEffect(bridge, roomId) {
+        onDispose {
+            bridge.unsubscribeRoom(roomId)
+        }
     }
 
     LaunchedEffect(bridge, roomId) {
@@ -74,16 +84,26 @@ internal fun rememberRoomTimelineState(
 internal fun WatchTimelineItem.displayText(): String {
     val formatted = formattedText
         ?.takeIf { it.isNotBlank() }
-        ?.let { HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_COMPACT).toString() }
-        ?.replace(Regex("\\s+"), " ")
-        ?.trim()
+        ?.let { it.toPlainTimelineText() }
         ?.takeIf { it.isNotBlank() }
     return formatted
         ?: bodyText?.takeIf { it.isNotBlank() }
         ?: "[${kind.name.lowercase()}]"
 }
 
+private fun String.toPlainTimelineText(): String {
+    return HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_COMPACT)
+        .toString()
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .lines()
+        .joinToString("\n") { line ->
+            line.replace(COLLAPSIBLE_INLINE_WHITESPACE, " ").trimEnd()
+        }
+        .replace(EXCESSIVE_BLANK_LINES, "\n\n")
+        .trim()
+}
+
 internal fun WatchTimelineItem.reactionSummaryText(): String? =
     reactions.takeIf { it.isNotEmpty() }
         ?.joinToString(separator = "  ") { "${it.key} ${it.count}" }
-

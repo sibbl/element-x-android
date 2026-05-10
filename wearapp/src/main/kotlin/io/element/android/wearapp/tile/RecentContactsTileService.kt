@@ -135,7 +135,6 @@ abstract class ConversationTileServiceBase : TileService() {
 
     override fun onTileEnterEvent(requestParams: androidx.wear.tiles.EventBuilders.TileEnterEvent) {
         Timber.d("tile entered")
-        TileService.getUpdater(this).requestUpdate(javaClass)
     }
 
     @Suppress("RETURN_TYPE_MISMATCH_ON_OVERRIDE")

@@ -24,6 +24,7 @@ import io.element.android.watchbridge.contract.WatchVoiceDraft
 import io.element.android.watchbridge.transport.WatchChannel
 import io.element.android.watchbridge.transport.WatchTransport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -70,7 +71,7 @@ class WatchBridgeDispatcherTest {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
         val roomMediaPreviewCalls = mutableListOf<Pair<String, String>>()
         val voiceDraftCalls = mutableListOf<Pair<WatchVoiceDraft, ByteArray>>()
-        val markAsReadCalls = mutableListOf<Pair<String, String>>()
+        val markAsReadCalls = mutableListOf<MarkAsReadCall>()
         override fun favorites(): Flow<List<WatchFavoriteRoom>> = flowOf(favorites)
         override suspend fun ensureRoomListLoaded(minimumCount: Int) {
             ensureLoadedCalls += minimumCount
@@ -109,11 +110,17 @@ class WatchBridgeDispatcherTest {
             )
         override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> =
             if (avatarThumbnailResults.isEmpty()) Result.success(null) else avatarThumbnailResults.removeFirst()
-        override suspend fun markAsRead(roomId: String, eventId: String): Result<Unit> {
-            markAsReadCalls += roomId to eventId
+        override suspend fun markAsRead(roomId: String, eventId: String, threadRootEventId: String?): Result<Unit> {
+            markAsReadCalls += MarkAsReadCall(roomId, eventId, threadRootEventId)
             return Result.success(Unit)
         }
     }
+
+    private data class MarkAsReadCall(
+        val roomId: String,
+        val eventId: String,
+        val threadRootEventId: String?,
+    )
 
     @Test
     fun `start publishes favorites snapshot`() = runTest(StandardTestDispatcher()) {
@@ -236,16 +243,104 @@ class WatchBridgeDispatcherTest {
                     requestId = "mark-read-1",
                     roomId = "!a:s",
                     eventId = "event-1",
+                    threadRootEventId = "root-1",
                 ),
             ),
         )
         advanceUntilIdle()
 
-        assertThat(port.markAsReadCalls).containsExactly("!a:s" to "event-1")
+        assertThat(port.markAsReadCalls).containsExactly(MarkAsReadCall("!a:s", "event-1", "root-1"))
         val sentAck = transport.messages
             .map { it.second.payload }
             .filterIsInstance<WatchAck.Sent>()
             .singleOrNull { it.requestId == "mark-read-1" }
+        assertThat(sentAck).isNotNull()
+    }
+
+    @Test
+    fun `unsubscribe room command cancels active room projection`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        var roomProjectionCancelled = false
+        val port = StubPort(
+            summary = WatchRoomSummary(
+                roomId = "!a:s",
+                displayName = "Room",
+                kind = WatchRoomKind.GROUP,
+                isEncrypted = false,
+                canSendMessages = true,
+                timelineVersion = 1L,
+                lastSyncTsMs = 0L,
+            ),
+            timelineFlow = flow {
+                try {
+                    emit(emptyList())
+                    awaitCancellation()
+                } finally {
+                    roomProjectionCancelled = true
+                }
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.OpenRoom(requestId = "open-room", roomId = "!a:s"),
+            ),
+        )
+        runCurrent()
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.Unsubscribe(requestId = "unsubscribe-room", roomId = "!a:s"),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(roomProjectionCancelled).isTrue()
+        val sentAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Sent>()
+            .singleOrNull { it.requestId == "unsubscribe-room" }
+        assertThat(sentAck).isNotNull()
+    }
+
+    @Test
+    fun `unsubscribe thread command cancels active thread projection`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        var threadProjectionCancelled = false
+        val port = StubPort(
+            threadFlow = flow {
+                try {
+                    emit(emptyList())
+                    awaitCancellation()
+                } finally {
+                    threadProjectionCancelled = true
+                }
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.FetchThread(requestId = "fetch-thread", roomId = "!a:s", threadRootEventId = "root"),
+            ),
+        )
+        runCurrent()
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.Unsubscribe(requestId = "unsubscribe-thread", roomId = "!a:s", threadRootEventId = "root"),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(threadProjectionCancelled).isTrue()
+        val sentAck = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.Sent>()
+            .singleOrNull { it.requestId == "unsubscribe-thread" }
         assertThat(sentAck).isNotNull()
     }
 

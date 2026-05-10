@@ -13,9 +13,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -34,10 +31,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -80,7 +79,6 @@ import kotlin.math.sin
  * about matrix-rust-sdk's voice flow is reimplemented on the watch.
  */
 class VoiceRecorderActivity : ComponentActivity() {
-
     private var hasRecordPermission by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
@@ -91,10 +89,12 @@ class VoiceRecorderActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val roomId = intent.getStringExtra("roomId") ?: run { finish(); return }
+        val roomId = intent.getStringExtra("roomId") ?: run {
+            finish()
+            return
+        }
         val threadRootEventId = intent.getStringExtra("threadRootEventId")
         val inReplyToEventId = intent.getStringExtra("inReplyToEventId")
-        val roomDisplayNameExtra = intent.getStringExtra("roomDisplayName")
         val bridge = (application as WearApp).bridgeClient
 
         hasRecordPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -198,8 +198,8 @@ private fun VoiceRecorderUi(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         errorMessage?.takeIf { !sending && recordingStartedAt == null }?.let { message ->
@@ -256,14 +256,19 @@ private fun VoiceRecorderUi(
             else -> {
                 Text(
                     text = elapsedMs.formatAsDuration(),
-                    style = MaterialTheme.typography.numeralLarge,
+                    style = MaterialTheme.typography.titleLarge,
                     textAlign = TextAlign.Center,
                 )
                 Box(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    RecordingVisualizer(levels = waveform.takeLast(9))
+                    RecordingVisualizer(
+                        levels = waveform.takeLast(9),
+                        modifier = Modifier.height(72.dp),
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -337,7 +342,10 @@ private fun VoiceRecorderUi(
 }
 
 @Composable
-private fun RecordingVisualizer(levels: List<Int>) {
+private fun RecordingVisualizer(
+    levels: List<Int>,
+    modifier: Modifier = Modifier,
+) {
     val infiniteTransition = rememberInfiniteTransition(label = "voice-recorder-pulse")
     val pulse by infiniteTransition.animateFloat(
         initialValue = 0.72f,
@@ -357,19 +365,23 @@ private fun RecordingVisualizer(levels: List<Int>) {
         }
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
         Box(
             modifier = Modifier
                 .size(16.dp)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = pulse), CircleShape),
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
             bars.forEach { level ->
-                val barHeight = (16 + (level.coerceIn(0, 100) * 0.34f)).dp
+                val barHeight = (12 + (level.coerceIn(0, 100) * 0.28f)).dp
                 Box(
                     modifier = Modifier
                         .width(8.dp)

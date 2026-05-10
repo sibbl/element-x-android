@@ -5,9 +5,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial.
  */
 
-import extension.testCommonDependencies
-
 import config.BuildTimeConfig
+import extension.testCommonDependencies
 
 plugins {
     id("io.element.android-compose-application")
@@ -54,7 +53,6 @@ android {
             )
         }
     }
-
 }
 
 dependencies {
@@ -66,6 +64,7 @@ dependencies {
     implementation("androidx.wear.compose:compose-foundation:1.5.0")
     implementation("androidx.wear.compose:compose-material3:1.5.0")
     implementation("androidx.wear.compose:compose-navigation:1.5.0")
+    implementation("androidx.wear:wear:1.3.0")
     implementation("androidx.wear:wear-phone-interactions:1.0.1")
 
     implementation(libs.androidx.corektx)

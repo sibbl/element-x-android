@@ -9,6 +9,7 @@
 package io.element.android.libraries.push.impl.notifications
 
 import android.app.Notification
+import androidx.core.app.NotificationCompat
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import io.element.android.libraries.push.impl.R
@@ -73,12 +74,13 @@ class DefaultSummaryGroupMessageCreator(
                 add(
                     SummaryLine(
                         timestamp = roomNotification.latestTimestamp,
-                        text = stringProvider.getQuantityString(
-                            R.plurals.notification_compat_summary_line_for_room,
-                            roomNotification.messageCount,
-                            roomNotification.roomDisplayName,
-                            roomNotification.messageCount,
-                        ),
+                        text = roomNotificationSummaryLine(roomNotification)
+                            ?: stringProvider.getQuantityString(
+                                R.plurals.notification_compat_summary_line_for_room,
+                                roomNotification.messageCount,
+                                roomNotification.roomDisplayName,
+                                roomNotification.messageCount,
+                            ),
                     )
                 )
             }
@@ -96,6 +98,31 @@ class DefaultSummaryGroupMessageCreator(
             .sortedByDescending(SummaryLine::timestamp)
             .map(SummaryLine::text)
             .take(MAX_SUMMARY_LINES)
+    }
+
+    private fun roomNotificationSummaryLine(roomNotification: RoomNotification): String? {
+        val messageLine = latestMessagingStyleLine(roomNotification.notification)
+            ?: notificationSummaryLine(roomNotification.notification)
+            ?: return null
+        val roomName = roomNotification.roomDisplayName.takeIf { it.isNotBlank() } ?: return messageLine
+        return when {
+            messageLine == roomName -> null
+            messageLine.startsWith("$roomName:") -> messageLine
+            else -> "$roomName: $messageLine"
+        }
+    }
+
+    private fun latestMessagingStyleLine(notification: Notification): String? {
+        val message = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
+            ?.messages
+            ?.lastOrNull { it.text?.isNotBlank() == true }
+            ?: return null
+        val text = message.text?.toString()?.takeIf { it.isNotBlank() } ?: return null
+        val sender = message.person
+            ?.name
+            ?.toString()
+            ?.takeIf { it.isNotBlank() && it != text }
+        return if (sender == null) text else "$sender: $text"
     }
 
     private fun notificationSummaryLine(notification: Notification): String? {

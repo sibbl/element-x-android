@@ -63,10 +63,17 @@ private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
 private const val MAX_CACHED_TIMELINE_ITEMS = 100
 private const val MAX_CACHED_THREAD_ITEMS = 50
 private const val VOICE_UPLOAD_TIMEOUT_MS = 60_000L
-private const val TILE_REFRESH_DEBOUNCE_MS = 250L
-private const val CACHE_PERSIST_DEBOUNCE_MS = 150L
+private const val TILE_REFRESH_DEBOUNCE_MS = 2_000L
+private const val CACHE_PERSIST_DEBOUNCE_MS = 500L
+private const val TIMELINE_CACHE_PERSIST_DEBOUNCE_MS = 2_000L
 
 internal fun mediaPreviewCacheKey(roomId: String, eventId: String): String = "$roomId/$eventId"
+
+private infix fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean = when {
+    this == null -> other == null
+    other == null -> false
+    else -> contentEquals(other)
+}
 
 /**
  * Watch-side entry point to the companion protocol.
@@ -131,6 +138,11 @@ class WearBridgeClient(private val context: Context) {
     private val pendingCachePersistJobs = ConcurrentHashMap<String, Job>()
     /** Debounced tile refresh request to avoid hammering Wear tiles during sync bursts. */
     private var pendingTileRefreshJob: Job? = null
+    /** Avoid registering listeners repeatedly if app/service startup paths re-enter [start]. */
+    private var started = false
+    /** Data Layer scans are deferred to foreground UI so notification wakes stay cheap. */
+    private var hasPrimedDataLayer = false
+    private var pendingDataLayerPrimeJob: Job? = null
 
     fun getCachedTimeline(roomId: String): List<io.element.android.watchbridge.contract.WatchTimelineItem> =
         _timelineCache[roomId]?.items.orEmpty()
@@ -252,6 +264,17 @@ class WearBridgeClient(private val context: Context) {
         }
     }
 
+    fun unsubscribeRoom(roomId: String) {
+        if (!activeRoomSubscriptions.remove(roomId)) return
+        scope.launch { sendUnsubscribe(roomId = roomId, threadRootEventId = null) }
+    }
+
+    fun unsubscribeThread(roomId: String, threadRootEventId: String) {
+        val subscriptionKey = threadCacheKey(roomId, threadRootEventId)
+        if (!activeThreadSubscriptions.remove(subscriptionKey)) return
+        scope.launch { sendUnsubscribe(roomId = roomId, threadRootEventId = threadRootEventId) }
+    }
+
     private val phoneCapabilityListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
         if (capabilityInfo.name == WatchProtocol.PHONE_CAPABILITY) {
             Timber.d(
@@ -264,6 +287,8 @@ class WearBridgeClient(private val context: Context) {
     }
 
     fun start() {
+        if (started) return
+        started = true
         capabilityClient.addLocalCapability(WatchProtocol.WATCH_CAPABILITY)
             .addOnSuccessListener { Timber.d("watch capability registered") }
             .addOnFailureListener {
@@ -278,11 +303,11 @@ class WearBridgeClient(private val context: Context) {
         scope.launch { probePhoneCapability() }
         scope.launch {
             primeCachedStateFromDisk()
-            primeCachedStateFromDataLayer()
         }
     }
 
     fun stop() {
+        started = false
         capabilityClient.removeListener(phoneCapabilityListener)
         // Scope teardown left to Application lifecycle; explicit cancel intentionally avoided
         // here so in-flight request UIs keep observing acks on Activity restarts.
@@ -293,10 +318,24 @@ class WearBridgeClient(private val context: Context) {
         pendingCachePersistJobs.values.forEach(Job::cancel)
         pendingCachePersistJobs.clear()
         pendingCachePersists.clear()
+        pendingDataLayerPrimeJob?.cancel()
+        pendingDataLayerPrimeJob = null
     }
 
     fun refreshPhoneReachability() {
         scope.launch { probePhoneCapability() }
+    }
+
+    fun refreshCachedStateFromDataLayer() {
+        if (hasPrimedDataLayer || pendingDataLayerPrimeJob?.isActive == true) return
+        pendingDataLayerPrimeJob = scope.launch {
+            try {
+                primeCachedStateFromDataLayer()
+                hasPrimedDataLayer = true
+            } finally {
+                pendingDataLayerPrimeJob = null
+            }
+        }
     }
 
     /** Called from the app-level `WearableListenerService` on any `DataItem` change. */
@@ -407,6 +446,20 @@ class WearBridgeClient(private val context: Context) {
         }
     }
 
+    private suspend fun sendUnsubscribe(roomId: String, threadRootEventId: String?) {
+        runCatching {
+            sendCommand(
+                WatchCommand.Unsubscribe(
+                    requestId = UUID.randomUUID().toString(),
+                    roomId = roomId,
+                    threadRootEventId = threadRootEventId,
+                ),
+            )
+        }.onFailure {
+            Timber.w(it, "unsubscribe failed for room=%s thread=%s", roomId, threadRootEventId)
+        }
+    }
+
     private suspend fun uploadVoiceDraftBytes(
         draftId: String,
         audioFile: File,
@@ -497,16 +550,23 @@ class WearBridgeClient(private val context: Context) {
         when (val p = envelope.payload) {
             is WatchSync.FavoritesSnapshot -> {
                 Timber.d("received favorites snapshot count=%d", p.rooms.size)
-                _favorites.value = p.rooms
-                requestTileRefresh()
+                if (_favorites.value != p.rooms) {
+                    _favorites.value = p.rooms
+                    requestTileRefresh()
+                }
             }
             is WatchSync.SettingsUpdate -> {
                 Timber.d("received companion settings update")
-                _companionSettings.value = p.settings
+                if (_companionSettings.value != p.settings) {
+                    _companionSettings.value = p.settings
+                    requestTileRefresh()
+                }
             }
             is WatchSync.AvatarUpdate -> {
                 Timber.d("received avatar update roomId=%s bytes=%s", p.roomId, p.imageBytes?.size ?: 0)
                 val imageBytes = p.imageBytes
+                val previousImageBytes = _avatarImages.value[p.roomId]
+                if (previousImageBytes contentEqualsNullable imageBytes) return
                 _avatarImages.value = _avatarImages.value.toMutableMap().apply {
                     if (imageBytes == null) remove(p.roomId) else put(p.roomId, imageBytes)
                 }
@@ -551,14 +611,17 @@ class WearBridgeClient(private val context: Context) {
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.UnreadUpdate -> {
-                _favorites.value = _favorites.value.map { room ->
+                val updatedFavorites = _favorites.value.map { room ->
                     if (room.roomId == p.roomId) {
                         room.copy(unreadCount = p.unreadCount, hasMentions = p.hasMentions)
                     } else {
                         room
                     }
                 }
-                requestTileRefresh()
+                if (updatedFavorites != _favorites.value) {
+                    _favorites.value = updatedFavorites
+                    requestTileRefresh()
+                }
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.MessageNotification -> {
@@ -729,6 +792,8 @@ class WearBridgeClient(private val context: Context) {
     private fun cachePersistDebounceMs(payload: WatchPayload): Long = when (payload) {
         is WatchSync.Invalidation,
         is WatchSync.FullRefresh -> 0L
+        is WatchSync.TimelineDelta,
+        is WatchSync.ThreadDelta -> TIMELINE_CACHE_PERSIST_DEBOUNCE_MS
         else -> CACHE_PERSIST_DEBOUNCE_MS
     }
 

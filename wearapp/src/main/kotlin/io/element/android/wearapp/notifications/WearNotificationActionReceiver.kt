@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
+import androidx.wear.activity.ConfirmationActivity
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.WearApp
@@ -22,7 +23,6 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class WearNotificationActionReceiver : BroadcastReceiver {
-
     private val executor: WearNotificationActionExecutor
     private val uiController: WearNotificationActionUiController
     private val actionScope: CoroutineScope
@@ -56,6 +56,9 @@ class WearNotificationActionReceiver : BroadcastReceiver {
             ACTION_MARK_AS_READ,
             ACTION_REPLY -> {
                 if (intent.action == ACTION_MARK_AS_READ) {
+                    if (!intent.getBooleanExtra(EXTRA_SKIP_CONFIRMATION, false)) {
+                        uiController.showMarkAsReadConfirmation(context)
+                    }
                     uiController.dismiss(notificationKey, notificationId, generatedAtMs, context)
                 }
                 val pendingResult = goAsync()
@@ -88,12 +91,12 @@ class WearNotificationActionReceiver : BroadcastReceiver {
         val threadRootEventId = intent.getStringExtra(EXTRA_THREAD_ROOT_EVENT_ID)?.takeIf { it.isNotBlank() }
         if (roomId.isBlank() || eventId.isBlank()) return
 
-        val bridgeClient = (context.applicationContext as WearApp).bridgeClient
         val result = when (intent.action) {
             ACTION_MARK_AS_READ -> executor.markAsRead(
                 context = context,
                 roomId = roomId,
                 eventId = eventId,
+                threadRootEventId = threadRootEventId,
             )
             ACTION_REPLY -> {
                 val replyText = RemoteInput.getResultsFromIntent(intent)
@@ -127,6 +130,7 @@ class WearNotificationActionReceiver : BroadcastReceiver {
             context: Context,
             roomId: String,
             eventId: String,
+            threadRootEventId: String?,
         ): Result<Unit>
 
         suspend fun reply(
@@ -139,6 +143,8 @@ class WearNotificationActionReceiver : BroadcastReceiver {
     }
 
     internal interface WearNotificationActionUiController {
+        fun showMarkAsReadConfirmation(context: Context)
+
         fun dismiss(
             notificationKey: String,
             notificationId: Int,
@@ -152,6 +158,7 @@ class WearNotificationActionReceiver : BroadcastReceiver {
             context: Context,
             roomId: String,
             eventId: String,
+            threadRootEventId: String?,
         ): Result<Unit> = runCatching {
             val bridgeClient = (context.applicationContext as WearApp).bridgeClient
             bridgeClient.sendAwaitTerminalAck { requestId ->
@@ -159,6 +166,7 @@ class WearNotificationActionReceiver : BroadcastReceiver {
                     requestId = requestId,
                     roomId = roomId,
                     eventId = eventId,
+                    threadRootEventId = threadRootEventId,
                 )
             }
             Unit
@@ -188,6 +196,18 @@ class WearNotificationActionReceiver : BroadcastReceiver {
     }
 
     internal class SystemWearNotificationActionUiController : WearNotificationActionUiController {
+        override fun showMarkAsReadConfirmation(context: Context) {
+            val intent = Intent(context, ConfirmationActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(ConfirmationActivity.EXTRA_ANIMATION_TYPE, ConfirmationActivity.SUCCESS_ANIMATION)
+                .putExtra(ConfirmationActivity.EXTRA_ANIMATION_DURATION_MILLIS, MARK_AS_READ_CONFIRMATION_MS)
+            runCatching {
+                context.startActivity(intent)
+            }.onFailure {
+                Timber.w(it, "Unable to show watch notification mark-as-read confirmation")
+            }
+        }
+
         override fun dismiss(
             notificationKey: String,
             notificationId: Int,
@@ -210,8 +230,11 @@ class WearNotificationActionReceiver : BroadcastReceiver {
         internal const val EXTRA_ROOM_ID = "extra_room_id"
         internal const val EXTRA_EVENT_ID = "extra_event_id"
         internal const val EXTRA_THREAD_ROOT_EVENT_ID = "extra_thread_root_event_id"
+        internal const val EXTRA_SKIP_CONFIRMATION = "extra_skip_confirmation"
 
         internal const val RESULT_KEY_REPLY_TEXT = "result_key_reply_text"
+
+        private const val MARK_AS_READ_CONFIRMATION_MS = 900
 
         private val defaultActionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }

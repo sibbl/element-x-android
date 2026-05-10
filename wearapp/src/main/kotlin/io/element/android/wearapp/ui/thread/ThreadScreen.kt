@@ -9,6 +9,7 @@ package io.element.android.wearapp.ui.thread
 
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,6 +65,12 @@ fun ThreadScreen(
 
     val favorites by bridge.favorites.collectAsState()
     val roomDisplayName = favorites.firstOrNull { it.roomId == roomId }?.displayName ?: ""
+
+    DisposableEffect(bridge, roomId, threadRootEventId) {
+        onDispose {
+            bridge.unsubscribeThread(roomId, threadRootEventId)
+        }
+    }
 
     LaunchedEffect(roomId, threadRootEventId) {
         runCatching {

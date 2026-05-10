@@ -10,7 +10,6 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -68,6 +67,18 @@
             android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
+        <activity
+            android:name="androidx.wear.activity.ConfirmationActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".notifications.WearNotificationActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".notifications.WearNotificationActionReceiver"
             android:exported="false" />
@@ -79,8 +90,6 @@
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
-                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
                 <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/watchbridge" />
             </intent-filter>

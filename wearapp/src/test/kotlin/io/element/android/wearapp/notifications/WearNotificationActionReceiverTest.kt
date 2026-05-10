@@ -20,13 +20,13 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class WearNotificationActionReceiverTest {
-
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun `mark as read dismisses notification immediately and still executes command`() {
+    fun `mark as read shows confirmation dismisses notification immediately and still executes command`() {
         runBlocking {
             val dismissed = mutableListOf<DismissCall>()
+            var confirmationShown = false
             val executed = mutableListOf<Pair<String, String>>()
             val receiver = WearNotificationActionReceiver(
                 executor = object : WearNotificationActionReceiver.WearNotificationActionExecutor {
@@ -34,6 +34,7 @@ class WearNotificationActionReceiverTest {
                         context: Context,
                         roomId: String,
                         eventId: String,
+                        threadRootEventId: String?,
                     ): Result<Unit> {
                         executed += roomId to eventId
                         return Result.success(Unit)
@@ -48,6 +49,10 @@ class WearNotificationActionReceiverTest {
                     ): Result<Unit> = Result.success(Unit)
                 },
                 uiController = object : WearNotificationActionReceiver.WearNotificationActionUiController {
+                    override fun showMarkAsReadConfirmation(context: Context) {
+                        confirmationShown = true
+                    }
+
                     override fun dismiss(
                         notificationKey: String,
                         notificationId: Int,
@@ -71,8 +76,71 @@ class WearNotificationActionReceiverTest {
                     .putExtra(WearNotificationActionReceiver.EXTRA_EVENT_ID, "\$event:server"),
             )
 
+            assertThat(confirmationShown).isTrue()
             assertThat(dismissed).containsExactly(DismissCall("notif-1", 42, 123L))
             assertThat(executed).containsExactly("!room:server" to "\$event:server")
+        }
+    }
+
+    @Test
+    fun `forwarded mark as read skips duplicate confirmation and keeps command execution`() {
+        runBlocking {
+            val dismissed = mutableListOf<DismissCall>()
+            var confirmationShown = false
+            val executed = mutableListOf<Triple<String, String, String?>>()
+            val receiver = WearNotificationActionReceiver(
+                executor = object : WearNotificationActionReceiver.WearNotificationActionExecutor {
+                    override suspend fun markAsRead(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                    ): Result<Unit> {
+                        executed += Triple(roomId, eventId, threadRootEventId)
+                        return Result.success(Unit)
+                    }
+
+                    override suspend fun reply(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                        replyText: String,
+                    ): Result<Unit> = Result.success(Unit)
+                },
+                uiController = object : WearNotificationActionReceiver.WearNotificationActionUiController {
+                    override fun showMarkAsReadConfirmation(context: Context) {
+                        confirmationShown = true
+                    }
+
+                    override fun dismiss(
+                        notificationKey: String,
+                        notificationId: Int,
+                        generatedAtMs: Long,
+                        context: Context,
+                    ) {
+                        dismissed += DismissCall(notificationKey, notificationId, generatedAtMs)
+                    }
+                },
+                actionScope = CoroutineScope(Dispatchers.Unconfined),
+            )
+
+            receiver.onReceive(
+                context,
+                Intent(context, WearNotificationActionReceiver::class.java)
+                    .setAction(WearNotificationActionReceiver.ACTION_MARK_AS_READ)
+                    .putExtra(WearNotificationActionReceiver.EXTRA_SKIP_CONFIRMATION, true)
+                    .putExtra(WearNotificationActionReceiver.EXTRA_NOTIFICATION_KEY, "notif-1")
+                    .putExtra(WearNotificationActionReceiver.EXTRA_NOTIFICATION_ID, 42)
+                    .putExtra(WearNotificationActionReceiver.EXTRA_GENERATED_AT_MS, 123L)
+                    .putExtra(WearNotificationActionReceiver.EXTRA_ROOM_ID, "!room:server")
+                    .putExtra(WearNotificationActionReceiver.EXTRA_EVENT_ID, "\$event:server")
+                    .putExtra(WearNotificationActionReceiver.EXTRA_THREAD_ROOT_EVENT_ID, "\$root:server"),
+            )
+
+            assertThat(confirmationShown).isFalse()
+            assertThat(dismissed).containsExactly(DismissCall("notif-1", 42, 123L))
+            assertThat(executed).containsExactly(Triple("!room:server", "\$event:server", "\$root:server"))
         }
     }
 
@@ -87,6 +155,7 @@ class WearNotificationActionReceiverTest {
                         context: Context,
                         roomId: String,
                         eventId: String,
+                        threadRootEventId: String?,
                     ): Result<Unit> = Result.success(Unit)
 
                     override suspend fun reply(
@@ -101,6 +170,8 @@ class WearNotificationActionReceiverTest {
                     }
                 },
                 uiController = object : WearNotificationActionReceiver.WearNotificationActionUiController {
+                    override fun showMarkAsReadConfirmation(context: Context) = Unit
+
                     override fun dismiss(
                         notificationKey: String,
                         notificationId: Int,

@@ -65,6 +65,6 @@ interface ElementXWatchPort {
     /** Small circular avatar thumbnail for a room / DM member when available. */
     suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> = Result.success(null)
 
-    /** Mark a room's timeline as read up to `eventId`. */
-    suspend fun markAsRead(roomId: String, eventId: String): Result<Unit>
+    /** Mark a room or thread timeline as read up to `eventId`. */
+    suspend fun markAsRead(roomId: String, eventId: String, threadRootEventId: String?): Result<Unit>
 }

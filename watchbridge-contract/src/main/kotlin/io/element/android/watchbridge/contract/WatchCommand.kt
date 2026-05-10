@@ -93,11 +93,20 @@ sealed interface WatchCommand : WatchPayload {
     ) : WatchCommand
 
     @Serializable
+    @SerialName("cmd.unsubscribe")
+    data class Unsubscribe(
+        override val requestId: String,
+        val roomId: String,
+        val threadRootEventId: String? = null,
+    ) : WatchCommand
+
+    @Serializable
     @SerialName("cmd.markAsRead")
     data class MarkAsRead(
         override val requestId: String,
         val roomId: String,
         val eventId: String,
+        val threadRootEventId: String? = null,
     ) : WatchCommand
 }
 

@@ -67,6 +67,50 @@ class WatchBridgeSerializationTest {
     }
 
     @Test
+    fun `mark as read command carries thread root when present`() {
+        val cmd = WatchCommand.MarkAsRead(
+            requestId = "req-mark",
+            roomId = "!room:server",
+            eventId = "\$event:server",
+            threadRootEventId = "\$root:server",
+        )
+        val envelope = WatchSyncEnvelope(generatedAtMs = 0L, payload = cmd)
+
+        val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+        val decodedCmd = decoded.payload as WatchCommand.MarkAsRead
+
+        assertThat(decodedCmd.threadRootEventId).isEqualTo("\$root:server")
+    }
+
+    @Test
+    fun `unsubscribe command roundtrips`() {
+        val cmd = WatchCommand.Unsubscribe(
+            requestId = "req-unsubscribe",
+            roomId = "!room:server",
+            threadRootEventId = "\$root:server",
+        )
+        val envelope = WatchSyncEnvelope(generatedAtMs = 0L, payload = cmd)
+
+        val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+
+        assertThat(decoded.payload).isEqualTo(cmd)
+    }
+
+    @Test
+    fun `media preview request command roundtrips`() {
+        val cmd = WatchCommand.RequestMediaPreview(
+            requestId = "req-preview",
+            roomId = "!room:server",
+            eventId = "\$image:server",
+        )
+        val envelope = WatchSyncEnvelope(generatedAtMs = 0L, payload = cmd)
+
+        val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+
+        assertThat(decoded.payload).isEqualTo(cmd)
+    }
+
+    @Test
     fun `ack types are distinct`() {
         val pending = WatchAck.Pending(requestId = "r", reason = "queued")
         val sent = WatchAck.Sent(requestId = "r", eventId = "\$ev:server")
@@ -137,10 +181,11 @@ class WatchBridgeSerializationTest {
         )
 
         val decoded = ser.decodeEnvelope(ser.encodeEnvelope(envelope))
+        val notification = (decoded.payload as WatchSync.MessageNotification).notification
 
         assertThat(decoded).isEqualTo(envelope)
-        assertThat((decoded.payload as WatchSync.MessageNotification).notification.messageCount).isEqualTo(3)
-        assertThat((decoded.payload as WatchSync.MessageNotification).notification.previewMessages)
+        assertThat(notification.messageCount).isEqualTo(3)
+        assertThat(notification.previewMessages)
             .containsExactlyElementsIn((envelope.payload as WatchSync.MessageNotification).notification.previewMessages)
             .inOrder()
     }

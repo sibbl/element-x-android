@@ -59,6 +59,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageT
 import io.element.android.libraries.matrix.api.timeline.item.event.toEventOrTransactionId
 import io.element.android.libraries.matrix.ui.model.getAvatarData
 import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
+import io.element.android.libraries.push.api.notifications.NotificationCleaner
 import io.element.android.services.appnavstate.api.currentSessionId
 import io.element.android.watchbridge.ElementXWatchPort
 import io.element.android.watchbridge.WatchBridgeDispatcher
@@ -229,6 +230,7 @@ object ElementXWatchBridgeRuntime {
             client = client,
             imageLoader = graph.imageLoaderHolder.get(client),
             notificationBitmapLoader = graph.notificationBitmapLoader,
+            notificationCleaner = graph.notificationCleaner,
         )
     }
 
@@ -251,6 +253,7 @@ private class MatrixRoomListWatchPort(
     internal val client: MatrixClient,
     private val imageLoader: ImageLoader,
     private val notificationBitmapLoader: NotificationBitmapLoader,
+    private val notificationCleaner: NotificationCleaner,
 ) : ElementXWatchPort {
     private val roomList = client.roomListService.createRoomList(
         pageSize = ROOM_LIST_PAGE_SIZE,
@@ -461,9 +464,29 @@ private class MatrixRoomListWatchPort(
         return Result.success(bitmap.toPngByteArray())
     }
 
-    override suspend fun markAsRead(roomId: String, eventId: String): Result<Unit> {
+    override suspend fun markAsRead(roomId: String, eventId: String, threadRootEventId: String?): Result<Unit> {
+        val matrixRoomId = RoomId(roomId)
+        val threadId = threadRootEventId?.let(::ThreadId)
+        clearPhoneMessageNotification(roomId = matrixRoomId, threadId = threadId)
         val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
-        return room.liveTimeline.sendReadReceipt(EventId(eventId), ReceiptType.READ_PRIVATE)
+        return if (threadId == null) {
+            room.liveTimeline.sendReadReceipt(EventId(eventId), ReceiptType.READ_PRIVATE)
+        } else {
+            val timeline = room.createTimeline(CreateTimelineParams.Threaded(threadId)).getOrThrow()
+            try {
+                timeline.sendReadReceipt(EventId(eventId), ReceiptType.READ_PRIVATE)
+            } finally {
+                timeline.close()
+            }
+        }
+    }
+
+    private fun clearPhoneMessageNotification(roomId: RoomId, threadId: ThreadId?) {
+        if (threadId == null) {
+            notificationCleaner.clearMessagesForRoom(client.sessionId, roomId)
+        } else {
+            notificationCleaner.clearMessagesForThread(client.sessionId, roomId, threadId)
+        }
     }
 
     private suspend fun joinedRoom(roomId: String): JoinedRoom? {

@@ -48,6 +48,8 @@ object WatchBridgeSerialization {
                 subclass(WatchCommand.SendReaction::class)
                 subclass(WatchCommand.UploadVoiceDraft::class)
                 subclass(WatchCommand.RequestPlayback::class)
+                subclass(WatchCommand.RequestMediaPreview::class)
+                subclass(WatchCommand.Unsubscribe::class)
                 subclass(WatchCommand.MarkAsRead::class)
 
                 subclass(WatchAck.Accepted::class)

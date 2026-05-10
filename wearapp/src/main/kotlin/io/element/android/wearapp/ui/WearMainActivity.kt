@@ -121,6 +121,7 @@ class WearMainActivity : ComponentActivity() {
         pendingDeepLink = consumePendingDeepLink(intent)
         pendingTileDirectReplyRoomId = consumePendingTileDirectReplyRoomId(intent)
         val bridge = (application as WearApp).bridgeClient
+        bridge.refreshCachedStateFromDataLayer()
         setContent {
             val nav = rememberSwipeDismissableNavController()
             val scope = rememberCoroutineScope()

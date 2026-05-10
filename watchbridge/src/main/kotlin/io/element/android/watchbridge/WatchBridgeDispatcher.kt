@@ -162,8 +162,12 @@ class WatchBridgeDispatcher(
                         .onFailure { ack(WatchAck.Failed(cmd.requestId, WatchErrorCode.PLAYBACK_UNAVAILABLE, it.message)) }
                 }
                 is WatchCommand.RequestMediaPreview -> requestMediaPreview(cmd)
+                is WatchCommand.Unsubscribe -> {
+                    unsubscribe(cmd)
+                    ack(WatchAck.Sent(cmd.requestId))
+                }
                 is WatchCommand.MarkAsRead -> {
-                    port.markAsRead(cmd.roomId, cmd.eventId)
+                    port.markAsRead(cmd.roomId, cmd.eventId, cmd.threadRootEventId)
                         .onSuccess { ack(WatchAck.Sent(cmd.requestId)) }
                         .onFailure { ack(WatchAck.Failed(cmd.requestId, classify(it), it.message)) }
                 }
@@ -404,6 +408,15 @@ class WatchBridgeDispatcher(
                 Timber.w(it, "fetchThread failed for %s/%s", cmd.roomId, cmd.threadRootEventId)
                 ack(WatchAck.Failed(cmd.requestId, classify(it), it.message))
             }
+        }
+    }
+
+    private fun unsubscribe(cmd: WatchCommand.Unsubscribe) {
+        val threadRootEventId = cmd.threadRootEventId
+        if (threadRootEventId == null) {
+            roomJobs.remove(cmd.roomId)?.cancel()
+        } else {
+            threadJobs.remove("${cmd.roomId}/$threadRootEventId")?.cancel()
         }
     }
 
