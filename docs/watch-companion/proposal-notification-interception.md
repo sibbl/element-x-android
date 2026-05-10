@@ -41,7 +41,7 @@ Modify the phone app's `NotificationCreator` to add a `WearableExtender` with:
        .setPackage("io.element.android.x.debug")
        .putExtra("roomId", roomId)
        .putExtra("eventId", eventId)
-   
+
    NotificationCompat.WearableExtender()
        .setContentAction(0)
        .addAction(NotificationCompat.Action.Builder(...)
