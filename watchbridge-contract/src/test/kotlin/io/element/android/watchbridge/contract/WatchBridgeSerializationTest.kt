@@ -219,8 +219,8 @@ class WatchBridgeSerializationTest {
             generatedAtMs = 99L,
             payload = WatchSync.SettingsUpdate(
                 settings = WatchCompanionSettings(
-                    recentConversationsTileAction = WatchTileConversationAction.DIRECT_REPLY,
-                    favoriteConversationsTileAction = WatchTileConversationAction.VOICE_RECORDING,
+                    recentConversationsTileAction = WatchTileConversationAction.QUICK_REPLY_TEXT,
+                    favoriteConversationsTileAction = WatchTileConversationAction.QUICK_REPLY_VOICE,
                     notificationVibrations = WatchNotificationVibrationSettings(
                         groups = WatchNotificationVibrationPattern.CUSTOM,
                         groupsCustomPattern = "120 60 240",

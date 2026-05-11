@@ -121,11 +121,11 @@ class WearCompanionSettingsActivityTest {
     @Test
     fun `recent tile action can be updated`() {
         val updatedSettings = WatchCompanionSettings().copy(
-            recentConversationsTileAction = WatchTileConversationAction.VOICE_RECORDING,
+            recentConversationsTileAction = WatchTileConversationAction.QUICK_REPLY_VOICE,
         )
 
         assertThat(updatedSettings.recentConversationsTileAction)
-            .isEqualTo(WatchTileConversationAction.VOICE_RECORDING)
+            .isEqualTo(WatchTileConversationAction.QUICK_REPLY_VOICE)
     }
 
     @Test
@@ -342,8 +342,11 @@ class WearCompanionSettingsActivityTest {
             recentTileLabel = "Recent conversations tile",
             favoriteTileLabel = "Favorite conversations tile",
             openConversationLabel = "Open conversation",
-            directReplyLabel = "Start direct reply",
-            voiceRecordingLabel = "Start voice recording",
+            readLatestLabel = "Read latest message",
+            quickReplyEmojiLabel = "Quick reply with emoji",
+            quickReplyTextLabel = "Quick reply with text",
+            quickReplyVoiceLabel = "Quick reply with voice message",
+            openLatestLabel = "Open latest message",
         )
     }
 }

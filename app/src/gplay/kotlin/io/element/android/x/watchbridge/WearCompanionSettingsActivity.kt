@@ -230,8 +230,11 @@ internal data class WearCompanionTileActionSectionStrings(
     val recentTileLabel: String,
     val favoriteTileLabel: String,
     val openConversationLabel: String,
-    val directReplyLabel: String,
-    val voiceRecordingLabel: String,
+    val readLatestLabel: String,
+    val quickReplyEmojiLabel: String,
+    val quickReplyTextLabel: String,
+    val quickReplyVoiceLabel: String,
+    val openLatestLabel: String,
 )
 
 /**
@@ -352,7 +355,7 @@ internal fun WearCompanionSettingsScreen(
         PreferenceCategory(title = resolvedTileActionStrings.sectionTitle) {
             WearCompanionSelectionRow(
                 title = resolvedTileActionStrings.recentTileLabel,
-                selectedOption = settings.recentConversationsTileAction.toSelectorOption(
+                selectedOption = settings.recentConversationsTileAction.normalizedTileAction().toSelectorOption(
                     kind = WearCompanionTileKind.RECENT,
                     strings = resolvedTileActionStrings,
                 ),
@@ -362,7 +365,7 @@ internal fun WearCompanionSettingsScreen(
             PreferenceDivider()
             WearCompanionSelectionRow(
                 title = resolvedTileActionStrings.favoriteTileLabel,
-                selectedOption = settings.favoriteConversationsTileAction.toSelectorOption(
+                selectedOption = settings.favoriteConversationsTileAction.normalizedTileAction().toSelectorOption(
                     kind = WearCompanionTileKind.FAVORITE,
                     strings = resolvedTileActionStrings,
                 ),
@@ -497,13 +500,13 @@ internal fun WearCompanionSettingsScreen(
             WearCompanionSettingsDialog.RecentTileAction -> {
                 WearCompanionSettingsSelectionDialog(
                     title = resolvedTileActionStrings.recentTileLabel,
-                    options = WatchTileConversationAction.entries.map { action ->
+                    options = tileConversationActionOptions.map { action ->
                         action.toSelectorOption(
                             kind = WearCompanionTileKind.RECENT,
                             strings = resolvedTileActionStrings,
                         )
                     },
-                    initialSelection = settings.recentConversationsTileAction,
+                    initialSelection = settings.recentConversationsTileAction.normalizedTileAction(),
                     commonStrings = resolvedCommonStrings,
                     usePlatformDialog = usePlatformDialogs,
                     onDismissRequest = { dialog = null },
@@ -516,13 +519,13 @@ internal fun WearCompanionSettingsScreen(
             WearCompanionSettingsDialog.FavoriteTileAction -> {
                 WearCompanionSettingsSelectionDialog(
                     title = resolvedTileActionStrings.favoriteTileLabel,
-                    options = WatchTileConversationAction.entries.map { action ->
+                    options = tileConversationActionOptions.map { action ->
                         action.toSelectorOption(
                             kind = WearCompanionTileKind.FAVORITE,
                             strings = resolvedTileActionStrings,
                         )
                     },
-                    initialSelection = settings.favoriteConversationsTileAction,
+                    initialSelection = settings.favoriteConversationsTileAction.normalizedTileAction(),
                     commonStrings = resolvedCommonStrings,
                     usePlatformDialog = usePlatformDialogs,
                     onDismissRequest = { dialog = null },
@@ -1107,8 +1110,11 @@ private fun rememberWearCompanionTileActionSectionStrings(): WearCompanionTileAc
         recentTileLabel = stringResource(R.string.screen_wear_companion_tile_action_recent_title),
         favoriteTileLabel = stringResource(R.string.screen_wear_companion_tile_action_favorite_title),
         openConversationLabel = stringResource(R.string.screen_wear_companion_tile_action_open_conversation),
-        directReplyLabel = stringResource(R.string.screen_wear_companion_tile_action_direct_reply),
-        voiceRecordingLabel = stringResource(R.string.screen_wear_companion_tile_action_voice_recording),
+        readLatestLabel = stringResource(R.string.screen_wear_companion_tile_action_read_latest),
+        quickReplyEmojiLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_emoji),
+        quickReplyTextLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_text),
+        quickReplyVoiceLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_voice),
+        openLatestLabel = stringResource(R.string.screen_wear_companion_tile_action_open_latest),
     )
 }
 
@@ -1128,10 +1134,32 @@ private fun WatchLongPressConversationAction.displayLabel(): String = when (this
     WatchLongPressConversationAction.OPEN_LATEST -> "Open latest message"
 }
 
+private val tileConversationActionOptions = listOf(
+    WatchTileConversationAction.OPEN_CONVERSATION,
+    WatchTileConversationAction.READ_LATEST,
+    WatchTileConversationAction.QUICK_REPLY_EMOJI,
+    WatchTileConversationAction.QUICK_REPLY_TEXT,
+    WatchTileConversationAction.QUICK_REPLY_VOICE,
+    WatchTileConversationAction.OPEN_LATEST,
+)
+
+@Suppress("DEPRECATION")
 private fun WatchTileConversationAction.displayLabel(strings: WearCompanionTileActionSectionStrings): String = when (this) {
     WatchTileConversationAction.OPEN_CONVERSATION -> strings.openConversationLabel
-    WatchTileConversationAction.DIRECT_REPLY -> strings.directReplyLabel
-    WatchTileConversationAction.VOICE_RECORDING -> strings.voiceRecordingLabel
+    WatchTileConversationAction.READ_LATEST -> strings.readLatestLabel
+    WatchTileConversationAction.QUICK_REPLY_EMOJI -> strings.quickReplyEmojiLabel
+    WatchTileConversationAction.QUICK_REPLY_TEXT -> strings.quickReplyTextLabel
+    WatchTileConversationAction.QUICK_REPLY_VOICE -> strings.quickReplyVoiceLabel
+    WatchTileConversationAction.OPEN_LATEST -> strings.openLatestLabel
+    WatchTileConversationAction.DIRECT_REPLY -> strings.quickReplyTextLabel
+    WatchTileConversationAction.VOICE_RECORDING -> strings.quickReplyVoiceLabel
+}
+
+@Suppress("DEPRECATION")
+private fun WatchTileConversationAction.normalizedTileAction(): WatchTileConversationAction = when (this) {
+    WatchTileConversationAction.DIRECT_REPLY -> WatchTileConversationAction.QUICK_REPLY_TEXT
+    WatchTileConversationAction.VOICE_RECORDING -> WatchTileConversationAction.QUICK_REPLY_VOICE
+    else -> this
 }
 
 private fun WearCompanionVibrationCategory.displayLabel(strings: WearCompanionVibrationSectionStrings): String = when (this) {

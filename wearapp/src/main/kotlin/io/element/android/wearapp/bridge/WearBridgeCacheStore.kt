@@ -131,6 +131,26 @@ internal class WearBridgeCacheStore(
         }
     }
 
+    suspend fun readLatestTimelineEventIds(roomIds: Iterable<String>): Map<String, String> = withContext(ioDispatcher) {
+        mutex.withLock {
+            buildMap {
+                roomIds.forEach { roomId ->
+                    val latestEventId = timelineFile(roomId)
+                        .takeIf(File::exists)
+                        ?.decodeEnvelope()
+                        ?.payload
+                        ?.let { it as? WatchSync.TimelineDelta }
+                        ?.items
+                        ?.lastOrNull()
+                        ?.eventId
+                    if (latestEventId != null) {
+                        put(roomId, latestEventId)
+                    }
+                }
+            }
+        }
+    }
+
     suspend fun readMediaPreview(roomId: String, eventId: String): ByteArray? = withContext(ioDispatcher) {
         mutex.withLock {
             readMediaEnvelope(roomId, eventId)?.imageBytes

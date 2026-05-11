@@ -256,11 +256,15 @@ internal fun MessageDetailedBody(
             style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
             modifier = modifier,
         )
-        else -> MessagePreviewBody(
-            item = item,
-            mediaPreviewBytes = mediaPreviewBytes,
-            onRequestMediaPreview = onRequestMediaPreview,
-            maxLines = Int.MAX_VALUE,
+        WatchTimelineItemKind.STATE,
+        WatchTimelineItemKind.UNSUPPORTED -> Text(
+            text = item.displayText(),
+            style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+            modifier = modifier,
+            overflow = TextOverflow.Clip,
+        )
+        else -> Text(
+            text = item.richDisplayText(),
             style = MaterialTheme.typography.bodyMedium,
             modifier = modifier,
             overflow = TextOverflow.Clip,
@@ -316,12 +320,19 @@ private fun ImageMessageDetailedView(
             onClick = onOpenImage,
             onRequestPreview = onRequestPreview,
         )
-        Text(
-            text = item.bodyText ?: stringResource(R.string.timeline_image),
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = Int.MAX_VALUE,
-            overflow = TextOverflow.Clip,
-        )
+        if (item.bodyText != null || item.formattedText != null) {
+            Text(
+                text = item.richDisplayText(),
+                style = MaterialTheme.typography.bodyMedium,
+                overflow = TextOverflow.Clip,
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.timeline_image),
+                style = MaterialTheme.typography.bodyMedium,
+                overflow = TextOverflow.Clip,
+            )
+        }
     }
 }
 

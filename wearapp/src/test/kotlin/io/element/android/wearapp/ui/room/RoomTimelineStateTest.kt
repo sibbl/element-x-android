@@ -7,6 +7,8 @@
 
 package io.element.android.wearapp.ui.room
 
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
@@ -34,6 +36,23 @@ class RoomTimelineStateTest {
         )
 
         assertThat(item.displayText()).isEqualTo("First line\nSecond line")
+    }
+
+    @Test
+    fun `rich display text preserves formatting spans`() {
+        val item = aTextTimelineItem(
+            formattedText = "<strong>Bold</strong> <em>italic</em><br><a href=\"https://example.org\">link</a>",
+        )
+
+        val richText = item.richDisplayText()
+
+        assertThat(richText.text).isEqualTo("Bold italic\nlink")
+        assertThat(richText.spanStyles.any { it.item.fontWeight == FontWeight.Bold && richText.text.substring(it.start, it.end) == "Bold" })
+            .isTrue()
+        assertThat(richText.spanStyles.any { it.item.fontStyle == FontStyle.Italic && richText.text.substring(it.start, it.end) == "italic" })
+            .isTrue()
+        assertThat(richText.getStringAnnotations("URL", 0, richText.length).single().item)
+            .isEqualTo("https://example.org")
     }
 
     private fun aTextTimelineItem(

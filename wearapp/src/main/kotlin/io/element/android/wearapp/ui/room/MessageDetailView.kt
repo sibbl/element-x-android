@@ -11,6 +11,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -38,12 +42,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.OutlinedIconButton
 import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
+import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.audio.WearVoicePlayer
 import io.element.android.wearapp.ui.common.ComposerBar
 import kotlinx.coroutines.launch
@@ -60,6 +66,7 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "🎉", "🙏", "
 @Composable
 internal fun MessageDetailView(
     state: MessageDetailViewState,
+    readAloudPlaybackState: WearTextToSpeech.PlaybackState = WearTextToSpeech.PlaybackState.IDLE,
     mediaPreviewBytes: ByteArray? = null,
     onRequestMediaPreview: (() -> Unit)? = null,
     onReply: () -> Unit,
@@ -146,11 +153,32 @@ internal fun MessageDetailView(
                     ReactionsRow(item = item)
                 }
                 if (item.readableByTts && (item.bodyText != null || item.formattedText != null)) {
+                    val isReadingAloud = readAloudPlaybackState == WearTextToSpeech.PlaybackState.LOADING ||
+                        readAloudPlaybackState == WearTextToSpeech.PlaybackState.PLAYING
                     FilledTonalButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = onReadAloud,
                     ) {
-                        Text(stringResource(R.string.read_aloud))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = if (isReadingAloud) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                            )
+                            Text(
+                                text = stringResource(
+                                    if (isReadingAloud) {
+                                        R.string.screen_message_detail_pause_read_aloud
+                                    } else {
+                                        R.string.read_aloud
+                                    },
+                                ),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                 }
                 Button(
@@ -199,12 +227,16 @@ internal fun MessageDetailView(
                                 modifier = Modifier.size(44.dp),
                                 onClick = { onSendReaction(reactionKey) },
                             ) {
-                                Text(
-                                    text = reactionKey,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.titleSmall,
-                                )
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = reactionKey,
+                                        textAlign = TextAlign.Center,
+                                        style = MaterialTheme.typography.titleSmall,
+                                    )
+                                }
                             }
                         }
                     }
@@ -215,11 +247,7 @@ internal fun MessageDetailView(
             onReply = onReply,
             onVoice = onVoice,
             onReact = null,
-            contextLabel = if (item != null) {
-                stringResource(R.string.composer_reply_to, sender)
-            } else {
-                null
-            },
+            contextLabel = null,
         )
     }
 }

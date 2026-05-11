@@ -26,7 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
-import coil3.compose.AsyncImage
 
 @Composable
 internal fun AvatarBadge(
@@ -36,7 +35,6 @@ internal fun AvatarBadge(
     modifier: Modifier = Modifier,
 ) {
     val fallbackColor = remember(displayName) { avatarPalette(displayName) }
-    val loadableAvatar = remember(avatarUrl) { avatarModelOrNull(avatarUrl) }
     val decodedAvatar = remember(avatarBytes) {
         avatarBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
@@ -51,13 +49,6 @@ internal fun AvatarBadge(
         if (decodedAvatar != null) {
             Image(
                 bitmap = decodedAvatar,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else if (loadableAvatar != null) {
-            AsyncImage(
-                model = loadableAvatar,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -83,17 +74,6 @@ internal fun String.toInitials(): String {
         parts.size == 1 -> parts.first().take(2)
         else -> "?"
     }.uppercase()
-}
-
-private fun avatarModelOrNull(url: String?): String? {
-    val trimmed = url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    return trimmed.takeIf {
-        it.startsWith("https://") ||
-            it.startsWith("http://") ||
-            it.startsWith("content://") ||
-            it.startsWith("file://") ||
-            it.startsWith("android.resource://")
-    }
 }
 
 private fun avatarPalette(seed: String): Color {

@@ -47,8 +47,11 @@
     <string name="screen_wear_companion_tile_action_recent_title">Recent conversations tile</string>
     <string name="screen_wear_companion_tile_action_favorite_title">Favorite conversations tile</string>
     <string name="screen_wear_companion_tile_action_open_conversation">Open conversation</string>
-    <string name="screen_wear_companion_tile_action_direct_reply">Start direct reply</string>
-    <string name="screen_wear_companion_tile_action_voice_recording">Start voice recording</string>
+    <string name="screen_wear_companion_tile_action_read_latest">Read latest message</string>
+    <string name="screen_wear_companion_tile_action_quick_reply_emoji">Quick reply with emoji</string>
+    <string name="screen_wear_companion_tile_action_quick_reply_text">Quick reply with text</string>
+    <string name="screen_wear_companion_tile_action_quick_reply_voice">Quick reply with voice message</string>
+    <string name="screen_wear_companion_tile_action_open_latest">Open latest message</string>
     <string name="screen_wear_companion_notifications_section">Notification test</string>
     <string name="screen_wear_companion_send_test_notification_description">Send a realistic sample notification using %1$s vibration.</string>
     <string name="screen_wear_companion_test_notification_title">Wear OS companion test</string>

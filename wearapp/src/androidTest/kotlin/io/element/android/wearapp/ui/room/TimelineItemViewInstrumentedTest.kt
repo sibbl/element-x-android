@@ -27,7 +27,6 @@ import java.io.ByteArrayOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class TimelineItemViewInstrumentedTest {
-
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test

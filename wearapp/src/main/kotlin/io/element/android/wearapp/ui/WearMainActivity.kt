@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -79,6 +80,7 @@ class WearMainActivity : ComponentActivity() {
     private var notificationPermissionState by mutableStateOf(WearNotificationPermissionState.Granted)
     private var pendingDeepLink by mutableStateOf<WearCompanionDeepLink?>(null)
     private var pendingTileDirectReplyRoomId by mutableStateOf<String?>(null)
+    private var pendingTileReadLatest by mutableStateOf<PendingTileReadLatest?>(null)
     private var pendingRoomScrollRequest by mutableStateOf<PendingRoomScrollRequest?>(null)
     private var transientErrorMessage by mutableStateOf<String?>(null)
     private var favoritesRequestedRoomCount by mutableIntStateOf(30)
@@ -120,11 +122,18 @@ class WearMainActivity : ComponentActivity() {
         refreshNotificationPermissionState()
         pendingDeepLink = consumePendingDeepLink(intent)
         pendingTileDirectReplyRoomId = consumePendingTileDirectReplyRoomId(intent)
+        pendingTileReadLatest = consumePendingTileReadLatest(intent)
         val bridge = (application as WearApp).bridgeClient
         bridge.refreshCachedStateFromDataLayer()
         setContent {
             val nav = rememberSwipeDismissableNavController()
             val scope = rememberCoroutineScope()
+            val tileActionTts = remember { WearTextToSpeech(this@WearMainActivity) }
+            DisposableEffect(tileActionTts) {
+                onDispose {
+                    tileActionTts.shutdown()
+                }
+            }
             val openRoomAtBottom: (String) -> Unit = { roomId ->
                 pendingRoomScrollRequest = PendingRoomScrollRequest(
                     roomId = roomId,
@@ -132,6 +141,16 @@ class WearMainActivity : ComponentActivity() {
                 )
                 nav.navigate(roomRoute(roomId)) {
                     launchSingleTop = true
+                }
+            }
+            val openLatestMessageOrRoom: (String) -> Unit = { roomId ->
+                val latestEventId = bridge.getCachedTimeline(roomId).lastOrNull()?.eventId
+                if (latestEventId == null) {
+                    openRoomAtBottom(roomId)
+                } else {
+                    nav.navigate(messageRoute(roomId = roomId, eventId = latestEventId)) {
+                        launchSingleTop = true
+                    }
                 }
             }
             LaunchedEffect(notificationPermissionState) {
@@ -155,6 +174,7 @@ class WearMainActivity : ComponentActivity() {
             }
             LaunchedEffect(pendingTileDirectReplyRoomId) {
                 pendingTileDirectReplyRoomId?.let { roomId ->
+                    openRoomAtBottom(roomId)
                     launchDictation { dictated ->
                         if (!dictated.isNullOrBlank()) {
                             scope.launch {
@@ -180,6 +200,16 @@ class WearMainActivity : ComponentActivity() {
                     pendingTileDirectReplyRoomId = null
                 }
             }
+            LaunchedEffect(pendingTileReadLatest) {
+                pendingTileReadLatest?.let { pending ->
+                    if (pending.previewText.isNullOrBlank()) {
+                        openRoomAtBottom(pending.roomId)
+                    } else {
+                        tileActionTts.speak(pending.previewText)
+                    }
+                    pendingTileReadLatest = null
+                }
+            }
             LaunchedEffect(transientErrorMessage) {
                 if (transientErrorMessage != null) {
                     delay(4_000L)
@@ -194,6 +224,11 @@ class WearMainActivity : ComponentActivity() {
                                 val settings by bridge.companionSettings.collectAsState()
                                 val scope = rememberCoroutineScope()
                                 val tts = remember { WearTextToSpeech(this@WearMainActivity) }
+                                DisposableEffect(tts) {
+                                    onDispose {
+                                        tts.shutdown()
+                                    }
+                                }
                                 FavoritesScreen(
                                     bridge = bridge,
                                     onRoomSelected = openRoomAtBottom,
@@ -203,7 +238,7 @@ class WearMainActivity : ComponentActivity() {
                                                 room.lastPreviewText?.let { tts.speak(it) }
                                             }
                                             WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> {
-                                                openRoomAtBottom(room.roomId)
+                                                openLatestMessageOrRoom(room.roomId)
                                             }
                                             WatchLongPressConversationAction.QUICK_REPLY_TEXT -> {
                                                 launchDictation { dictated ->
@@ -237,7 +272,7 @@ class WearMainActivity : ComponentActivity() {
                                                 )
                                             }
                                             WatchLongPressConversationAction.OPEN_LATEST -> {
-                                                openRoomAtBottom(room.roomId)
+                                                openLatestMessageOrRoom(room.roomId)
                                             }
                                         }
                                     },
@@ -282,13 +317,17 @@ class WearMainActivity : ComponentActivity() {
                                     onError = { transientErrorMessage = it },
                                 )
                             }
-                            composable("message?roomId={roomId}&eventId={eventId}") { entry ->
+                            composable("message?roomId={roomId}&eventId={eventId}&threadRootId={threadRootId}") { entry ->
                                 val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
                                 val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                                val threadRootEventId = entry.arguments?.getString("threadRootId")
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let(Uri::decode)
                                 MessageDetailScreen(
                                     bridge = bridge,
                                     roomId = roomId,
                                     eventId = eventId,
+                                    threadRootEventId = threadRootEventId,
                                     activity = this@WearMainActivity,
                                     onOpenThread = { rootId ->
                                         nav.navigate(threadRoute(roomId = roomId, rootId = rootId)) {
@@ -328,6 +367,11 @@ class WearMainActivity : ComponentActivity() {
                                     roomId = roomId,
                                     threadRootEventId = rootId,
                                     activity = this@WearMainActivity,
+                                    onMessageSelected = { eventId ->
+                                        nav.navigate(messageRoute(roomId = roomId, eventId = eventId, threadRootEventId = rootId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
                                     savedListPosition = threadListPositions["$roomId/$rootId"],
                                     onListPositionChange = { threadListPositions["$roomId/$rootId"] = it },
                                     onError = { transientErrorMessage = it },
@@ -372,12 +416,18 @@ class WearMainActivity : ComponentActivity() {
         refreshNotificationPermissionState()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        WearTextToSpeech.pauseAll()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         // When already running and a notification opens us, store deep link for next recomposition.
         pendingDeepLink = consumePendingDeepLink(intent)
         pendingTileDirectReplyRoomId = consumePendingTileDirectReplyRoomId(intent)
+        pendingTileReadLatest = consumePendingTileReadLatest(intent)
     }
 
     private fun refreshNotificationPermissionState() {
@@ -497,8 +547,11 @@ private fun NotificationPermissionPrompt(
 
 private fun roomRoute(roomId: String): String = "room?roomId=${Uri.encode(roomId)}"
 
-private fun messageRoute(roomId: String, eventId: String): String =
-    "message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}"
+private fun messageRoute(
+    roomId: String,
+    eventId: String,
+    threadRootEventId: String? = null,
+): String = "message?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}&threadRootId=${Uri.encode(threadRootEventId.orEmpty())}"
 
 private fun imageRoute(roomId: String, eventId: String): String =
     "image?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}"

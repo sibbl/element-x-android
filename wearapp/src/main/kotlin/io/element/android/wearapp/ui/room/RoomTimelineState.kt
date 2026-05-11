@@ -7,6 +7,13 @@
 
 package io.element.android.wearapp.ui.room
 
+import android.graphics.Typeface
+import android.text.Spanned
+import android.text.style.StrikethroughSpan
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
+import android.text.style.URLSpan
+import android.text.style.UnderlineSpan
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +21,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.text.HtmlCompat
 import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchSync
@@ -91,6 +104,15 @@ internal fun WatchTimelineItem.displayText(): String {
         ?: "[${kind.name.lowercase()}]"
 }
 
+internal fun WatchTimelineItem.richDisplayText(): AnnotatedString {
+    val formatted = formattedText
+        ?.takeIf { it.isNotBlank() }
+        ?.let { it.toRichTimelineText() }
+        ?.takeIf { it.text.isNotBlank() }
+    return formatted
+        ?: AnnotatedString(bodyText?.takeIf { it.isNotBlank() } ?: "[${kind.name.lowercase()}]")
+}
+
 private fun String.toPlainTimelineText(): String {
     return HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_COMPACT)
         .toString()
@@ -102,6 +124,51 @@ private fun String.toPlainTimelineText(): String {
         }
         .replace(EXCESSIVE_BLANK_LINES, "\n\n")
         .trim()
+}
+
+private fun String.toRichTimelineText(): AnnotatedString {
+    val spanned = HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_COMPACT)
+    val rawText = spanned.toString()
+    val startOffset = rawText.indexOfFirst { !it.isWhitespace() }
+    if (startOffset < 0) return AnnotatedString("")
+    val endOffset = rawText.indexOfLast { !it.isWhitespace() } + 1
+    val text = rawText.substring(startOffset, endOffset)
+    val builder = AnnotatedString.Builder(text)
+
+    spanned.getSpans(0, spanned.length, Any::class.java).forEach { span ->
+        val start = (spanned.getSpanStart(span) - startOffset).coerceIn(0, text.length)
+        val end = (spanned.getSpanEnd(span) - startOffset).coerceIn(0, text.length)
+        if (start >= end) return@forEach
+        span.toSpanStyle()?.let { style -> builder.addStyle(style, start, end) }
+        if (span is URLSpan) {
+            builder.addStringAnnotation(
+                tag = "URL",
+                annotation = span.url,
+                start = start,
+                end = end,
+            )
+        }
+    }
+
+    return builder.toAnnotatedString()
+}
+
+private fun Any.toSpanStyle(): SpanStyle? = when (this) {
+    is StyleSpan -> when (style) {
+        Typeface.BOLD -> SpanStyle(fontWeight = FontWeight.Bold)
+        Typeface.ITALIC -> SpanStyle(fontStyle = FontStyle.Italic)
+        Typeface.BOLD_ITALIC -> SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+        else -> null
+    }
+    is TypefaceSpan -> if (family == "monospace") {
+        SpanStyle(fontFamily = FontFamily.Monospace)
+    } else {
+        null
+    }
+    is URLSpan -> SpanStyle(textDecoration = TextDecoration.Underline)
+    is UnderlineSpan -> SpanStyle(textDecoration = TextDecoration.Underline)
+    is StrikethroughSpan -> SpanStyle(textDecoration = TextDecoration.LineThrough)
+    else -> null
 }
 
 internal fun WatchTimelineItem.reactionSummaryText(): String? =

@@ -343,7 +343,12 @@ class WearBridgeClient(private val context: Context) {
         for (ev in events) {
             val path = ev.dataItem.uri.path.orEmpty()
             if (ev.type == DataEvent.TYPE_DELETED) {
-                WatchDataPaths.notificationKey(path)?.let(localNotificationManager::dismiss)
+                val notificationKey = WatchDataPaths.notificationKey(path)
+                if (notificationKey != null) {
+                    localNotificationManager.dismiss(notificationKey)
+                } else if (path.startsWith(WatchProtocol.DATA_PATH_PREFIX)) {
+                    handleFullRefresh()
+                }
                 continue
             }
             val item = ev.dataItem
@@ -544,7 +549,7 @@ class WearBridgeClient(private val context: Context) {
             Timber.w("dropping unsupported envelope v=%d", envelope.protocolVersion)
             return
         }
-        if (persist) {
+        if (persist && envelope.payload !is WatchSync.FullRefresh) {
             scheduleCachePersist(envelope)
         }
         when (val p = envelope.payload) {
@@ -652,6 +657,10 @@ class WearBridgeClient(private val context: Context) {
                 applyInvalidation(p)
                 scope.launch { _syncEvents.emit(p) }
             }
+            is WatchSync.FullRefresh -> {
+                handleFullRefresh()
+                scope.launch { _syncEvents.emit(p) }
+            }
             is WatchAck -> {
                 Timber.d("received ack=%s requestId=%s", p::class.simpleName, p.requestId)
                 scope.launch { _acks.emit(p) }
@@ -690,6 +699,7 @@ class WearBridgeClient(private val context: Context) {
             }
             WatchSync.Invalidation.InvalidationScope.ALL -> {
                 _favorites.value = emptyList()
+                _companionSettings.value = WatchCompanionSettings()
                 _avatarImages.value = emptyMap()
                 clearAllMediaPreviewState()
                 _summaryCache.clear()
@@ -700,6 +710,16 @@ class WearBridgeClient(private val context: Context) {
                 requestTileRefresh()
             }
         }
+    }
+
+    private fun handleFullRefresh() {
+        applyInvalidation(WatchSync.Invalidation(WatchSync.Invalidation.InvalidationScope.ALL))
+        scheduleCachePersist(
+            WatchSyncEnvelope(
+                generatedAtMs = System.currentTimeMillis(),
+                payload = WatchSync.FullRefresh,
+            ),
+        )
     }
 
     private fun requestTileRefresh() {

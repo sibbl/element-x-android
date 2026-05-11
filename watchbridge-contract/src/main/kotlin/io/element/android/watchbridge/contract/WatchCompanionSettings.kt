@@ -33,7 +33,18 @@ enum class WatchLongPressConversationAction {
 @Serializable
 enum class WatchTileConversationAction {
     OPEN_CONVERSATION,
+    READ_LATEST,
+    QUICK_REPLY_EMOJI,
+    QUICK_REPLY_TEXT,
+    QUICK_REPLY_VOICE,
+    OPEN_LATEST,
+
+    /** Kept so watches can still decode settings written by older phone builds. */
+    @Deprecated("Use QUICK_REPLY_TEXT")
     DIRECT_REPLY,
+
+    /** Kept so watches can still decode settings written by older phone builds. */
+    @Deprecated("Use QUICK_REPLY_VOICE")
     VOICE_RECORDING,
 }
 

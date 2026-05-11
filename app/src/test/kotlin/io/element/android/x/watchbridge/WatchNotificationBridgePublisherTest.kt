@@ -14,6 +14,7 @@ import io.element.android.libraries.matrix.api.core.SessionId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.push.impl.notifications.model.NotifiableMessageEvent
+import io.element.android.libraries.push.impl.notifications.model.ResolvedPushEvent
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchNotificationMessagePreview
@@ -148,6 +149,65 @@ class WatchNotificationBridgePublisherTest {
 
         assertThat(transport.deleted).containsExactly(
             WatchDataPaths.notification("message:@alice:server:!room:server|\$thread:server"),
+        )
+    }
+
+    @Test
+    fun `session clear triggers full watch state clear and deletes notification paths`() = runTest {
+        val transport = RecordingTransport()
+        val clearedSessions = mutableListOf<SessionId>()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            clearWatchStateForSession = { sessionId -> clearedSessions += sessionId },
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(
+                    eventId = "\$event:server",
+                    timestamp = 5L,
+                    body = "Session update",
+                ),
+            ),
+        )
+        publisher.onSessionCleared(SessionId("@alice:server"))
+
+        assertThat(clearedSessions).containsExactly(SessionId("@alice:server"))
+        assertThat(transport.deleted).containsExactly(
+            WatchDataPaths.notification("message:@alice:server:!room:server"),
+        )
+    }
+
+    @Test
+    fun `redacting any grouped preview event deletes the watch notification`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(eventId = "\$first:server", timestamp = 1L, body = "First"),
+                aNotifiableMessageEvent(eventId = "\$second:server", timestamp = 2L, body = "Second"),
+            ),
+        )
+        publisher.onMessageNotificationsRedacted(
+            listOf(
+                ResolvedPushEvent.Redaction(
+                    sessionId = SessionId("@alice:server"),
+                    roomId = RoomId("!room:server"),
+                    redactedEventId = EventId("\$first:server"),
+                    reason = null,
+                ),
+            ),
+        )
+
+        assertThat(transport.deleted).containsExactly(
+            WatchDataPaths.notification("message:@alice:server:!room:server"),
         )
     }
 

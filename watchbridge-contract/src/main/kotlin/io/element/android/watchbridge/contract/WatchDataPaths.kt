@@ -23,6 +23,7 @@ object WatchDataPaths {
     const val VOICE_DRAFT_CHANNEL: String = "${WatchProtocol.DATA_PATH_PREFIX}/voice/draft"
     const val VOICE_PLAYBACK_CHANNEL: String = "${WatchProtocol.DATA_PATH_PREFIX}/voice/playback"
     const val SETTINGS: String = "${WatchProtocol.DATA_PATH_PREFIX}/settings"
+    const val FULL_REFRESH: String = "${WatchProtocol.DATA_PATH_PREFIX}/full-refresh"
 
     fun avatar(roomId: String): String = "$AVATAR/${roomId.toDataPathSegment()}"
     fun mediaPreview(roomId: String, eventId: String): String =

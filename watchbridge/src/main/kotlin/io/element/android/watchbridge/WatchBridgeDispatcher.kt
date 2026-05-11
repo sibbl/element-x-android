@@ -50,7 +50,7 @@ class WatchBridgeDispatcher(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
-    private val inflight = LruBoundedMap<String, Job>(capacity = 64)
+    private val requests = LruBoundedMap<String, RequestState>(capacity = 64)
     private var favoritesJob: Job? = null
     private var settingsJob: Job? = null
     private val roomJobs = mutableMapOf<String, Job>()
@@ -122,12 +122,20 @@ class WatchBridgeDispatcher(
             return
         }
         val cmd = envelope.payload as? WatchCommand ?: return
-        if (inflight.containsKey(cmd.requestId)) {
-            // Idempotent: the caller retried; the original job will emit the final ack.
-            Timber.d("Ignoring duplicate command requestId=%s", cmd.requestId)
+        requests.get(cmd.requestId)?.let { state ->
+            val terminalAck = state.terminalAck
+            if (terminalAck == null) {
+                // Idempotent: the caller retried; the original job will emit the final ack.
+                Timber.d("Ignoring duplicate command requestId=%s", cmd.requestId)
+            } else {
+                Timber.d("Replaying terminal ack for duplicate command requestId=%s", cmd.requestId)
+                ack(terminalAck, rememberTerminal = false)
+            }
             return
         }
-        inflight.put(cmd.requestId, scope.launch { dispatch(cmd) })
+        val job = scope.launch(start = CoroutineStart.LAZY) { dispatch(cmd) }
+        requests.put(cmd.requestId, RequestState(job = job))
+        job.start()
     }
 
     private suspend fun dispatch(cmd: WatchCommand) {
@@ -390,19 +398,45 @@ class WatchBridgeDispatcher(
                         lastPublishedEventIds = emptySet()
                         return@collectLatest
                     }
-                    val currentEventIds = items.map { it.eventId }.toSet()
-                    transport.publishSync(
-                        path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
-                        envelope = envelope(
-                            WatchSync.ThreadDelta(
-                                roomId = cmd.roomId,
-                                threadRootEventId = cmd.threadRootEventId,
-                                items = items,
-                                removedEventIds = (lastPublishedEventIds - currentEventIds).toList(),
-                            ),
-                        ),
-                    )
-                    lastPublishedEventIds = currentEventIds
+                    var toPublish = items
+                    var published = false
+                    var publishedItems: List<io.element.android.watchbridge.contract.WatchThreadItem>? = null
+                    var lastPublishFailure: Throwable? = null
+                    while (!published && toPublish.isNotEmpty()) {
+                        val currentEventIds = toPublish.map { it.eventId }.toSet()
+                        runCatching {
+                            transport.publishSync(
+                                path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),
+                                envelope = envelope(
+                                    WatchSync.ThreadDelta(
+                                        roomId = cmd.roomId,
+                                        threadRootEventId = cmd.threadRootEventId,
+                                        items = toPublish,
+                                        removedEventIds = (lastPublishedEventIds - currentEventIds).toList(),
+                                    ),
+                                ),
+                            )
+                            published = true
+                            publishedItems = toPublish
+                        }.onFailure { e ->
+                            lastPublishFailure = e
+                            Timber.w(
+                                e,
+                                "Thread publish failed for room=%s thread=%s items=%d, reducing",
+                                cmd.roomId,
+                                cmd.threadRootEventId,
+                                toPublish.size,
+                            )
+                            val reduced = toPublish.size / 2
+                            toPublish = if (reduced > 0) toPublish.takeLast(reduced) else emptyList()
+                        }
+                    }
+                    if (!published && items.isNotEmpty()) {
+                        Timber.e("Unable to publish any thread items for room=%s thread=%s", cmd.roomId, cmd.threadRootEventId)
+                        ack(WatchAck.Failed(cmd.requestId, classify(lastPublishFailure ?: IOException("thread publish failed")), lastPublishFailure?.message))
+                    } else if (publishedItems != null) {
+                        lastPublishedEventIds = publishedItems.map { it.eventId }.toSet()
+                    }
                 }
             }.onFailure {
                 Timber.w(it, "fetchThread failed for %s/%s", cmd.roomId, cmd.threadRootEventId)
@@ -495,7 +529,17 @@ class WatchBridgeDispatcher(
         }
     }
 
-    private fun ack(ack: WatchAck) {
+    private fun ack(ack: WatchAck, rememberTerminal: Boolean = true) {
+        if (rememberTerminal && ack.isTerminal()) {
+            val existing = requests.get(ack.requestId)
+            requests.put(
+                ack.requestId,
+                RequestState(
+                    job = existing?.job,
+                    terminalAck = ack,
+                ),
+            )
+        }
         scope.launch {
             runCatching {
                 transport.sendMessage(
@@ -519,6 +563,21 @@ class WatchBridgeDispatcher(
         else -> WatchErrorCode.UNKNOWN
     }
 
+    private data class RequestState(
+        val job: Job? = null,
+        val terminalAck: WatchAck? = null,
+    )
+
+    private fun WatchAck.isTerminal(): Boolean = when (this) {
+        is WatchAck.Accepted,
+        is WatchAck.Pending -> false
+        is WatchAck.Failed,
+        is WatchAck.PayloadReady,
+        is WatchAck.PlaybackReady,
+        is WatchAck.Sent,
+        is WatchAck.Unsupported -> true
+    }
+
     // Tiny LRU without guava dependency.
     private class LruBoundedMap<K, V>(private val capacity: Int) {
         private val map = linkedMapOf<K, V>()
@@ -531,7 +590,7 @@ class WatchBridgeDispatcher(
                 it.remove()
             }
         }
-        @Synchronized fun containsKey(k: K): Boolean = map.containsKey(k)
+        @Synchronized fun get(k: K): V? = map[k]
     }
 
     companion object {

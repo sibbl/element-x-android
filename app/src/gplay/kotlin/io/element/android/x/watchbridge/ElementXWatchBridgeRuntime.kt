@@ -64,12 +64,16 @@ import io.element.android.services.appnavstate.api.currentSessionId
 import io.element.android.watchbridge.ElementXWatchPort
 import io.element.android.watchbridge.WatchBridgeDispatcher
 import io.element.android.watchbridge.WatchCompanionSettingsStore
+import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchMediaPreview
 import io.element.android.watchbridge.contract.WatchPlaybackDescriptor
+import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchReactionSummary
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchRoomSummary
+import io.element.android.watchbridge.contract.WatchSync
+import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.contract.WatchThreadItem
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
@@ -105,6 +109,10 @@ private const val MAX_ROOM_LIST_COUNT = 200
 private const val MAX_LOAD_MORE_ATTEMPTS = 8
 private const val WATCH_AVATAR_SIZE_PX = 64L
 private const val WATCH_MEDIA_PREVIEW_SIZE_PX = 384L
+private const val MAX_FAVORITE_PREVIEW_TEXT_LENGTH = 180
+private val FAVORITE_PREVIEW_WHITESPACE_REGEX = "\\s+".toRegex()
+private const val WATCH_RUNTIME_PREFS = "element_x_watchbridge_runtime"
+private const val KEY_LAST_SESSION_ID = "last_session_id"
 
 internal data class TimelineProjection(
     val items: List<WatchTimelineItem>,
@@ -126,6 +134,7 @@ object ElementXWatchBridgeRuntime {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()
     private var activeBridge: ActiveBridge? = null
+    private var hasClearedForMissingSession = false
     private var _settingsStore: WatchCompanionSettingsStore? = null
 
     /** Lazily initialized settings store. Safe to access from any thread. */
@@ -183,14 +192,47 @@ object ElementXWatchBridgeRuntime {
         emitAll(port.favorites())
     }.flowOn(Dispatchers.Default)
 
+    internal suspend fun clearSessionState(context: Context, sessionId: SessionId) = mutex.withLock {
+        val appContext = context.applicationContext
+        activeBridge
+            ?.takeIf { it.sessionId == sessionId }
+            ?.let { bridge ->
+                bridge.dispatcher.stop()
+                activeBridge = null
+            }
+        if (rememberedSessionId(appContext) == sessionId.value) {
+            rememberSessionId(appContext, null)
+        }
+        hasClearedForMissingSession = true
+        clearWatchState(appContext, "session removed ${sessionId.value}")
+    }
+
     private suspend fun getOrCreateDispatcher(context: Context): WatchBridgeDispatcher? = mutex.withLock {
         Timber.d("WatchBridge initializing dispatcher")
         val graph = ((context.applicationContext as? DependencyInjectionGraphOwner)?.graph as? AppGraph)
             ?: return@withLock null
-        val sessionId = graph.activeSessionId() ?: return@withLock null
+        val sessionId = graph.activeSessionId()
+        val rememberedSessionId = rememberedSessionId(context)
+        if (sessionId == null) {
+            val bridge = activeBridge
+            if (bridge != null || rememberedSessionId != null || !hasClearedForMissingSession) {
+                activeBridge = null
+                bridge?.dispatcher?.stop()
+                clearWatchState(context, "session cleared")
+                rememberSessionId(context, null)
+                hasClearedForMissingSession = true
+            }
+            return@withLock null
+        }
+        hasClearedForMissingSession = false
         activeBridge?.takeIf { it.sessionId == sessionId }?.let { return@withLock it.dispatcher }
 
-        activeBridge?.dispatcher?.stop()
+        val previousSessionId = activeBridge?.sessionId?.value ?: rememberedSessionId
+        if (previousSessionId != null && previousSessionId != sessionId.value) {
+            activeBridge?.dispatcher?.stop()
+            activeBridge = null
+            clearWatchState(context, "session changed from $previousSessionId to ${sessionId.value}")
+        }
         val roomPort = createRoomListWatchPort(context) ?: return@withLock null
         val dispatcher = WatchBridgeDispatcher(
             port = roomPort,
@@ -200,8 +242,42 @@ object ElementXWatchBridgeRuntime {
         )
         dispatcher.start()
         activeBridge = ActiveBridge(sessionId, dispatcher)
+        rememberSessionId(context, sessionId.value)
         Timber.d("WatchBridge dispatcher started for session=%s", sessionId.value)
         dispatcher
+    }
+
+    private suspend fun clearWatchState(context: Context, reason: String) {
+        val transport = PlayServicesWatchTransport(context)
+        val envelope = WatchSyncEnvelope(
+            generatedAtMs = System.currentTimeMillis(),
+            payload = WatchSync.FullRefresh,
+        )
+        Timber.d("WatchBridge clearing watch state: %s", reason)
+        runCatching {
+            transport.sendMessage(WatchDataPaths.FULL_REFRESH, envelope)
+        }.onFailure { Timber.w(it, "WatchBridge full refresh message failed") }
+        runCatching {
+            transport.deleteSyncPrefix(WatchProtocol.DATA_PATH_PREFIX)
+        }.onFailure { Timber.w(it, "WatchBridge Data Layer clear failed") }
+    }
+
+    private fun rememberedSessionId(context: Context): String? {
+        return context.getSharedPreferences(WATCH_RUNTIME_PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_SESSION_ID, null)
+    }
+
+    private fun rememberSessionId(context: Context, sessionId: String?) {
+        context.getSharedPreferences(WATCH_RUNTIME_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .apply {
+                if (sessionId == null) {
+                    remove(KEY_LAST_SESSION_ID)
+                } else {
+                    putString(KEY_LAST_SESSION_ID, sessionId)
+                }
+            }
+            .apply()
     }
 
     private suspend fun createRoomListWatchPort(context: Context): MatrixRoomListWatchPort? {
@@ -416,33 +492,34 @@ private class MatrixRoomListWatchPort(
                 .map { (it.coerceIn(0, 100) / 100f) }
 
             val threadRootEventId = draft.threadRootEventId
-            val sendResult = if (threadRootEventId == null) {
-                room.liveTimeline.sendVoiceMessage(
-                    file = audioFile,
-                    audioInfo = audioInfo,
-                    waveform = waveform,
-                    inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
-                )
-            } else {
-                val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
-                try {
-                    timeline.sendVoiceMessage(
+            try {
+                val sendResult = if (threadRootEventId == null) {
+                    room.liveTimeline.sendVoiceMessage(
                         file = audioFile,
                         audioInfo = audioInfo,
                         waveform = waveform,
                         inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
                     )
-                } finally {
-                    timeline.close()
+                } else {
+                    val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
+                    try {
+                        timeline.sendVoiceMessage(
+                            file = audioFile,
+                            audioInfo = audioInfo,
+                            waveform = waveform,
+                            inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
+                        )
+                    } finally {
+                        timeline.close()
+                    }
+                }
+
+                sendResult.map { "" }.getOrThrow()
+            } finally {
+                if (!audioFile.delete() && audioFile.exists()) {
+                    Timber.w("WatchBridge voice draft temp file could not be deleted")
                 }
             }
-
-            sendResult
-                .map { "" }
-                .onFailure {
-                    audioFile.delete()
-                }
-                .getOrThrow()
         }.fold(
             onSuccess = { Result.success(it) },
             onFailure = { Result.failure(it) },
@@ -553,7 +630,7 @@ private suspend fun RoomSummary.toWatchRoom(resolveJoinedRoom: suspend (String) 
         unreadCount = unreadCount,
         hasMentions = info.numUnreadMentions > 0,
         lastActivityTsMs = latestEventTimestamp ?: 0L,
-        lastPreviewText = latestEvent.previewText(),
+        lastPreviewText = latestEvent.previewText()?.compactWatchPreviewText(MAX_FAVORITE_PREVIEW_TEXT_LENGTH),
         isFavorite = info.isFavorite,
     )
 }
@@ -651,7 +728,8 @@ private fun EventTimelineItem.toWatchThreadItem(
         senderDisplayName = senderProfile.displayName(),
         timestampMs = timestamp,
         kind = content.watchKind(),
-        bodyText = content.previewText()?.take(300),
+        bodyText = content.previewText(),
+        formattedText = (content as? MessageContent)?.type?.formattedBody(),
         isOwn = isOwn,
         reactions = watchReactions(),
         voiceMessageMeta = content.voiceMeta(),
@@ -674,8 +752,8 @@ private fun EventTimelineItem.toWatchTimelineItem(roomId: String): WatchTimeline
         senderDisplayName = senderProfile.displayName(),
         timestampMs = timestamp,
         kind = content.watchKind(),
-        bodyText = content.previewText()?.take(300),
-        formattedText = (content as? MessageContent)?.type?.formattedBody()?.take(500),
+        bodyText = content.previewText(),
+        formattedText = (content as? MessageContent)?.type?.formattedBody(),
         isOwn = isOwn,
         isEdited = (content as? MessageContent)?.isEdited == true,
         hasThread = threadInfo is EventThreadInfo.ThreadRoot,
@@ -850,7 +928,7 @@ private fun EventContent.voiceMeta(): WatchVoiceMeta? {
         waveform = waveform,
         mimeType = voice.info?.mimetype ?: "audio/ogg",
         sizeBytes = voice.info?.size ?: 0L,
-        audioUrl = voice.source.safeUrl.mxcToHttpDownload(),
+        audioUrl = null,
     )
 }
 
@@ -886,16 +964,11 @@ private fun String.mxcToHttpThumbnail(size: Int): String {
     return "https://$server/_matrix/media/v3/thumbnail/$server/$mediaId?width=$size&height=$size&method=crop"
 }
 
-/**
- * Convert an `mxc://server/mediaid` URL to a standard Matrix download HTTP URL.
- * Returns null if it's not an mxc:// URL.
- */
-private fun String.mxcToHttpDownload(): String? {
-    if (!startsWith("mxc://")) return null
-    val path = removePrefix("mxc://")
-    val parts = path.split("/", limit = 2)
-    if (parts.size < 2) return null
-    val server = parts[0]
-    val mediaId = parts[1]
-    return "https://$server/_matrix/media/v3/download/$server/$mediaId"
+internal fun String.compactWatchPreviewText(maxLength: Int): String {
+    val compacted = trim().replace(FAVORITE_PREVIEW_WHITESPACE_REGEX, " ")
+    return if (compacted.length <= maxLength) {
+        compacted
+    } else {
+        compacted.take((maxLength - 3).coerceAtLeast(0)).trimEnd() + "..."
+    }
 }

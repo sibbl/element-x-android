@@ -10,11 +10,17 @@ package io.element.android.wearapp.ui.room
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
+import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.ui.theme.WearAppTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -58,6 +64,60 @@ class MessageDetailViewTest {
                 scrollState.scrollTo(scrollState.maxValue)
             }
             assertThat(scrollState.value).isEqualTo(scrollState.maxValue)
+        }
+    }
+
+    @Test
+    fun `message detail composer does not repeat reply target label`() {
+        rule.setContent {
+            WearAppTheme {
+                MessageDetailView(
+                    state = MessageDetailViewState(
+                        roomDisplayName = "Room",
+                        item = textItem("Hello"),
+                    ),
+                    onReply = {},
+                    onVoice = null,
+                    onReadAloud = {},
+                    onOpenOrStartThread = {},
+                    onSendReaction = {},
+                )
+            }
+        }
+
+        rule.onNodeWithText("Reply to Alice").assertDoesNotExist()
+    }
+
+    @Test
+    fun `read aloud button toggles between play and pause states`() {
+        var readAloudClicks = 0
+        var playbackState by mutableStateOf(WearTextToSpeech.PlaybackState.IDLE)
+        rule.setContent {
+            WearAppTheme {
+                MessageDetailView(
+                    state = MessageDetailViewState(
+                        roomDisplayName = "Room",
+                        item = textItem("Hello"),
+                    ),
+                    readAloudPlaybackState = playbackState,
+                    onReply = {},
+                    onVoice = null,
+                    onReadAloud = { readAloudClicks += 1 },
+                    onOpenOrStartThread = {},
+                    onSendReaction = {},
+                )
+            }
+        }
+
+        rule.onNodeWithText("Read aloud").performClick()
+        rule.runOnIdle {
+            assertThat(readAloudClicks).isEqualTo(1)
+            playbackState = WearTextToSpeech.PlaybackState.PLAYING
+        }
+
+        rule.onNodeWithText("Pause").performClick()
+        rule.runOnIdle {
+            assertThat(readAloudClicks).isEqualTo(2)
         }
     }
 

@@ -8,6 +8,7 @@
 package io.element.android.watchbridge.transport
 
 import android.content.Context
+import android.net.Uri
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.MessageClient
@@ -64,7 +65,12 @@ class PlayServicesWatchTransport(
     }
 
     override suspend fun deleteSync(path: String) = withContext(Dispatchers.IO) {
-        dataClient.deleteDataItems(android.net.Uri.parse("wear:$path")).await()
+        dataClient.deleteDataItems(Uri.parse("wear:$path")).await()
+        Unit
+    }
+
+    suspend fun deleteSyncPrefix(pathPrefix: String) = withContext(Dispatchers.IO) {
+        dataClient.deleteDataItems(Uri.parse("wear:$pathPrefix"), DataClient.FILTER_PREFIX).await()
         Unit
     }
 

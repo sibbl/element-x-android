@@ -9,6 +9,7 @@ package io.element.android.wearapp.ui.room
 
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -48,6 +49,11 @@ fun RoomScreen(
     )
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
+    DisposableEffect(tts) {
+        onDispose {
+            tts.shutdown()
+        }
+    }
     val fallbackRoom = favoriteRooms.firstOrNull { it.roomId == roomId }
     val displayName = roomState.summary?.displayName
         ?: fallbackRoom?.displayName

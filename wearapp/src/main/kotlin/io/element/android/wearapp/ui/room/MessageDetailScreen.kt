@@ -9,6 +9,7 @@ package io.element.android.wearapp.ui.room
 
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -19,6 +20,7 @@ import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
+import io.element.android.wearapp.ui.thread.toTimelineItem
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.launch
 
@@ -27,6 +29,7 @@ fun MessageDetailScreen(
     bridge: WearBridgeClient,
     roomId: String,
     eventId: String,
+    threadRootEventId: String? = null,
     activity: WearMainActivity,
     onOpenThread: (String) -> Unit,
     onOpenImage: (String) -> Unit = {},
@@ -41,11 +44,23 @@ fun MessageDetailScreen(
     )
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
+    val ttsState by tts.state.collectAsState()
+    DisposableEffect(tts) {
+        onDispose {
+            tts.shutdown()
+        }
+    }
     val fallbackRoom = favoriteRooms.firstOrNull { it.roomId == roomId }
     val roomName = roomState.summary?.displayName
         ?: fallbackRoom?.displayName
         ?: ""
-    val item = roomState.items.firstOrNull { it.eventId == eventId }
+    val threadItem = remember(roomId, eventId, threadRootEventId) {
+        threadRootEventId
+            ?.let { rootEventId -> bridge.getCachedThread(roomId, rootEventId) }
+            ?.firstOrNull { it.eventId == eventId }
+            ?.toTimelineItem()
+    }
+    val item = roomState.items.firstOrNull { it.eventId == eventId } ?: threadItem
     val mediaPreviewBytes = item?.let { currentItem ->
         bridge.mediaPreviewFlow(roomId, currentItem.eventId).collectAsState().value
     }
@@ -55,6 +70,7 @@ fun MessageDetailScreen(
             roomDisplayName = roomName,
             item = item,
         ),
+        readAloudPlaybackState = ttsState,
         mediaPreviewBytes = mediaPreviewBytes,
         onRequestMediaPreview = item?.let { currentItem ->
             { bridge.requestMediaPreview(roomId, currentItem.eventId) }
@@ -96,7 +112,7 @@ fun MessageDetailScreen(
             )
         },
         onReadAloud = {
-            item?.let { tts.speak(it.displayText()) }
+            item?.let { tts.toggle(it.displayText()) }
         },
         onOpenImage = item
             ?.takeIf { it.kind == io.element.android.watchbridge.contract.WatchTimelineItemKind.IMAGE }

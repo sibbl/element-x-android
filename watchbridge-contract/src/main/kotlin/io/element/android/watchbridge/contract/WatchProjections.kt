@@ -116,6 +116,7 @@ data class WatchThreadItem(
     val timestampMs: Long,
     val kind: WatchTimelineItemKind,
     val bodyText: String? = null,
+    val formattedText: String? = null,
     val isOwn: Boolean = false,
     val reactions: List<WatchReactionSummary> = emptyList(),
     val voiceMessageMeta: WatchVoiceMeta? = null,

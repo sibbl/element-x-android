@@ -59,12 +59,16 @@ class WatchNotificationBridgePublisher(
     transport = PlayServicesWatchTransport(context),
     imageLabel = stringProvider.getString(CommonStrings.common_image),
     imagePreviewLoader = context::loadNotificationImagePreview,
+    clearWatchStateForSession = { sessionId ->
+        ElementXWatchBridgeRuntime.clearSessionState(context, sessionId)
+    },
 )
 
 internal class WatchNotificationBridgePublisherDelegate(
     private val transport: WatchTransport,
     private val imageLabel: String,
     private val imagePreviewLoader: (NotifiableMessageEvent) -> ByteArray? = { null },
+    private val clearWatchStateForSession: suspend (SessionId) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : CompanionNotificationBridge {
 
@@ -117,6 +121,7 @@ internal class WatchNotificationBridgePublisherDelegate(
     }
 
     override suspend fun onSessionCleared(sessionId: SessionId) {
+        clearWatchStateForSession(sessionId)
         deleteNotificationKeys(keysMatching { it.sessionId == sessionId })
     }
 
@@ -125,7 +130,7 @@ internal class WatchNotificationBridgePublisherDelegate(
         val redactedEvents = redactions.map { redaction -> redaction.sessionId to redaction.redactedEventId.value }.toSet()
         deleteNotificationKeys(
             keysMatching { activeNotification ->
-                (activeNotification.sessionId to activeNotification.eventId) in redactedEvents
+                activeNotification.eventIds.any { eventId -> (activeNotification.sessionId to eventId) in redactedEvents }
             },
         )
     }
@@ -178,6 +183,7 @@ internal class WatchNotificationBridgePublisherDelegate(
                 roomId = roomId,
                 threadId = threadId,
                 eventId = eventId.value,
+                eventIds = groupedEvents.mapTo(mutableSetOf()) { it.eventId.value },
             ),
         )
     }
@@ -222,6 +228,7 @@ private data class ActiveNotification(
     val roomId: RoomId,
     val threadId: ThreadId?,
     val eventId: String,
+    val eventIds: Set<String>,
 )
 
 private data class RenderedNotification(

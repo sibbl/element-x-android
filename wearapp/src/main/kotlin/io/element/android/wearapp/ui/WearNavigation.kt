@@ -18,13 +18,24 @@ import io.element.android.watchbridge.contract.WatchTileConversationAction
 
 private const val TILE_CLICKABLE_OPEN_APP_ID = "open-app"
 private const val TILE_CLICKABLE_OPEN_ROOM_PREFIX = "open-room:"
+private const val TILE_CLICKABLE_READ_LATEST_ROOM_PREFIX = "read-latest-room:"
+private const val TILE_CLICKABLE_QUICK_REPLY_EMOJI_PREFIX = "quick-reply-emoji-room:"
 private const val TILE_CLICKABLE_DIRECT_REPLY_ROOM_PREFIX = "direct-reply-room:"
 private const val TILE_CLICKABLE_VOICE_RECORD_ROOM_PREFIX = "voice-record-room:"
+private const val TILE_CLICKABLE_OPEN_LATEST_PREFIX = "open-latest-message:"
 private const val EXTRA_TILE_DIRECT_REPLY_ROOM_ID = "tile-direct-reply-room-id"
+private const val EXTRA_TILE_READ_LATEST_ROOM_ID = "tile-read-latest-room-id"
+private const val EXTRA_TILE_READ_LATEST_TEXT = "tile-read-latest-text"
 
 internal data class TileConversationClickable(
     val roomId: String,
     val action: WatchTileConversationAction,
+    val eventId: String? = null,
+)
+
+internal data class PendingTileReadLatest(
+    val roomId: String,
+    val previewText: String?,
 )
 
 internal fun openAppTileClickableId(): String = TILE_CLICKABLE_OPEN_APP_ID
@@ -34,11 +45,18 @@ internal fun openRoomTileClickableId(roomId: String): String = roomTileClickable
     action = WatchTileConversationAction.OPEN_CONVERSATION,
 )
 
+@Suppress("DEPRECATION")
 internal fun roomTileClickableId(
     roomId: String,
     action: WatchTileConversationAction,
+    eventId: String? = null,
 ): String = when (action) {
     WatchTileConversationAction.OPEN_CONVERSATION -> TILE_CLICKABLE_OPEN_ROOM_PREFIX + Uri.encode(roomId)
+    WatchTileConversationAction.READ_LATEST -> TILE_CLICKABLE_READ_LATEST_ROOM_PREFIX + Uri.encode(roomId)
+    WatchTileConversationAction.QUICK_REPLY_EMOJI -> TILE_CLICKABLE_QUICK_REPLY_EMOJI_PREFIX + encodeRoomAndOptionalEvent(roomId, eventId)
+    WatchTileConversationAction.QUICK_REPLY_TEXT -> TILE_CLICKABLE_DIRECT_REPLY_ROOM_PREFIX + Uri.encode(roomId)
+    WatchTileConversationAction.QUICK_REPLY_VOICE -> TILE_CLICKABLE_VOICE_RECORD_ROOM_PREFIX + Uri.encode(roomId)
+    WatchTileConversationAction.OPEN_LATEST -> TILE_CLICKABLE_OPEN_LATEST_PREFIX + encodeRoomAndOptionalEvent(roomId, eventId)
     WatchTileConversationAction.DIRECT_REPLY -> TILE_CLICKABLE_DIRECT_REPLY_ROOM_PREFIX + Uri.encode(roomId)
     WatchTileConversationAction.VOICE_RECORDING -> TILE_CLICKABLE_VOICE_RECORD_ROOM_PREFIX + Uri.encode(roomId)
 }
@@ -57,19 +75,31 @@ internal fun parseRoomTileClickableId(clickableId: String?): TileConversationCli
         clickableId.startsWith(TILE_CLICKABLE_OPEN_ROOM_PREFIX) -> {
             TILE_CLICKABLE_OPEN_ROOM_PREFIX to WatchTileConversationAction.OPEN_CONVERSATION
         }
+        clickableId.startsWith(TILE_CLICKABLE_READ_LATEST_ROOM_PREFIX) -> {
+            TILE_CLICKABLE_READ_LATEST_ROOM_PREFIX to WatchTileConversationAction.READ_LATEST
+        }
+        clickableId.startsWith(TILE_CLICKABLE_QUICK_REPLY_EMOJI_PREFIX) -> {
+            TILE_CLICKABLE_QUICK_REPLY_EMOJI_PREFIX to WatchTileConversationAction.QUICK_REPLY_EMOJI
+        }
         clickableId.startsWith(TILE_CLICKABLE_DIRECT_REPLY_ROOM_PREFIX) -> {
-            TILE_CLICKABLE_DIRECT_REPLY_ROOM_PREFIX to WatchTileConversationAction.DIRECT_REPLY
+            TILE_CLICKABLE_DIRECT_REPLY_ROOM_PREFIX to WatchTileConversationAction.QUICK_REPLY_TEXT
         }
         clickableId.startsWith(TILE_CLICKABLE_VOICE_RECORD_ROOM_PREFIX) -> {
-            TILE_CLICKABLE_VOICE_RECORD_ROOM_PREFIX to WatchTileConversationAction.VOICE_RECORDING
+            TILE_CLICKABLE_VOICE_RECORD_ROOM_PREFIX to WatchTileConversationAction.QUICK_REPLY_VOICE
+        }
+        clickableId.startsWith(TILE_CLICKABLE_OPEN_LATEST_PREFIX) -> {
+            TILE_CLICKABLE_OPEN_LATEST_PREFIX to WatchTileConversationAction.OPEN_LATEST
         }
         else -> return null
     }
-    val roomId = clickableId.removePrefix(prefix)
+    val (encodedRoomId, encodedEventId) = clickableId.removePrefix(prefix)
         .takeIf { it.isNotBlank() }
-        ?.let(Uri::decode)
+        ?.split(":", limit = 2)
+        ?.let { it.first() to it.getOrNull(1) }
         ?: return null
-    return TileConversationClickable(roomId = roomId, action = action)
+    val roomId = Uri.decode(encodedRoomId).takeIf { it.isNotBlank() } ?: return null
+    val eventId = encodedEventId?.takeIf { it.isNotBlank() }?.let(Uri::decode)
+    return TileConversationClickable(roomId = roomId, action = action, eventId = eventId)
 }
 
 internal fun buildWearLaunchIntent(
@@ -96,6 +126,18 @@ internal fun buildWearTileDirectReplyIntent(
 ): Intent {
     return Intent(context, WearMainActivity::class.java).apply {
         putExtra(EXTRA_TILE_DIRECT_REPLY_ROOM_ID, roomId)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+}
+
+internal fun buildWearTileReadLatestIntent(
+    context: Context,
+    roomId: String,
+    previewText: String?,
+): Intent {
+    return Intent(context, WearMainActivity::class.java).apply {
+        putExtra(EXTRA_TILE_READ_LATEST_ROOM_ID, roomId)
+        previewText?.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_TILE_READ_LATEST_TEXT, it) }
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 }
@@ -132,4 +174,19 @@ internal fun consumePendingTileDirectReplyRoomId(intent: Intent?): String? {
         intent.removeExtra(EXTRA_TILE_DIRECT_REPLY_ROOM_ID)
     }
     return roomId
+}
+
+internal fun consumePendingTileReadLatest(intent: Intent?): PendingTileReadLatest? {
+    val roomId = intent?.getStringExtra(EXTRA_TILE_READ_LATEST_ROOM_ID)
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    val previewText = intent.getStringExtra(EXTRA_TILE_READ_LATEST_TEXT)
+        ?.takeIf { it.isNotBlank() }
+    intent.removeExtra(EXTRA_TILE_READ_LATEST_ROOM_ID)
+    intent.removeExtra(EXTRA_TILE_READ_LATEST_TEXT)
+    return PendingTileReadLatest(roomId = roomId, previewText = previewText)
+}
+
+private fun encodeRoomAndOptionalEvent(roomId: String, eventId: String?): String {
+    return Uri.encode(roomId) + eventId?.let { ":${Uri.encode(it)}" }.orEmpty()
 }

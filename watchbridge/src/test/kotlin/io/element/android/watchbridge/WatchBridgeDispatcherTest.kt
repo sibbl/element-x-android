@@ -197,6 +197,41 @@ class WatchBridgeDispatcherTest {
     }
 
     @Test
+    fun `duplicate requestId after completion replays terminal ack`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        var calls = 0
+        val port = object : ElementXWatchPort by StubPort() {
+            override suspend fun sendText(
+                roomId: String,
+                threadRootEventId: String?,
+                inReplyToEventId: String?,
+                text: String,
+            ): Result<String> {
+                calls += 1
+                return Result.success("\$ev")
+            }
+        }
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        val cmd = WatchSyncEnvelope(
+            generatedAtMs = 0L,
+            payload = WatchCommand.SendText(requestId = "replay", roomId = "!a:s", text = "hi", clientTsMs = 0L),
+        )
+        dispatcher.onEnvelope(cmd)
+        advanceUntilIdle()
+        dispatcher.onEnvelope(cmd)
+        advanceUntilIdle()
+
+        assertThat(calls).isEqualTo(1)
+        assertThat(
+            transport.messages
+                .map { it.second.payload }
+                .filterIsInstance<WatchAck.Sent>()
+                .filter { it.requestId == "replay" },
+        ).hasSize(2)
+    }
+
+    @Test
     fun `send text command forwards reply target`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
         var capturedReplyEventId: String? = null

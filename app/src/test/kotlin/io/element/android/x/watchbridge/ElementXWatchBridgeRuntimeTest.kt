@@ -24,6 +24,10 @@ import io.element.android.libraries.matrix.api.timeline.item.EmbeddedEventInfo
 import io.element.android.libraries.matrix.api.timeline.item.EventThreadInfo
 import io.element.android.libraries.matrix.api.timeline.item.ThreadSummary
 import io.element.android.libraries.matrix.api.timeline.item.event.EventOrTransactionId
+import io.element.android.libraries.matrix.api.timeline.item.event.FormattedBody
+import io.element.android.libraries.matrix.api.timeline.item.event.MessageFormat
+import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
+import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
 import io.element.android.libraries.matrix.test.media.aMediaSource
 import io.element.android.libraries.matrix.test.timeline.aMessageContent
 import io.element.android.libraries.matrix.test.timeline.aProfileDetails
@@ -94,6 +98,103 @@ class ElementXWatchBridgeRuntimeTest {
         assertThat(projection.items.map { it.eventId }).containsExactly(threadRootId.value)
         assertThat(projection.items.single().hasThread).isTrue()
         assertThat(projection.items.single().threadReplyCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `voice timeline projection does not expose Matrix media URL`() {
+        val voiceEvent = MatrixTimelineItem.Event(
+            uniqueId = UniqueId("voice"),
+            event = anEventTimelineItem(
+                eventId = EventId("\$voice:server"),
+                timestamp = 1L,
+                content = aMessageContent(
+                    body = "Voice message",
+                    messageType = VoiceMessageType(
+                        filename = "voice.ogg",
+                        caption = null,
+                        formattedCaption = null,
+                        source = MediaSource("mxc://server/media"),
+                        info = null,
+                        details = null,
+                    ),
+                ),
+            ),
+        )
+
+        val projection = listOf(voiceEvent).toWatchTimelineProjection(
+            roomId = "!room:server",
+            limit = 20,
+        )
+
+        assertThat(projection.items.single().voiceMessageMeta?.audioUrl).isNull()
+    }
+
+    @Test
+    fun `timeline projection keeps full text and formatted body for detail rendering`() {
+        val body = "Line\n".repeat(500)
+        val formatted = "<strong>${"formatted ".repeat(200)}</strong>"
+        val textEvent = MatrixTimelineItem.Event(
+            uniqueId = UniqueId("text"),
+            event = anEventTimelineItem(
+                eventId = EventId("\$text:server"),
+                timestamp = 1L,
+                content = aMessageContent(
+                    body = body,
+                    messageType = TextMessageType(
+                        body = body,
+                        formatted = FormattedBody(MessageFormat.HTML, formatted),
+                    ),
+                ),
+            ),
+        )
+
+        val projection = listOf(textEvent).toWatchTimelineProjection(
+            roomId = "!room:server",
+            limit = 20,
+        )
+
+        assertThat(projection.items.single().bodyText).isEqualTo(body)
+        assertThat(projection.items.single().formattedText).isEqualTo(formatted)
+    }
+
+    @Test
+    fun `thread projection keeps full text and formatted body for detail rendering`() {
+        val body = "Thread detail\n".repeat(400)
+        val formatted = "<em>${"thread formatted ".repeat(120)}</em>"
+        val threadEvent = MatrixTimelineItem.Event(
+            uniqueId = UniqueId("thread"),
+            event = anEventTimelineItem(
+                eventId = EventId("\$thread:server"),
+                timestamp = 1L,
+                content = aMessageContent(
+                    body = body,
+                    messageType = TextMessageType(
+                        body = body,
+                        formatted = FormattedBody(MessageFormat.HTML, formatted),
+                    ),
+                ),
+            ),
+        )
+
+        val projection = listOf(threadEvent).toWatchThreadProjection(
+            roomId = "!room:server",
+            threadRootEventId = "\$root:server",
+            limit = 20,
+        )
+
+        assertThat(projection.items.single().bodyText).isEqualTo(body)
+        assertThat(projection.items.single().formattedText).isEqualTo(formatted)
+    }
+
+    @Test
+    fun `watch preview text is compacted and bounded`() {
+        val text = "Hello\n\n${"x".repeat(200)}"
+
+        val compacted = text.compactWatchPreviewText(maxLength = 24)
+
+        assertThat(compacted.length).isAtMost(24)
+        assertThat(compacted).doesNotContain("\n")
+        assertThat(compacted).endsWith("...")
     }
 
     @Test

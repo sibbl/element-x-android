@@ -15,6 +15,7 @@
     <string name="screen_message_detail_loading">Opening message…</string>
     <string name="screen_message_detail_open_thread">Open thread</string>
     <string name="screen_message_detail_start_thread">Start thread</string>
+    <string name="screen_message_detail_pause_read_aloud">Pause</string>
     <string name="screen_message_detail_reactions">Quick reactions</string>
     <string name="screen_wear_notification_mark_as_read">Mark as read</string>
     <string name="screen_thread_title">Thread</string>

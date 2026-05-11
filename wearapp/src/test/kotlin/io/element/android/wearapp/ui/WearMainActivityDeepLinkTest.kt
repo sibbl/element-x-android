@@ -77,13 +77,30 @@ class WearMainActivityDeepLinkTest {
     fun `tile clickable ids round-trip room ids with explicit tile actions`() {
         val clickableId = roomTileClickableId(
             roomId = "!room:server",
-            action = WatchTileConversationAction.VOICE_RECORDING,
+            action = WatchTileConversationAction.QUICK_REPLY_VOICE,
         )
 
         assertThat(parseRoomTileClickableId(clickableId)).isEqualTo(
             TileConversationClickable(
                 roomId = "!room:server",
-                action = WatchTileConversationAction.VOICE_RECORDING,
+                action = WatchTileConversationAction.QUICK_REPLY_VOICE,
+            ),
+        )
+    }
+
+    @Test
+    fun `tile clickable ids carry latest event ids when available`() {
+        val clickableId = roomTileClickableId(
+            roomId = "!room:server",
+            action = WatchTileConversationAction.OPEN_LATEST,
+            eventId = "\$event:server",
+        )
+
+        assertThat(parseRoomTileClickableId(clickableId)).isEqualTo(
+            TileConversationClickable(
+                roomId = "!room:server",
+                action = WatchTileConversationAction.OPEN_LATEST,
+                eventId = "\$event:server",
             ),
         )
     }
@@ -97,5 +114,19 @@ class WearMainActivityDeepLinkTest {
 
         assertThat(consumePendingTileDirectReplyRoomId(intent)).isEqualTo("!room:server")
         assertThat(consumePendingTileDirectReplyRoomId(intent)).isNull()
+    }
+
+    @Test
+    fun `consume pending tile read latest clears extras after first use`() {
+        val intent = buildWearTileReadLatestIntent(
+            context = ApplicationProvider.getApplicationContext(),
+            roomId = "!room:server",
+            previewText = "Latest message",
+        )
+
+        assertThat(consumePendingTileReadLatest(intent)).isEqualTo(
+            PendingTileReadLatest(roomId = "!room:server", previewText = "Latest message"),
+        )
+        assertThat(consumePendingTileReadLatest(intent)).isNull()
     }
 }

@@ -62,6 +62,11 @@ fun ThreadScreen(
     }
     val scope = rememberCoroutineScope()
     val tts = remember { WearTextToSpeech(activity) }
+    DisposableEffect(tts) {
+        onDispose {
+            tts.shutdown()
+        }
+    }
 
     val favorites by bridge.favorites.collectAsState()
     val roomDisplayName = favorites.firstOrNull { it.roomId == roomId }?.displayName ?: ""
@@ -157,7 +162,7 @@ fun ThreadScreen(
     )
 }
 
-private fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimelineItem(
+internal fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimelineItem(
     eventId = eventId,
     roomId = roomId,
     senderId = senderId,
@@ -165,7 +170,7 @@ private fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimelineI
     timestampMs = timestampMs,
     kind = kind,
     bodyText = bodyText,
-    formattedText = null,
+    formattedText = formattedText,
     isOwn = isOwn,
     isEdited = false,
     hasThread = false,
