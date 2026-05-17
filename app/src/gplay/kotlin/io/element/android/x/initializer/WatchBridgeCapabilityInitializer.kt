@@ -16,6 +16,7 @@ import io.element.android.x.watchbridge.ElementXWatchBridgeRuntime
 import timber.log.Timber
 
 private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
+private const val WATCH_BRIDGE_STARTUP_DELAY_MS = 5_000L
 
 /**
  * Dynamically advertises the phone-side Wear bridge capability for sideloaded debug builds.
@@ -26,7 +27,10 @@ private const val DUPLICATE_CAPABILITY_STATUS_CODE = 4006
  */
 class WatchBridgeCapabilityInitializer : Initializer<Unit> {
     override fun create(context: Context) {
-        ElementXWatchBridgeRuntime.start(context.applicationContext)
+        ElementXWatchBridgeRuntime.start(
+            context = context.applicationContext,
+            startupDelayMs = WATCH_BRIDGE_STARTUP_DELAY_MS,
+        )
         Wearable.getCapabilityClient(context)
             .addLocalCapability(WatchProtocol.PHONE_CAPABILITY)
             .addOnSuccessListener { Timber.d("WatchBridge phone capability registered") }

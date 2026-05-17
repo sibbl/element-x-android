@@ -19,6 +19,7 @@ import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.eventformatter.api.RoomLatestEventFormatter
 import io.element.android.libraries.matrix.api.room.CallIntentConsensus
 import io.element.android.libraries.matrix.api.room.CurrentUserMembership
+import io.element.android.libraries.matrix.api.room.RoomInfo
 import io.element.android.libraries.matrix.api.roomlist.LatestEventValue
 import io.element.android.libraries.matrix.api.roomlist.RoomSummary
 import io.element.android.libraries.matrix.ui.model.dmUserStatus
@@ -33,7 +34,7 @@ class RoomListRoomSummaryFactory(
 ) {
     fun create(roomSummary: RoomSummary): RoomListRoomSummary {
         val roomInfo = roomSummary.info
-        val avatarData = roomInfo.getAvatarData(size = AvatarSize.RoomListItem)
+        val avatarData = roomInfo.roomListAvatarData(size = AvatarSize.RoomListItem)
         return RoomListRoomSummary(
             id = roomSummary.roomId.value,
             roomId = roomSummary.roomId,
@@ -105,4 +106,10 @@ class RoomListRoomSummaryFactory(
             is LatestEventValue.RoomInvite -> LatestEvent.None
         }
     }
+}
+
+private fun RoomInfo.roomListAvatarData(size: AvatarSize) = if (isDm && avatarUrl == null) {
+    heroes.firstOrNull()?.getAvatarData(size) ?: getAvatarData(size)
+} else {
+    getAvatarData(size)
 }

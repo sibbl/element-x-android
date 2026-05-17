@@ -468,17 +468,11 @@ class WatchBridgeDispatcher(
     }
 
     private suspend fun publishAvatarUpdate(roomId: String, avatarKey: String?, allowRetry: Boolean) {
-        if (publishedAvatarKeys[roomId] == avatarKey) return
+        if (publishedAvatarKeys.containsKey(roomId) && publishedAvatarKeys[roomId] == avatarKey) return
 
         if (avatarKey == null) {
             avatarRetryJobs.remove(roomId)?.cancel()
-            runCatching {
-                transport.publishSync(
-                    path = WatchDataPaths.avatar(roomId),
-                    envelope = envelope(WatchSync.AvatarUpdate(roomId = roomId, imageBytes = null)),
-                )
-                publishedAvatarKeys[roomId] = null
-            }.onFailure { Timber.w(it, "publish avatar removal failed for room=%s", roomId) }
+            publishAvatarRemoval(roomId)
             return
         }
 
@@ -487,6 +481,7 @@ class WatchBridgeDispatcher(
             .getOrNull()
 
         if (bytes == null) {
+            publishAvatarRemoval(roomId)
             if (allowRetry) {
                 scheduleAvatarRetry(roomId = roomId, avatarKey = avatarKey)
             }
@@ -505,6 +500,16 @@ class WatchBridgeDispatcher(
                 scheduleAvatarRetry(roomId = roomId, avatarKey = avatarKey)
             }
         }
+    }
+
+    private suspend fun publishAvatarRemoval(roomId: String) {
+        runCatching {
+            transport.publishSync(
+                path = WatchDataPaths.avatar(roomId),
+                envelope = envelope(WatchSync.AvatarUpdate(roomId = roomId, imageBytes = null)),
+            )
+            publishedAvatarKeys[roomId] = null
+        }.onFailure { Timber.w(it, "publish avatar removal failed for room=%s", roomId) }
     }
 
     private fun scheduleAvatarRetry(roomId: String, avatarKey: String) {

@@ -11,6 +11,7 @@ package io.element.android.libraries.push.impl.notifications.conversations
 import android.content.Context
 import android.content.pm.ShortcutInfo
 import android.os.Build
+import androidx.core.app.Person
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -105,9 +106,16 @@ class DefaultNotificationConversationService(
             targetSize = defaultShortcutIconSize.toLong()
         )?.let(IconCompat::createWithBitmap)
 
+        val conversationPerson = Person.Builder()
+            .setName(roomName)
+            .setIcon(icon)
+            .setKey(roomId.value)
+            .build()
+
         val shortcutInfo = ShortcutInfoCompat.Builder(context, createShortcutId(sessionId, roomId))
             .setShortLabel(name)
             .setIcon(icon)
+            .setPerson(conversationPerson)
             .setIntent(intentProvider.getViewRoomIntent(sessionId, roomId, threadId = null, eventId = null))
             .setCategories(categories)
             .setLongLived(true)

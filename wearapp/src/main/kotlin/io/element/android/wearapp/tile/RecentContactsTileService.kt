@@ -7,7 +7,6 @@
 
 package io.element.android.wearapp.tile
 
-import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -47,18 +46,18 @@ import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import io.element.android.watchbridge.contract.WatchCompanionSettings
-import io.element.android.wearapp.ui.buildWearLaunchIntent
-import io.element.android.wearapp.ui.buildWearTileReadLatestIntent
-import io.element.android.wearapp.ui.buildWearTileDirectReplyIntent
-import io.element.android.wearapp.ui.isOpenAppTileClickableId
-import io.element.android.wearapp.ui.openAppTileClickableId
-import io.element.android.wearapp.ui.parseRoomTileClickableId
-import io.element.android.wearapp.ui.roomTileClickableId
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchTileConversationAction
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeCacheStore
+import io.element.android.wearapp.ui.buildWearLaunchIntent
+import io.element.android.wearapp.ui.buildWearTileDirectReplyIntent
+import io.element.android.wearapp.ui.buildWearTileReadLatestIntent
 import io.element.android.wearapp.ui.common.toInitials
+import io.element.android.wearapp.ui.isOpenAppTileClickableId
+import io.element.android.wearapp.ui.openAppTileClickableId
+import io.element.android.wearapp.ui.parseRoomTileClickableId
+import io.element.android.wearapp.ui.roomTileClickableId
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
@@ -122,7 +121,7 @@ abstract class ConversationTileServiceBase : TileService() {
         }.getOrElse {
             handleTileInteraction(requestParams, TileSnapshot())
             TileBuilders.Tile.Builder()
-                .setResourcesVersion("conversation-tile-v4-fallback")
+                .setResourcesVersion("conversation-tile-v6-fallback")
                 .setTileTimeline(Timeline.fromLayoutElement(buildFallbackLayout()))
                 .build()
         }
@@ -285,16 +284,30 @@ abstract class ConversationTileServiceBase : TileService() {
         tileAction: WatchTileConversationAction,
         latestEventId: String?,
     ): LayoutElement {
-        return Image.Builder()
+        val avatar = Image.Builder()
             .setResourceId(avatarResourceId(room.roomId))
             .setWidth(dp(AVATAR_SIZE_DP))
             .setHeight(dp(AVATAR_SIZE_DP))
             .setContentScaleMode(CONTENT_SCALE_MODE_CROP)
+            .build()
+
+        return Box.Builder()
+            .setWidth(dp(AVATAR_SIZE_DP))
+            .setHeight(dp(AVATAR_SIZE_DP))
+            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+            .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
             .setModifiers(
                 Modifiers.Builder()
+                    .setBackground(
+                        Background.Builder()
+                            .setColor(argb(0x00000000))
+                            .setCorner(Corner.Builder().setRadius(dp(AVATAR_SIZE_DP / 2f)).build())
+                            .build(),
+                    )
                     .setClickable(openRoomClickable(room.roomId, tileAction.normalizedTileAction(), latestEventId))
                     .build(),
             )
+            .addContent(avatar)
             .build()
     }
 
@@ -413,7 +426,7 @@ abstract class ConversationTileServiceBase : TileService() {
             val avatarHash = avatarBytes[room.roomId]?.contentHashCode() ?: 0
             "${room.roomId}:${room.lastActivityTsMs}:${latestEventIds[room.roomId].orEmpty()}:$avatarHash"
         }
-        return "${tileMode.resourceKey}-v5-${tileAction.name}-${seed.hashCode().toUInt().toString(16)}"
+        return "${tileMode.resourceKey}-v6-${tileAction.name}-${seed.hashCode().toUInt().toString(16)}"
     }
 
     private fun renderAvatarPng(room: WatchFavoriteRoom, avatarBytes: ByteArray?, sizePx: Int): ByteArray {
@@ -510,7 +523,7 @@ abstract class ConversationTileServiceBase : TileService() {
         val avatarBytes: Map<String, ByteArray> = emptyMap(),
         val latestEventIds: Map<String, String> = emptyMap(),
         val tileAction: WatchTileConversationAction = WatchTileConversationAction.OPEN_CONVERSATION,
-        val resourcesVersion: String = "conversation-tile-v4-empty",
+        val resourcesVersion: String = "conversation-tile-v6-empty",
     )
 }
 

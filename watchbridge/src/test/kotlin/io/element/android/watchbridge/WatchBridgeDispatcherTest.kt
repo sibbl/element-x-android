@@ -525,20 +525,24 @@ class WatchBridgeDispatcherTest {
         dispatcher.start()
         runCurrent()
 
-        assertThat(
-            transport.publications.none { (it.second.payload as? WatchSync.AvatarUpdate)?.imageBytes != null },
-        ).isTrue()
-
-        advanceTimeBy(1_500L)
-        runCurrent()
-
-        val avatarPayload = transport.publications
+        val initialAvatarPayload = transport.publications
             .map { it.second.payload }
             .filterIsInstance<WatchSync.AvatarUpdate>()
             .singleOrNull { it.roomId == "!a:s" }
 
-        assertThat(avatarPayload).isNotNull()
-        assertThat(avatarPayload!!.imageBytes?.toList()).containsExactly(7.toByte(), 8.toByte(), 9.toByte()).inOrder()
+        assertThat(initialAvatarPayload).isNotNull()
+        assertThat(initialAvatarPayload!!.imageBytes).isNull()
+
+        advanceTimeBy(1_500L)
+        runCurrent()
+
+        val avatarPayloads = transport.publications
+            .map { it.second.payload }
+            .filterIsInstance<WatchSync.AvatarUpdate>()
+            .filter { it.roomId == "!a:s" }
+
+        assertThat(avatarPayloads).hasSize(2)
+        assertThat(avatarPayloads.last().imageBytes?.toList()).containsExactly(7.toByte(), 8.toByte(), 9.toByte()).inOrder()
     }
 
     @Test

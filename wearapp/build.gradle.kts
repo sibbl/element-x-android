@@ -41,10 +41,12 @@ android {
 
     buildTypes {
         getByName("debug") {
+            resValue("string", "app_name", "Element X Wear dbg")
             applicationIdSuffix = ".debug"
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
+            resValue("string", "app_name", "Element X Wear")
             isMinifyEnabled = true
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(

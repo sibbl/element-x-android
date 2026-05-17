@@ -28,6 +28,7 @@ import io.element.android.libraries.push.impl.notifications.factories.QUICK_REPL
 import io.element.android.libraries.push.impl.notifications.factories.aNotificationAccountParams
 import io.element.android.libraries.push.impl.notifications.factories.createNotificationCreator
 import io.element.android.libraries.push.impl.notifications.fixtures.aNotifiableMessageEvent
+import io.element.android.libraries.push.test.notifications.conversations.FakeNotificationConversationService
 import io.element.android.services.toolbox.api.sdk.BuildVersionSdkIntProvider
 import io.element.android.services.toolbox.impl.strings.AndroidStringProvider
 import io.element.android.services.toolbox.test.sdk.FakeBuildVersionSdkIntProvider
@@ -228,11 +229,64 @@ class DefaultBaseRoomGroupMessageCreatorTest : RobolectricTest() {
         assertThat(result.`when`).isEqualTo(A_TIMESTAMP)
         assertThat(fakeImageLoader.getExecutedRequestsData()).isEmpty()
     }
+
+    @Test
+    fun `test createRoomMessage creates conversation shortcut metadata for group room notifications`() = runTest {
+        val notificationConversationService = FakeNotificationConversationService()
+        val sut = createRoomGroupMessageCreator(
+            notificationConversationService = notificationConversationService,
+        )
+
+        sut.createRoomMessage(
+            notificationAccountParams = aNotificationAccountParams(),
+            events = listOf(
+                aNotifiableMessageEvent(timestamp = A_TIMESTAMP).copy(
+                    roomName = "Group room",
+                    roomAvatarPath = A_ROOM_AVATAR,
+                    roomIsDm = false,
+                )
+            ),
+            roomId = A_ROOM_ID,
+            imageLoader = FakeImageLoader(),
+            existingNotification = null,
+            threadId = null,
+        )
+
+        assertThat(notificationConversationService.onSendMessageCalls).containsExactly(
+            FakeNotificationConversationService.OnSendMessageCall(
+                sessionId = aNotificationAccountParams().user.userId,
+                roomId = A_ROOM_ID,
+                roomName = "Group room",
+                roomIsDirect = false,
+                roomAvatarUrl = A_ROOM_AVATAR,
+            )
+        )
+    }
+
+    @Test
+    fun `test createRoomMessage does not create conversation shortcut metadata for thread notifications`() = runTest {
+        val notificationConversationService = FakeNotificationConversationService()
+        val sut = createRoomGroupMessageCreator(
+            notificationConversationService = notificationConversationService,
+        )
+
+        sut.createRoomMessage(
+            notificationAccountParams = aNotificationAccountParams(),
+            events = listOf(aNotifiableMessageEvent(timestamp = A_TIMESTAMP)),
+            roomId = A_ROOM_ID,
+            imageLoader = FakeImageLoader(),
+            existingNotification = null,
+            threadId = io.element.android.libraries.matrix.test.A_THREAD_ID,
+        )
+
+        assertThat(notificationConversationService.onSendMessageCalls).isEmpty()
+    }
 }
 
 fun createRoomGroupMessageCreator(
     sdkIntProvider: BuildVersionSdkIntProvider = FakeBuildVersionSdkIntProvider(Build.VERSION_CODES.O),
     enterpriseService: EnterpriseService = FakeEnterpriseService(),
+    notificationConversationService: FakeNotificationConversationService = FakeNotificationConversationService(),
 ): RoomGroupMessageCreator {
     val context = RuntimeEnvironment.getApplication() as Context
     val bitmapLoader = DefaultNotificationBitmapLoader(
@@ -246,6 +300,7 @@ fun createRoomGroupMessageCreator(
             enterpriseService = enterpriseService,
         ),
         bitmapLoader = bitmapLoader,
-        stringProvider = AndroidStringProvider(context.resources)
+        stringProvider = AndroidStringProvider(context.resources),
+        notificationConversationService = notificationConversationService,
     )
 }

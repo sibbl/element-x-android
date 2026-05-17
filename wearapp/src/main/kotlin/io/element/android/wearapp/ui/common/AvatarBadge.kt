@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
+import coil3.compose.AsyncImage
 
 @Composable
 internal fun AvatarBadge(
@@ -38,6 +42,7 @@ internal fun AvatarBadge(
     val decodedAvatar = remember(avatarBytes) {
         avatarBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
+    var avatarUrlFailed by remember(avatarUrl) { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -51,6 +56,15 @@ internal fun AvatarBadge(
                 bitmap = decodedAvatar,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (!avatarUrl.isNullOrBlank() && !avatarUrlFailed) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = { avatarUrlFailed = true },
+                onSuccess = { avatarUrlFailed = false },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

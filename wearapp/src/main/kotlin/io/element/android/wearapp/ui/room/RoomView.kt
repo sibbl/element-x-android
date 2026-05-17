@@ -31,8 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.FilledTonalIconButton
@@ -45,11 +45,11 @@ import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.ComposerBar
 import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -193,7 +193,7 @@ internal fun RoomView(
             lazyListState.scrollToItem(initialIndex)
             shouldStickToBottom = initialIndex >= totalItemCount - 1
             lastAutoScrolledEventId = lastEventId
-        } else if ((shouldStickToBottom || followLatestAfterBottomRequest) && hasNewBottomItem) {
+        } else if ((shouldStickToBottom || followLatestAfterBottomRequest || isAtBottom(lazyListState, extraToleranceItems = 1)) && hasNewBottomItem) {
             lazyListState.scrollToItem(totalItemCount - 1)
             shouldStickToBottom = true
             followLatestAfterBottomRequest = false
@@ -288,6 +288,7 @@ internal fun RoomView(
                             val total = lazyListState.layoutInfo.totalItemsCount
                             if (total > 0) lazyListState.scrollToItem(total - 1)
                             shouldStickToBottom = true
+                            followLatestAfterBottomRequest = true
                             lastAutoScrolledEventId = lastEventId
                         }
                     },
@@ -355,11 +356,14 @@ private fun dayLabel(timestampMs: Long): String {
     }
 }
 
-private fun isAtBottom(listState: androidx.wear.compose.foundation.lazy.ScalingLazyListState): Boolean {
+private fun isAtBottom(
+    listState: androidx.wear.compose.foundation.lazy.ScalingLazyListState,
+    extraToleranceItems: Int = 0,
+): Boolean {
     val info = listState.layoutInfo
     val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
     val totalItems = info.totalItemsCount
-    return totalItems <= 1 || lastVisible >= totalItems - 2
+    return totalItems <= 1 || lastVisible >= totalItems - 2 - extraToleranceItems
 }
 
 private fun visibleTimelineEventIds(

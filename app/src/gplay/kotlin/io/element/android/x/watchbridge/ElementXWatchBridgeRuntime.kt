@@ -29,14 +29,12 @@ import io.element.android.libraries.matrix.api.room.CreateTimelineParams
 import io.element.android.libraries.matrix.api.room.CurrentUserMembership
 import io.element.android.libraries.matrix.api.room.JoinedRoom
 import io.element.android.libraries.matrix.api.room.RoomInfo
-import io.element.android.libraries.matrix.api.room.isDm
 import io.element.android.libraries.matrix.api.roomlist.LatestEventValue
 import io.element.android.libraries.matrix.api.roomlist.RoomList
 import io.element.android.libraries.matrix.api.roomlist.RoomSummary
 import io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem
 import io.element.android.libraries.matrix.api.timeline.ReceiptType
 import io.element.android.libraries.matrix.api.timeline.item.EventThreadInfo
-import io.element.android.libraries.matrix.api.timeline.item.virtual.VirtualTimelineItem
 import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EmoteMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EventContent
@@ -57,6 +55,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.UnableToDecry
 import io.element.android.libraries.matrix.api.timeline.item.event.VideoMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.toEventOrTransactionId
+import io.element.android.libraries.matrix.api.timeline.item.virtual.VirtualTimelineItem
 import io.element.android.libraries.matrix.ui.model.getAvatarData
 import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
 import io.element.android.libraries.push.api.notifications.NotificationCleaner
@@ -85,6 +84,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
@@ -145,9 +145,12 @@ object ElementXWatchBridgeRuntime {
         }
     }
 
-    fun start(context: Context) {
+    fun start(context: Context, startupDelayMs: Long = 0L) {
         val appContext = context.applicationContext
         scope.launch {
+            if (startupDelayMs > 0L) {
+                delay(startupDelayMs)
+            }
             runCatching { getOrCreateDispatcher(appContext) }
                 .onFailure { Timber.e(it, "WatchBridge startup failed") }
         }
@@ -532,7 +535,7 @@ private class MatrixRoomListWatchPort(
 
     override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> {
         val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
-        val avatarData = room.avatarData() ?: return Result.success(null)
+        val avatarData = room.avatarData()
         val bitmap = notificationBitmapLoader.getRoomBitmap(
             avatarData = avatarData,
             imageLoader = imageLoader,
@@ -937,13 +940,20 @@ private fun ProfileDetails.displayName(): String? = when (this) {
     else -> null
 }
 
-private suspend fun JoinedRoom.avatarData() = if (isOneToOne) {
-    getDirectRoomMember()?.getAvatarData(AvatarSize.UserListItem)
-} else {
-    info().getAvatarData(AvatarSize.RoomListItem)
+private suspend fun JoinedRoom.avatarData() = info().let { roomInfo ->
+    if (roomInfo.isDm) {
+        getDirectRoomMember()
+            ?.getAvatarData(AvatarSize.UserListItem)
+            ?.takeIf { it.url != null }
+            ?: roomInfo.heroes.firstOrNull { it.avatarUrl != null }
+                ?.getAvatarData(AvatarSize.UserListItem)
+            ?: roomInfo.getAvatarData(AvatarSize.RoomListItem)
+    } else {
+        roomInfo.getAvatarData(AvatarSize.RoomListItem)
+    }
 }
 
-private suspend fun JoinedRoom.avatarUri(): String? = avatarData()?.url?.mxcToHttpThumbnail(64)
+private suspend fun JoinedRoom.avatarUri(): String? = avatarData().url?.mxcToHttpThumbnail(64)
 
 private fun Bitmap.toPngByteArray(): ByteArray = ByteArrayOutputStream().use { output ->
     compress(CompressFormat.PNG, 100, output)

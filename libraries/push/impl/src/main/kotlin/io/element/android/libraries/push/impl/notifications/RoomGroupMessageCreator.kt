@@ -18,12 +18,14 @@ import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
+import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationService
 import io.element.android.libraries.push.impl.R
 import io.element.android.libraries.push.impl.notifications.factories.NotificationAccountParams
 import io.element.android.libraries.push.impl.notifications.factories.NotificationCreator
 import io.element.android.libraries.push.impl.notifications.factories.isSmartReplyError
 import io.element.android.libraries.push.impl.notifications.model.NotifiableMessageEvent
 import io.element.android.services.toolbox.api.strings.StringProvider
+import timber.log.Timber
 
 interface RoomGroupMessageCreator {
     suspend fun createRoomMessage(
@@ -41,6 +43,7 @@ class DefaultRoomGroupMessageCreator(
     private val bitmapLoader: NotificationBitmapLoader,
     private val stringProvider: StringProvider,
     private val notificationCreator: NotificationCreator,
+    private val notificationConversationService: NotificationConversationService,
 ) : RoomGroupMessageCreator {
     override suspend fun createRoomMessage(
         notificationAccountParams: NotificationAccountParams,
@@ -65,6 +68,19 @@ class DefaultRoomGroupMessageCreator(
         val lastMessageTimestamp = events.last().timestamp
         val smartReplyErrors = events.filter { it.isSmartReplyError() }
         val roomIsDm = !roomIsGroup
+        if (threadId == null) {
+            runCatching {
+                notificationConversationService.onSendMessage(
+                    sessionId = notificationAccountParams.user.userId,
+                    roomId = roomId,
+                    roomName = roomName,
+                    roomIsDirect = roomIsDm,
+                    roomAvatarUrl = lastKnownRoomEvent.roomAvatarPath,
+                )
+            }.onFailure {
+                Timber.w(it, "Failed to refresh conversation shortcut for room=%s", roomId)
+            }
+        }
         return notificationCreator.createMessagesListNotification(
             notificationAccountParams = notificationAccountParams,
             roomInfo = RoomEventGroupInfo(

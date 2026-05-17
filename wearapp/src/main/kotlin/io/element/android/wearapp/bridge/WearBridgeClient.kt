@@ -26,13 +26,17 @@ import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchErrorCode
+import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchPayload
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
+import io.element.android.watchbridge.contract.WatchThreadItem
+import io.element.android.watchbridge.contract.WatchTimelineItem
+import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.watchbridge.contract.WatchVoiceDraft
-import io.element.android.wearapp.tile.FavoriteContactsTileService
 import io.element.android.wearapp.notifications.WearLocalNotificationManager
+import io.element.android.wearapp.tile.FavoriteContactsTileService
 import io.element.android.wearapp.tile.RecentContactsTileService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -73,6 +77,43 @@ private infix fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean =
     this == null -> other == null
     other == null -> false
     else -> contentEquals(other)
+}
+
+internal fun WatchMessageNotification.toTimelineItemForOpenConversation(): WatchTimelineItem? {
+    if (threadRootEventId != null) return null
+    val body = bodyText?.takeIf { it.isNotBlank() } ?: return null
+    return WatchTimelineItem(
+        eventId = eventId,
+        roomId = roomId,
+        senderId = notificationSenderId(),
+        senderDisplayName = senderDisplayName,
+        timestampMs = timestampMs,
+        kind = WatchTimelineItemKind.TEXT,
+        bodyText = body,
+        readableByTts = true,
+    )
+}
+
+internal fun WatchMessageNotification.toThreadItemForOpenThread(): WatchThreadItem? {
+    val rootEventId = threadRootEventId ?: return null
+    val body = bodyText?.takeIf { it.isNotBlank() } ?: return null
+    return WatchThreadItem(
+        eventId = eventId,
+        threadRootEventId = rootEventId,
+        roomId = roomId,
+        senderId = notificationSenderId(),
+        senderDisplayName = senderDisplayName,
+        timestampMs = timestampMs,
+        kind = WatchTimelineItemKind.TEXT,
+        bodyText = body,
+    )
+}
+
+private fun WatchMessageNotification.notificationSenderId(): String {
+    return senderDisplayName
+        ?.takeIf { it.isNotBlank() }
+        ?: roomDisplayName.takeIf { it.isNotBlank() }
+        ?: roomId
 }
 
 /**
@@ -587,32 +628,11 @@ class WearBridgeClient(private val context: Context) {
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.TimelineDelta -> {
-                removeCachedMediaPreviews(roomId = p.roomId, eventIds = p.removedEventIds)
-                val updatedItems = mergeTimelineItems(
-                    existing = getCachedTimeline(p.roomId),
-                    incoming = p.items,
-                )
-                    .filter { it.eventId !in p.removedEventIds }
-                    .sortedBy { it.timestampMs }
-                    .takeLast(MAX_CACHED_TIMELINE_ITEMS)
-                cacheTimeline(roomId = p.roomId, items = updatedItems, hasSnapshot = true)
+                mergeTimelineDelta(p)
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.ThreadDelta -> {
-                removeCachedMediaPreviews(roomId = p.roomId, eventIds = p.removedEventIds)
-                val updatedItems = mergeThreadItems(
-                    existing = getCachedThread(p.roomId, p.threadRootEventId),
-                    incoming = p.items,
-                )
-                    .filter { it.eventId !in p.removedEventIds }
-                    .sortedBy { it.timestampMs }
-                    .takeLast(MAX_CACHED_THREAD_ITEMS)
-                cacheThread(
-                    roomId = p.roomId,
-                    threadRootEventId = p.threadRootEventId,
-                    items = updatedItems,
-                    hasSnapshot = true,
-                )
+                mergeThreadDelta(p)
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.UnreadUpdate -> {
@@ -647,6 +667,29 @@ class WearBridgeClient(private val context: Context) {
                         )
                     }
                 }
+                val timelineDelta = p.notification.toTimelineItemForOpenConversation()?.let { item ->
+                    WatchSync.TimelineDelta(
+                        roomId = p.notification.roomId,
+                        fromTimelineVersion = p.notification.timestampMs,
+                        toTimelineVersion = p.notification.timestampMs,
+                        items = listOf(item),
+                    )
+                }
+                if (timelineDelta != null && shouldMergeNotificationIntoTimeline(p.notification.roomId)) {
+                    mergeTimelineDelta(timelineDelta)
+                    scope.launch { _syncEvents.emit(timelineDelta) }
+                }
+                val threadDelta = p.notification.toThreadItemForOpenThread()?.let { item ->
+                    WatchSync.ThreadDelta(
+                        roomId = p.notification.roomId,
+                        threadRootEventId = item.threadRootEventId,
+                        items = listOf(item),
+                    )
+                }
+                if (threadDelta != null && shouldMergeNotificationIntoThread(threadDelta.roomId, threadDelta.threadRootEventId)) {
+                    mergeThreadDelta(threadDelta)
+                    scope.launch { _syncEvents.emit(threadDelta) }
+                }
                 localNotificationManager.show(
                     notification = p.notification,
                     generatedAtMs = envelope.generatedAtMs,
@@ -667,6 +710,44 @@ class WearBridgeClient(private val context: Context) {
             }
             else -> scope.launch { _syncEvents.emit(p) }
         }
+    }
+
+    private fun shouldMergeNotificationIntoTimeline(roomId: String): Boolean {
+        return roomId in activeRoomSubscriptions || hasCachedTimelineSnapshot(roomId) || getCachedTimeline(roomId).isNotEmpty()
+    }
+
+    private fun shouldMergeNotificationIntoThread(roomId: String, threadRootEventId: String): Boolean {
+        val key = threadCacheKey(roomId, threadRootEventId)
+        return key in activeThreadSubscriptions || hasCachedThreadSnapshot(roomId, threadRootEventId) || getCachedThread(roomId, threadRootEventId).isNotEmpty()
+    }
+
+    private fun mergeTimelineDelta(delta: WatchSync.TimelineDelta) {
+        removeCachedMediaPreviews(roomId = delta.roomId, eventIds = delta.removedEventIds)
+        val updatedItems = mergeTimelineItems(
+            existing = getCachedTimeline(delta.roomId),
+            incoming = delta.items,
+        )
+            .filter { it.eventId !in delta.removedEventIds }
+            .sortedBy { it.timestampMs }
+            .takeLast(MAX_CACHED_TIMELINE_ITEMS)
+        cacheTimeline(roomId = delta.roomId, items = updatedItems, hasSnapshot = true)
+    }
+
+    private fun mergeThreadDelta(delta: WatchSync.ThreadDelta) {
+        removeCachedMediaPreviews(roomId = delta.roomId, eventIds = delta.removedEventIds)
+        val updatedItems = mergeThreadItems(
+            existing = getCachedThread(delta.roomId, delta.threadRootEventId),
+            incoming = delta.items,
+        )
+            .filter { it.eventId !in delta.removedEventIds }
+            .sortedBy { it.timestampMs }
+            .takeLast(MAX_CACHED_THREAD_ITEMS)
+        cacheThread(
+            roomId = delta.roomId,
+            threadRootEventId = delta.threadRootEventId,
+            items = updatedItems,
+            hasSnapshot = true,
+        )
     }
 
     private fun applyInvalidation(invalidation: WatchSync.Invalidation) {
