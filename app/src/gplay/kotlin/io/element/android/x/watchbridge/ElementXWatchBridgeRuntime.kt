@@ -536,6 +536,7 @@ private class MatrixRoomListWatchPort(
     override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> {
         val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
         val avatarData = room.avatarData()
+        if (avatarData.url == null) return Result.success(null)
         val bitmap = notificationBitmapLoader.getRoomBitmap(
             avatarData = avatarData,
             imageLoader = imageLoader,

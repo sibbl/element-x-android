@@ -12,7 +12,10 @@ import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchErrorCode
+import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchProtocol
+import io.element.android.watchbridge.contract.WatchRoomKind
+import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.transport.WatchTransport
@@ -282,8 +285,9 @@ class WatchBridgeDispatcher(
                     path = WatchDataPaths.ROOM_SUMMARY,
                     envelope = envelope(WatchSync.RoomSummary(summary)),
                 )
-                latestAvatarKeys[cmd.roomId] = summary.avatarUri
-                publishAvatarUpdate(roomId = cmd.roomId, avatarKey = summary.avatarUri, allowRetry = summary.avatarUri != null)
+                val avatarKey = summary.avatarSyncKey()
+                latestAvatarKeys[cmd.roomId] = avatarKey
+                publishAvatarUpdate(roomId = cmd.roomId, avatarKey = avatarKey, allowRetry = avatarKey != null)
                 ack(WatchAck.Sent(cmd.requestId))
 
                 // Publish an initial empty delta so the watch transitions from "loading" to "empty"
@@ -454,7 +458,7 @@ class WatchBridgeDispatcher(
         }
     }
 
-    private suspend fun publishAvatarUpdates(rooms: List<io.element.android.watchbridge.contract.WatchFavoriteRoom>) {
+    private suspend fun publishAvatarUpdates(rooms: List<WatchFavoriteRoom>) {
         val visibleRooms = rooms.take(MAX_AVATAR_SYNC_COUNT)
         val visibleRoomIds = visibleRooms.map { it.roomId }.toSet()
         latestAvatarKeys.keys.filterNot { it in visibleRoomIds }.forEach { roomId ->
@@ -462,8 +466,9 @@ class WatchBridgeDispatcher(
             avatarRetryJobs.remove(roomId)?.cancel()
         }
         visibleRooms.forEach { room ->
-            latestAvatarKeys[room.roomId] = room.avatarUri
-            publishAvatarUpdate(roomId = room.roomId, avatarKey = room.avatarUri, allowRetry = room.avatarUri != null)
+            val avatarKey = room.avatarSyncKey()
+            latestAvatarKeys[room.roomId] = avatarKey
+            publishAvatarUpdate(roomId = room.roomId, avatarKey = avatarKey, allowRetry = avatarKey != null)
         }
     }
 
@@ -533,6 +538,12 @@ class WatchBridgeDispatcher(
             }
         }
     }
+
+    private fun WatchFavoriteRoom.avatarSyncKey(): String? =
+        avatarUri ?: roomId.takeIf { kind == WatchRoomKind.DM }
+
+    private fun WatchRoomSummary.avatarSyncKey(): String? =
+        avatarUri ?: roomId.takeIf { kind == WatchRoomKind.DM }
 
     private fun ack(ack: WatchAck, rememberTerminal: Boolean = true) {
         if (rememberTerminal && ack.isTerminal()) {

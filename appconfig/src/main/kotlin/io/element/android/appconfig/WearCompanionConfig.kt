@@ -70,6 +70,12 @@ fun buildWearCompanionDeepLink(
         .authority(WearCompanionConfig.DEEP_LINK_HOST)
         .apply {
             when {
+                eventId != null && threadRootEventId != null -> {
+                    appendPath("thread-message")
+                    appendPath(roomId)
+                    appendPath(threadRootEventId)
+                    appendPath(eventId)
+                }
                 threadRootEventId != null -> {
                     appendPath("thread")
                     appendPath(roomId)
@@ -105,6 +111,16 @@ fun parseWearCompanionDeepLink(uri: Uri?): WearCompanionDeepLink? {
             val eventId = segments.getOrNull(2)?.takeIf { it.isNotBlank() }?.let(Uri::decode)
             if (roomId != null && eventId != null) {
                 WearCompanionDeepLink(roomId = roomId, eventId = eventId)
+            } else {
+                null
+            }
+        }
+        "thread-message" -> {
+            val roomId = segments.getOrNull(1)?.takeIf { it.isNotBlank() }?.let(Uri::decode)
+            val threadRootEventId = segments.getOrNull(2)?.takeIf { it.isNotBlank() }?.let(Uri::decode)
+            val eventId = segments.getOrNull(3)?.takeIf { it.isNotBlank() }?.let(Uri::decode)
+            if (roomId != null && threadRootEventId != null && eventId != null) {
+                WearCompanionDeepLink(roomId = roomId, eventId = eventId, threadRootEventId = threadRootEventId)
             } else {
                 null
             }

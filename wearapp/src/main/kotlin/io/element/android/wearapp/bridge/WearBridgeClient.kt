@@ -675,9 +675,14 @@ class WearBridgeClient(private val context: Context) {
                         items = listOf(item),
                     )
                 }
-                if (timelineDelta != null && shouldMergeNotificationIntoTimeline(p.notification.roomId)) {
+                if (timelineDelta != null) {
                     mergeTimelineDelta(timelineDelta)
-                    scope.launch { _syncEvents.emit(timelineDelta) }
+                    if (persist) {
+                        scheduleCachePersist(envelope.copy(payload = timelineDelta))
+                    }
+                    if (shouldEmitNotificationTimelineDelta(p.notification.roomId)) {
+                        scope.launch { _syncEvents.emit(timelineDelta) }
+                    }
                 }
                 val threadDelta = p.notification.toThreadItemForOpenThread()?.let { item ->
                     WatchSync.ThreadDelta(
@@ -686,9 +691,14 @@ class WearBridgeClient(private val context: Context) {
                         items = listOf(item),
                     )
                 }
-                if (threadDelta != null && shouldMergeNotificationIntoThread(threadDelta.roomId, threadDelta.threadRootEventId)) {
+                if (threadDelta != null) {
                     mergeThreadDelta(threadDelta)
-                    scope.launch { _syncEvents.emit(threadDelta) }
+                    if (persist) {
+                        scheduleCachePersist(envelope.copy(payload = threadDelta))
+                    }
+                    if (shouldEmitNotificationThreadDelta(threadDelta.roomId, threadDelta.threadRootEventId)) {
+                        scope.launch { _syncEvents.emit(threadDelta) }
+                    }
                 }
                 localNotificationManager.show(
                     notification = p.notification,
@@ -712,13 +722,12 @@ class WearBridgeClient(private val context: Context) {
         }
     }
 
-    private fun shouldMergeNotificationIntoTimeline(roomId: String): Boolean {
-        return roomId in activeRoomSubscriptions || hasCachedTimelineSnapshot(roomId) || getCachedTimeline(roomId).isNotEmpty()
+    private fun shouldEmitNotificationTimelineDelta(roomId: String): Boolean {
+        return roomId in activeRoomSubscriptions
     }
 
-    private fun shouldMergeNotificationIntoThread(roomId: String, threadRootEventId: String): Boolean {
-        val key = threadCacheKey(roomId, threadRootEventId)
-        return key in activeThreadSubscriptions || hasCachedThreadSnapshot(roomId, threadRootEventId) || getCachedThread(roomId, threadRootEventId).isNotEmpty()
+    private fun shouldEmitNotificationThreadDelta(roomId: String, threadRootEventId: String): Boolean {
+        return threadCacheKey(roomId, threadRootEventId) in activeThreadSubscriptions
     }
 
     private fun mergeTimelineDelta(delta: WatchSync.TimelineDelta) {

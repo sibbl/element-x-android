@@ -279,6 +279,8 @@ internal class WearLocalNotificationFactory(
         val intent = buildWearLaunchIntent(
             context = context,
             roomId = notification.roomId,
+            eventId = notification.eventId,
+            threadRootEventId = notification.threadRootEventId,
         )
         return PendingIntent.getActivity(
             context,

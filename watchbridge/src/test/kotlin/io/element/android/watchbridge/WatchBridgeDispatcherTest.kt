@@ -546,6 +546,34 @@ class WatchBridgeDispatcherTest {
     }
 
     @Test
+    fun `dm avatar publication asks phone for thumbnail when room list has no avatar uri`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort(
+            favorites = listOf(
+                WatchFavoriteRoom(
+                    roomId = "!dm:s",
+                    displayName = "Alice",
+                    avatarUri = null,
+                    kind = WatchRoomKind.DM,
+                ),
+            ),
+            avatarThumbnailResults = ArrayDeque<Result<ByteArray?>>().apply {
+                add(Result.success(byteArrayOf(1, 2, 3)))
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.start()
+        runCurrent()
+
+        val avatarPayload = transport.publications
+            .map { it.second.payload }
+            .filterIsInstance<WatchSync.AvatarUpdate>()
+            .single { it.roomId == "!dm:s" }
+        assertThat(avatarPayload.imageBytes?.toList()).containsExactly(1.toByte(), 2.toByte(), 3.toByte()).inOrder()
+    }
+
+    @Test
     fun `open room publishes timeline removed event ids without eager media preview`() = runTest(StandardTestDispatcher()) {
         val transport = RecordingTransport()
         val imageItem = WatchTimelineItem(

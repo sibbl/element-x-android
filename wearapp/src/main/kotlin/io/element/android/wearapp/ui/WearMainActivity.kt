@@ -566,11 +566,11 @@ private fun navigateFromRoot(
     val threadRootEventId = deepLink.threadRootEventId
     val eventId = deepLink.eventId
     val route = when {
+        eventId != null -> messageRoute(deepLink.roomId, eventId, threadRootEventId)
         threadRootEventId != null -> threadRoute(
             roomId = deepLink.roomId,
             rootId = threadRootEventId,
         )
-        eventId != null -> messageRoute(deepLink.roomId, eventId)
         else -> roomRoute(deepLink.roomId)
     }
     nav.navigate(route) {

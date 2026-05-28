@@ -62,8 +62,8 @@ class WearLocalNotificationFactoryTest {
         val contentIntent = shadowOf(notification.contentIntent).savedIntent
         val deepLink = parseWearCompanionDeepLink(contentIntent.data)
         assertThat(deepLink?.roomId).isEqualTo("!room:server")
-        assertThat(deepLink?.eventId).isNull()
-        assertThat(deepLink?.threadRootEventId).isNull()
+        assertThat(deepLink?.eventId).isEqualTo("\$event:server")
+        assertThat(deepLink?.threadRootEventId).isEqualTo("\$root:server")
 
         val actions = notification.actions.orEmpty()
         assertThat(actions.map { it.title.toString() }).containsExactly(
