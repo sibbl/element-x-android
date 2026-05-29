@@ -10,6 +10,7 @@ package io.element.android.wearapp.ui.voice
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,6 +62,7 @@ import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.audio.VoiceRecorder
 import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.ui.buildWearLaunchIntent
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.theme.WearAppTheme
 import kotlinx.coroutines.delay
@@ -95,6 +97,7 @@ class VoiceRecorderActivity : ComponentActivity() {
         }
         val threadRootEventId = intent.getStringExtra("threadRootEventId")
         val inReplyToEventId = intent.getStringExtra("inReplyToEventId")
+        val returnToEventId = intent.getStringExtra(EXTRA_RETURN_TO_EVENT_ID)
         val bridge = (application as WearApp).bridgeClient
 
         hasRecordPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -109,12 +112,38 @@ class VoiceRecorderActivity : ComponentActivity() {
                     roomId = roomId,
                     threadRootEventId = threadRootEventId,
                     inReplyToEventId = inReplyToEventId,
+                    returnToEventId = returnToEventId,
                     hasRecordPermission = hasRecordPermission,
                     onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                    onDone = { finish() },
+                    onRecordingActiveChanged = ::setRecordingKeepScreenOn,
+                    onDone = { shouldOpenMessageDetail ->
+                        if (shouldOpenMessageDetail && returnToEventId != null) {
+                            startActivity(
+                                buildWearLaunchIntent(
+                                    context = this,
+                                    roomId = roomId,
+                                    eventId = returnToEventId,
+                                    threadRootEventId = threadRootEventId,
+                                ),
+                            )
+                        }
+                        finish()
+                    },
                 )
             }
         }
+    }
+
+    private fun setRecordingKeepScreenOn(active: Boolean) {
+        if (active) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    internal companion object {
+        const val EXTRA_RETURN_TO_EVENT_ID = "returnToEventId"
     }
 }
 
@@ -124,9 +153,11 @@ private fun VoiceRecorderUi(
     roomId: String,
     threadRootEventId: String?,
     inReplyToEventId: String?,
+    returnToEventId: String?,
     hasRecordPermission: Boolean,
     onRequestPermission: () -> Unit,
-    onDone: () -> Unit,
+    onRecordingActiveChanged: (Boolean) -> Unit,
+    onDone: (shouldOpenMessageDetail: Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val recorder = remember { VoiceRecorder(context) }
@@ -140,11 +171,13 @@ private fun VoiceRecorderUi(
 
     DisposableEffect(recorder) {
         onDispose {
+            onRecordingActiveChanged(false)
             recorder.cancel()
         }
     }
 
     LaunchedEffect(recordingStartedAt) {
+        onRecordingActiveChanged(recordingStartedAt != null)
         val startedAt = recordingStartedAt ?: return@LaunchedEffect
         while (recordingStartedAt != null) {
             elapsedMs = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
@@ -185,7 +218,7 @@ private fun VoiceRecorderUi(
 
     fun cancelAndClose() {
         cancelRecording()
-        onDone()
+        onDone(false)
     }
 
     LaunchedEffect(hasRecordPermission, autoStartRecording, recordingStartedAt, sending) {
@@ -321,7 +354,7 @@ private fun VoiceRecorderUi(
                                         audioFile = file,
                                     )
                                 }.onSuccess {
-                                    onDone()
+                                    onDone(returnToEventId != null)
                                 }.onFailure {
                                     errorMessage = context.watchCommandErrorMessage(it, R.string.watch_error_voice_send_failed)
                                     sending = false

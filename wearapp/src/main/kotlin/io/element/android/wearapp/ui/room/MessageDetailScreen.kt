@@ -81,16 +81,13 @@ fun MessageDetailScreen(
                     if (!dictated.isNullOrBlank()) {
                         scope.launch {
                             runCatching {
-                                bridge.sendAwaitTerminalAck {
-                                    WatchCommand.SendText(
-                                        requestId = it,
-                                        roomId = roomId,
-                                        inReplyToEventId = item.eventId,
-                                        text = dictated,
-                                        source = WatchSendSource.DICTATION,
-                                        clientTsMs = System.currentTimeMillis(),
-                                    )
-                                }
+                                bridge.sendTextWithLocalEcho(
+                                    roomId = roomId,
+                                    threadRootEventId = threadRootEventId,
+                                    inReplyToEventId = item.eventId.takeUnless { threadRootEventId != null },
+                                    text = dictated,
+                                    source = WatchSendSource.DICTATION,
+                                )
                                 onReplySent(
                                     item.eventId,
                                     item.eventId == roomState.items.lastOrNull()?.eventId,

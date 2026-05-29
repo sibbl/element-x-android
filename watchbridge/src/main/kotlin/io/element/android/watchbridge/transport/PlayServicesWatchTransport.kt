@@ -13,7 +13,6 @@ import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Node
-import com.google.android.gms.wearable.NodeClient
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
@@ -39,10 +38,9 @@ class PlayServicesWatchTransport(
     private val dataClient: DataClient by lazy { Wearable.getDataClient(context) }
     private val messageClient: MessageClient by lazy { Wearable.getMessageClient(context) }
     private val capabilityClient: CapabilityClient by lazy { Wearable.getCapabilityClient(context) }
-    private val nodeClient: NodeClient by lazy { Wearable.getNodeClient(context) }
 
     override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) = withContext(Dispatchers.IO) {
-        val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope)
+        val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope.stampedForApplicationId(context.packageName))
         require(bytes.size <= WatchProtocol.MAX_PAYLOAD_BYTES) { "Payload too large: ${bytes.size}" }
         val request = PutDataMapRequest.create(path).apply {
             dataMap.putByteArray("envelope", bytes)
@@ -53,12 +51,12 @@ class PlayServicesWatchTransport(
     }
 
     override suspend fun sendMessage(path: String, envelope: WatchSyncEnvelope): String = withContext(Dispatchers.IO) {
-        val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope)
+        val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope.stampedForApplicationId(context.packageName))
         val capabilityNodes = capabilityClient
-            .getCapability(WatchProtocol.WATCH_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+            .getCapability(WatchProtocol.watchCapability(context.packageName), CapabilityClient.FILTER_REACHABLE)
             .await()
             .nodes
-        val node = (capabilityNodes.takeIf { it.isNotEmpty() } ?: nodeClient.connectedNodes.await()).nearbyFirst()
+        val node = capabilityNodes.nearbyFirst()
             ?: error("No reachable watch node")
         messageClient.sendMessage(node.id, path, bytes).await()
         node.id

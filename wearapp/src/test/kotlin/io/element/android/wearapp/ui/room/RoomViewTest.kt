@@ -128,6 +128,54 @@ class RoomViewTest {
     }
 
     @Test
+    fun `first open scrolls to latest item even when a read marker exists`() {
+        lateinit var listState: ScalingLazyListState
+        val items = (1..40).map { index ->
+            WatchTimelineItem(
+                eventId = "\$event-$index:server",
+                roomId = "!room:server",
+                senderId = "@alice:server",
+                senderDisplayName = "Alice",
+                timestampMs = index.toLong(),
+                kind = WatchTimelineItemKind.TEXT,
+                bodyText = "Message $index",
+                isReadMarkerAnchor = index == 12,
+            )
+        }
+
+        rule.setContent {
+            listState = rememberScalingLazyListState()
+            WearAppTheme {
+                RoomView(
+                    state = RoomViewState(
+                        timelineKey = "!room:server",
+                        displayName = "Latest room",
+                        items = items,
+                        isLoading = false,
+                    ),
+                    onMessageSelected = {},
+                    onOpenThread = null,
+                    onReply = {},
+                    onVoice = null,
+                    listState = listState,
+                )
+            }
+        }
+
+        rule.waitUntil(timeoutMillis = 5_000L) {
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            totalItems > 0 && lastVisibleIndex == totalItems - 1
+        }
+
+        rule.runOnIdle {
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            assertThat(lastVisibleIndex).isEqualTo(totalItems - 1)
+        }
+    }
+
+    @Test
     fun `message tap snapshots current list position before navigation`() {
         lateinit var initialListState: ScalingLazyListState
         var selectedEventId: String? = null

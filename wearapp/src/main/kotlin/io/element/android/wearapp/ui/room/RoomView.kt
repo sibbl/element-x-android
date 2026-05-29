@@ -79,7 +79,6 @@ internal fun RoomView(
     val lazyListState = listState ?: rememberScalingLazyListState()
     val totalItemCount = lazyListState.layoutInfo.totalItemsCount
     val lastEventId = state.items.lastOrNull()?.eventId
-    val readMarkerAnchorEventId = state.items.firstOrNull { it.isReadMarkerAnchor }?.eventId
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
     var followLatestAfterBottomRequest by remember(state.timelineKey) { mutableStateOf(false) }
     var lastAutoScrolledEventId by remember(state.timelineKey) { mutableStateOf<String?>(null) }
@@ -99,7 +98,7 @@ internal fun RoomView(
     val scope = rememberCoroutineScope()
     val shouldRestoreSavedPosition = savedListPosition != null && state.scrollRequestId == null
 
-    val isAtBottom by remember {
+    val isAtBottom by remember(lazyListState) {
         derivedStateOf {
             isAtBottom(lazyListState)
         }
@@ -182,16 +181,15 @@ internal fun RoomView(
         onScrollRequestHandled?.invoke(requestId)
     }
 
-    LaunchedEffect(state.timelineKey, lastEventId, totalItemCount, readMarkerAnchorEventId) {
+    LaunchedEffect(state.timelineKey, lastEventId, totalItemCount) {
         if (lastEventId == null || totalItemCount <= 0) return@LaunchedEffect
         if (shouldRestoreSavedPosition && !hasRestoredSavedPosition) return@LaunchedEffect
 
         val initialScroll = lastAutoScrolledEventId == null
         val hasNewBottomItem = lastEventId != lastAutoScrolledEventId
         if (initialScroll) {
-            val initialIndex = timelineListIndexForEvent(state.items, readMarkerAnchorEventId) ?: (totalItemCount - 1)
-            lazyListState.scrollToItem(initialIndex)
-            shouldStickToBottom = initialIndex >= totalItemCount - 1
+            lazyListState.scrollToItem(totalItemCount - 1)
+            shouldStickToBottom = true
             lastAutoScrolledEventId = lastEventId
         } else if ((shouldStickToBottom || followLatestAfterBottomRequest || isAtBottom(lazyListState, extraToleranceItems = 1)) && hasNewBottomItem) {
             lazyListState.scrollToItem(totalItemCount - 1)

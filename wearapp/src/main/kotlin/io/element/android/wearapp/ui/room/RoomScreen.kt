@@ -14,7 +14,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchLongPressMessageAction
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.audio.WearTextToSpeech
@@ -89,16 +88,12 @@ fun RoomScreen(
                         if (!dictated.isNullOrBlank()) {
                             scope.launch {
                                 runCatching {
-                                    bridge.sendAwaitTerminalAck {
-                                        WatchCommand.SendText(
-                                            requestId = it,
-                                            roomId = roomId,
-                                            inReplyToEventId = item.eventId,
-                                            text = dictated,
-                                            source = WatchSendSource.DICTATION,
-                                            clientTsMs = System.currentTimeMillis(),
-                                        )
-                                    }
+                                    bridge.sendTextWithLocalEcho(
+                                        roomId = roomId,
+                                        inReplyToEventId = item.eventId,
+                                        text = dictated,
+                                        source = WatchSendSource.DICTATION,
+                                    )
                                 }.onFailure {
                                     onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_send_failed))
                                 }
@@ -127,15 +122,11 @@ fun RoomScreen(
                 if (!dictated.isNullOrBlank()) {
                     scope.launch {
                         runCatching {
-                            bridge.sendAwaitTerminalAck {
-                                WatchCommand.SendText(
-                                    requestId = it,
-                                    roomId = roomId,
-                                    text = dictated,
-                                    source = WatchSendSource.DICTATION,
-                                    clientTsMs = System.currentTimeMillis(),
-                                )
-                            }
+                            bridge.sendTextWithLocalEcho(
+                                roomId = roomId,
+                                text = dictated,
+                                source = WatchSendSource.DICTATION,
+                            )
                         }.onFailure {
                             onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_send_failed))
                         }

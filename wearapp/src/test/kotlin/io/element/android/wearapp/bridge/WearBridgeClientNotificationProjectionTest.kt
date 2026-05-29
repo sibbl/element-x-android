@@ -8,7 +8,10 @@
 package io.element.android.wearapp.bridge
 
 import com.google.common.truth.Truth.assertThat
+import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchMessageNotification
+import io.element.android.watchbridge.contract.WatchSync
+import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import org.junit.Test
 
@@ -46,6 +49,22 @@ class WearBridgeClientNotificationProjectionTest {
 
         assertThat(notification.toTimelineItemForOpenConversation()).isNull()
         assertThat(notification.copy(threadRootEventId = "\$root:server").toThreadItemForOpenThread()).isNull()
+    }
+
+    @Test
+    fun `incoming settings are dispatched before message notifications from the same batch`() {
+        val notificationEnvelope = WatchSyncEnvelope(
+            generatedAtMs = 1L,
+            payload = WatchSync.MessageNotification(aMessageNotification()),
+        )
+        val settingsEnvelope = WatchSyncEnvelope(
+            generatedAtMs = 2L,
+            payload = WatchSync.SettingsUpdate(WatchCompanionSettings()),
+        )
+
+        val ordered = orderIncomingEnvelopesForDispatch(listOf(notificationEnvelope, settingsEnvelope))
+
+        assertThat(ordered).containsExactly(settingsEnvelope, notificationEnvelope).inOrder()
     }
 
     private fun aMessageNotification(

@@ -38,16 +38,24 @@ class ElementXWatchBridgeListenerService : WatchBridgeListenerService() {
         val envelope = runCatching { WatchBridgeDispatcher.parse(event.data) }
             .onFailure { Timber.w(it, "Failed to parse watch envelope") }
             .getOrNull() ?: return
+        if (!envelope.isForApplicationId(applicationContext.packageName)) {
+            Timber.d(
+                "Ignoring watch envelope for applicationId=%s package=%s",
+                envelope.applicationId,
+                applicationContext.packageName,
+            )
+            return
+        }
         ElementXWatchBridgeRuntime.dispatch(applicationContext, envelope)
     }
 
     override fun onChannelOpened(channel: ChannelClient.Channel) {
-        val draftId = WatchDataPaths.voiceDraftId(channel.path)
+        val draftId = WatchDataPaths.voiceDraftId(channel.path, applicationContext.packageName)
         val channelClient = Wearable.getChannelClient(this)
         serviceScope.launch {
             try {
                 if (draftId == null) {
-                    Timber.d("Ignoring non-voice channel path=%s", channel.path)
+                    Timber.d("Ignoring voice channel for another app variant or non-voice path=%s", channel.path)
                     return@launch
                 }
                 val audioBytes = channelClient.getInputStream(channel).await().use { input -> input.readBytes() }

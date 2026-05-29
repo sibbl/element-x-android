@@ -24,6 +24,7 @@ import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity.Companion.EXTRA_RETURN_TO_EVENT_ID
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -80,6 +81,7 @@ class WearLocalNotificationFactoryTest {
         val voiceIntent = shadowOf(actions[1].actionIntent as PendingIntent).savedIntent
         assertThat(voiceIntent.component?.className).endsWith("VoiceRecorderActivity")
         assertThat(voiceIntent.getStringExtra("threadRootEventId")).isEqualTo("\$root:server")
+        assertThat(voiceIntent.getStringExtra(EXTRA_RETURN_TO_EVENT_ID)).isEqualTo("\$event:server")
 
         val threadIntent = shadowOf(actions[2].actionIntent as PendingIntent).savedIntent
         val threadDeepLink = parseWearCompanionDeepLink(threadIntent.data)

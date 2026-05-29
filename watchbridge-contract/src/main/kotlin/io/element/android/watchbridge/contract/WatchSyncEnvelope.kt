@@ -19,8 +19,17 @@ data class WatchSyncEnvelope(
     val protocolVersion: Int = WatchProtocol.VERSION,
     val generatedAtMs: Long,
     val expiresAtMs: Long? = null,
+    val applicationId: String = "",
     val payload: WatchPayload,
-)
+) {
+    fun stampedForApplicationId(applicationId: String): WatchSyncEnvelope {
+        return if (this.applicationId == applicationId) this else copy(applicationId = applicationId)
+    }
+
+    fun isForApplicationId(applicationId: String): Boolean {
+        return this.applicationId.isBlank() || this.applicationId == applicationId
+    }
+}
 
 /**
  * Sealed root for everything that can travel inside a [WatchSyncEnvelope].

@@ -26,6 +26,7 @@ import io.element.android.watchbridge.contract.parseCustomWatchNotificationVibra
 import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.ui.buildWearLaunchIntent
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity.Companion.EXTRA_RETURN_TO_EVENT_ID
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 
 internal data class WearResolvedNotificationVibration(
@@ -358,6 +359,7 @@ internal class WearLocalNotificationFactory(
         val voiceIntent = Intent(context, VoiceRecorderActivity::class.java)
             .putExtra("roomId", notification.roomId)
             .putExtra("roomDisplayName", roomDisplayName)
+            .putExtra(EXTRA_RETURN_TO_EVENT_ID, notification.eventId)
             .apply {
                 if (notification.threadRootEventId != null) {
                     putExtra("threadRootEventId", notification.threadRootEventId)

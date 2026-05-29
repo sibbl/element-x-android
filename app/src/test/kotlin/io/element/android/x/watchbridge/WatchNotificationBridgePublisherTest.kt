@@ -16,8 +16,12 @@ import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.push.impl.notifications.model.NotifiableMessageEvent
 import io.element.android.libraries.push.impl.notifications.model.ResolvedPushEvent
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
+import io.element.android.watchbridge.contract.WatchCompanionSettings
+import io.element.android.watchbridge.contract.WatchConversationVibrationOverride
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchNotificationMessagePreview
+import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
+import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchSync
@@ -119,6 +123,39 @@ class WatchNotificationBridgePublisherTest {
 
         val payload = transport.published.single().second.payload as WatchSync.MessageNotification
         assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.DM)
+    }
+
+    @Test
+    fun `room-specific vibration override is embedded in published notifications`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            settingsProvider = {
+                WatchCompanionSettings(
+                    notificationVibrations = WatchNotificationVibrationSettings(
+                        conversationOverrides = listOf(
+                            WatchConversationVibrationOverride(
+                                roomId = "!room:server",
+                                pattern = WatchNotificationVibrationPattern.CUSTOM,
+                                customPattern = "120 60 240",
+                            ),
+                        ),
+                    ),
+                )
+            },
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(eventId = "\$dm:server", timestamp = 2L, body = "Hello Alice"),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
+        assertThat(payload.notification.customVibrationPattern).isEqualTo("120 60 240")
     }
 
     @Test

@@ -29,9 +29,28 @@ object WatchProtocol {
     /** Wear OS capability name that the watch app advertises. */
     const val WATCH_CAPABILITY: String = "element_x_watchbridge_watch"
 
+    /**
+     * Variant-specific phone capability. Debug and release use different application ids, so this
+     * keeps a release phone from resolving a debug watch app when both variants are installed.
+     */
+    fun phoneCapability(applicationId: String): String = variantCapability(PHONE_CAPABILITY, applicationId)
+
+    /**
+     * Variant-specific watch capability. Debug and release use different application ids, so this
+     * keeps a release watch from resolving a debug phone app when both variants are installed.
+     */
+    fun watchCapability(applicationId: String): String = variantCapability(WATCH_CAPABILITY, applicationId)
+
     /** Default command timeout, in milliseconds. */
     const val DEFAULT_COMMAND_TIMEOUT_MS: Long = 15_000L
 
     /** Hard payload size ceiling that Wear Data Layer can reasonably carry. */
     const val MAX_PAYLOAD_BYTES: Int = 95 * 1024
+
+    private fun variantCapability(base: String, applicationId: String): String {
+        val safeApplicationId = applicationId.map { char ->
+            if (char.isLetterOrDigit()) char else '_'
+        }.joinToString(separator = "")
+        return "${base}_$safeApplicationId"
+    }
 }

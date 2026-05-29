@@ -38,6 +38,10 @@ open class WatchBridgeListenerService : WearableListenerService() {
         val envelope = runCatching { WatchBridgeDispatcher.parse(event.data) }
             .onFailure { Timber.w(it, "Failed to parse watch envelope") }
             .getOrNull() ?: return
+        if (!envelope.isForApplicationId(applicationContext.packageName)) {
+            Timber.d("Ignoring watch envelope for applicationId=%s package=%s", envelope.applicationId, applicationContext.packageName)
+            return
+        }
         dispatcher.onEnvelope(envelope)
     }
 

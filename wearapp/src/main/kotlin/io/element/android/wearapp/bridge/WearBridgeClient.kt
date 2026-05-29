@@ -29,6 +29,7 @@ import io.element.android.watchbridge.contract.WatchErrorCode
 import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchPayload
 import io.element.android.watchbridge.contract.WatchProtocol
+import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.contract.WatchThreadItem
@@ -70,6 +71,9 @@ private const val VOICE_UPLOAD_TIMEOUT_MS = 60_000L
 private const val TILE_REFRESH_DEBOUNCE_MS = 2_000L
 private const val CACHE_PERSIST_DEBOUNCE_MS = 500L
 private const val TIMELINE_CACHE_PERSIST_DEBOUNCE_MS = 2_000L
+private const val LOCAL_ECHO_EVENT_ID_PREFIX = "\$watch-local-"
+private const val LOCAL_ECHO_SENDER_ID = "@watch-local"
+private const val LOCAL_ECHO_RECONCILE_WINDOW_MS = 2 * 60 * 1_000L
 
 internal fun mediaPreviewCacheKey(roomId: String, eventId: String): String = "$roomId/$eventId"
 
@@ -177,6 +181,8 @@ class WearBridgeClient(private val context: Context) {
     private val pendingCachePersists = ConcurrentHashMap<String, WatchSyncEnvelope>()
     /** Outstanding debounce jobs for disk cache writes. */
     private val pendingCachePersistJobs = ConcurrentHashMap<String, Job>()
+    /** Disk cache restore job. Notifications wait for this so vibration settings survive process death. */
+    private var diskPrimeJob: Job? = null
     /** Debounced tile refresh request to avoid hammering Wear tiles during sync bursts. */
     private var pendingTileRefreshJob: Job? = null
     /** Avoid registering listeners repeatedly if app/service startup paths re-enter [start]. */
@@ -317,7 +323,7 @@ class WearBridgeClient(private val context: Context) {
     }
 
     private val phoneCapabilityListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
-        if (capabilityInfo.name == WatchProtocol.PHONE_CAPABILITY) {
+        if (capabilityInfo.name == phoneCapabilityName()) {
             Timber.d(
                 "phone capability changed reachable=%s nodes=%s",
                 capabilityInfo.nodes.isNotEmpty(),
@@ -330,21 +336,19 @@ class WearBridgeClient(private val context: Context) {
     fun start() {
         if (started) return
         started = true
-        capabilityClient.addLocalCapability(WatchProtocol.WATCH_CAPABILITY)
-            .addOnSuccessListener { Timber.d("watch capability registered") }
+        capabilityClient.addLocalCapability(watchCapabilityName())
+            .addOnSuccessListener { Timber.d("watch capability registered package=%s", context.packageName) }
             .addOnFailureListener {
                 if (it.isDuplicateCapability()) {
-                    Timber.d("watch capability already registered")
+                    Timber.d("watch capability already registered package=%s", context.packageName)
                 } else {
                     Timber.w(it, "watch capability registration failed")
                 }
             }
-        capabilityClient.addListener(phoneCapabilityListener, WatchProtocol.PHONE_CAPABILITY)
+        capabilityClient.addListener(phoneCapabilityListener, phoneCapabilityName())
             .addOnFailureListener { Timber.w(it, "phone capability listener registration failed") }
         scope.launch { probePhoneCapability() }
-        scope.launch {
-            primeCachedStateFromDisk()
-        }
+        diskPrimeJob = scope.launch { primeCachedStateFromDisk() }
     }
 
     fun stop() {
@@ -381,6 +385,7 @@ class WearBridgeClient(private val context: Context) {
 
     /** Called from the app-level `WearableListenerService` on any `DataItem` change. */
     fun onDataChanged(events: DataEventBuffer) {
+        val pendingEnvelopes = mutableListOf<WatchSyncEnvelope>()
         for (ev in events) {
             val path = ev.dataItem.uri.path.orEmpty()
             if (ev.type == DataEvent.TYPE_DELETED) {
@@ -395,8 +400,9 @@ class WearBridgeClient(private val context: Context) {
             val item = ev.dataItem
             val data = DataMapItem.fromDataItem(item).dataMap.getByteArray("envelope") ?: continue
             val envelope = decode(data) ?: continue
-            dispatchIncoming(envelope)
+            pendingEnvelopes += envelope
         }
+        orderIncomingEnvelopesForDispatch(pendingEnvelopes).forEach(::dispatchIncoming)
     }
 
     /** Called from the app-level `WearableListenerService` on an incoming `MessageClient` event. */
@@ -483,8 +489,44 @@ class WearBridgeClient(private val context: Context) {
         }
     }
 
+    suspend fun sendTextWithLocalEcho(
+        roomId: String,
+        threadRootEventId: String? = null,
+        inReplyToEventId: String? = null,
+        text: String,
+        source: WatchSendSource,
+    ): WatchAck {
+        val clientTsMs = System.currentTimeMillis()
+        val localEventId = appendLocalTextEcho(
+            roomId = roomId,
+            threadRootEventId = threadRootEventId,
+            text = text,
+            clientTsMs = clientTsMs,
+        )
+        return try {
+            sendAwaitTerminalAck {
+                WatchCommand.SendText(
+                    requestId = it,
+                    roomId = roomId,
+                    threadRootEventId = threadRootEventId,
+                    inReplyToEventId = inReplyToEventId,
+                    text = text,
+                    source = source,
+                    clientTsMs = clientTsMs,
+                )
+            }
+        } catch (failure: Throwable) {
+            removeLocalTextEcho(roomId, threadRootEventId, localEventId)
+            throw failure
+        }
+    }
+
     private suspend fun sendCommand(command: WatchCommand) {
-        val envelope = WatchSyncEnvelope(generatedAtMs = System.currentTimeMillis(), payload = command)
+        val envelope = WatchSyncEnvelope(
+            generatedAtMs = System.currentTimeMillis(),
+            applicationId = context.packageName,
+            payload = command,
+        )
         val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope)
         withContext(Dispatchers.IO) {
             val node = resolvePhoneNode() ?: error("phone not reachable")
@@ -511,7 +553,7 @@ class WearBridgeClient(private val context: Context) {
         audioFile: File,
     ) = withContext(Dispatchers.IO) {
         val node = resolvePhoneNode() ?: error("phone not reachable")
-        val channel = channelClient.openChannel(node.id, WatchDataPaths.voiceDraftChannel(draftId)).await()
+        val channel = channelClient.openChannel(node.id, WatchDataPaths.voiceDraftChannel(context.packageName, draftId)).await()
         try {
             channelClient.getOutputStream(channel).await().use { output ->
                 audioFile.inputStream().use { input -> input.copyTo(output) }
@@ -519,6 +561,109 @@ class WearBridgeClient(private val context: Context) {
             }
         } finally {
             channelClient.close(channel).await()
+        }
+    }
+
+    private fun appendLocalTextEcho(
+        roomId: String,
+        threadRootEventId: String?,
+        text: String,
+        clientTsMs: Long,
+    ): String {
+        val eventId = "$LOCAL_ECHO_EVENT_ID_PREFIX${UUID.randomUUID()}"
+        updateFavoritePreview(roomId = roomId, text = text, timestampMs = clientTsMs)
+        if (threadRootEventId == null) {
+            val delta = WatchSync.TimelineDelta(
+                roomId = roomId,
+                fromTimelineVersion = clientTsMs,
+                toTimelineVersion = clientTsMs,
+                items = listOf(
+                    WatchTimelineItem(
+                        eventId = eventId,
+                        roomId = roomId,
+                        senderId = LOCAL_ECHO_SENDER_ID,
+                        senderDisplayName = null,
+                        timestampMs = clientTsMs,
+                        kind = WatchTimelineItemKind.TEXT,
+                        bodyText = text,
+                        isOwn = true,
+                    ),
+                ),
+            )
+            mergeTimelineDelta(delta)
+            emitAndPersistLocalDelta(delta, generatedAtMs = clientTsMs)
+        } else {
+            val delta = WatchSync.ThreadDelta(
+                roomId = roomId,
+                threadRootEventId = threadRootEventId,
+                items = listOf(
+                    WatchThreadItem(
+                        eventId = eventId,
+                        threadRootEventId = threadRootEventId,
+                        roomId = roomId,
+                        senderId = LOCAL_ECHO_SENDER_ID,
+                        senderDisplayName = null,
+                        timestampMs = clientTsMs,
+                        kind = WatchTimelineItemKind.TEXT,
+                        bodyText = text,
+                        isOwn = true,
+                    ),
+                ),
+            )
+            mergeThreadDelta(delta)
+            emitAndPersistLocalDelta(delta, generatedAtMs = clientTsMs)
+        }
+        return eventId
+    }
+
+    private fun removeLocalTextEcho(roomId: String, threadRootEventId: String?, eventId: String) {
+        val generatedAtMs = System.currentTimeMillis()
+        if (threadRootEventId == null) {
+            val delta = WatchSync.TimelineDelta(
+                roomId = roomId,
+                fromTimelineVersion = generatedAtMs,
+                toTimelineVersion = generatedAtMs,
+                items = emptyList(),
+                removedEventIds = listOf(eventId),
+            )
+            mergeTimelineDelta(delta)
+            emitAndPersistLocalDelta(delta, generatedAtMs)
+        } else {
+            val delta = WatchSync.ThreadDelta(
+                roomId = roomId,
+                threadRootEventId = threadRootEventId,
+                items = emptyList(),
+                removedEventIds = listOf(eventId),
+            )
+            mergeThreadDelta(delta)
+            emitAndPersistLocalDelta(delta, generatedAtMs)
+        }
+    }
+
+    private fun emitAndPersistLocalDelta(payload: WatchSync, generatedAtMs: Long) {
+        val envelope = WatchSyncEnvelope(
+            generatedAtMs = generatedAtMs,
+            applicationId = context.packageName,
+            payload = payload,
+        )
+        scope.launch { _syncEvents.emit(payload) }
+        scheduleCachePersist(envelope)
+    }
+
+    private fun updateFavoritePreview(roomId: String, text: String, timestampMs: Long) {
+        val updatedFavorites = _favorites.value.map { room ->
+            if (room.roomId == roomId) {
+                room.copy(
+                    lastPreviewText = text,
+                    lastActivityTsMs = timestampMs,
+                )
+            } else {
+                room
+            }
+        }
+        if (updatedFavorites != _favorites.value) {
+            _favorites.value = updatedFavorites.sortedByDescending { it.lastActivityTsMs }
+            requestTileRefresh()
         }
     }
 
@@ -545,11 +690,10 @@ class WearBridgeClient(private val context: Context) {
     private suspend fun probePhoneCapability() = withContext(Dispatchers.IO) {
         runCatching {
             val caps = capabilityClient
-                .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+                .getCapability(phoneCapabilityName(), CapabilityClient.FILTER_REACHABLE)
                 .await()
             val connectedNodes = nodeClient.connectedNodes.await()
-            val nodes = caps.nodes.takeIf { it.isNotEmpty() } ?: connectedNodes
-            val reachable = nodes.isNotEmpty()
+            val reachable = caps.nodes.isNotEmpty()
             Timber.d(
                 "phone reachability probe reachable=%s capabilityNodes=%s connectedNodes=%s",
                 reachable,
@@ -571,12 +715,15 @@ class WearBridgeClient(private val context: Context) {
 
     private suspend fun resolvePhoneNode(): Node? {
         val capabilityNodes = capabilityClient
-            .getCapability(WatchProtocol.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+            .getCapability(phoneCapabilityName(), CapabilityClient.FILTER_REACHABLE)
             .await()
             .nodes
-        val nodes = capabilityNodes.takeIf { it.isNotEmpty() } ?: nodeClient.connectedNodes.await()
-        return nodes.nearbyFirst()
+        return capabilityNodes.nearbyFirst()
     }
+
+    private fun phoneCapabilityName(): String = WatchProtocol.phoneCapability(context.packageName)
+
+    private fun watchCapabilityName(): String = WatchProtocol.watchCapability(context.packageName)
 
     private fun Iterable<Node>.nearbyFirst(): Node? = firstOrNull { it.isNearby } ?: firstOrNull()
 
@@ -586,6 +733,10 @@ class WearBridgeClient(private val context: Context) {
         this is ApiException && statusCode == DUPLICATE_CAPABILITY_STATUS_CODE
 
     private fun dispatchIncoming(envelope: WatchSyncEnvelope, persist: Boolean = true) {
+        if (!envelope.isForApplicationId(context.packageName)) {
+            Timber.d("dropping envelope for applicationId=%s package=%s", envelope.applicationId, context.packageName)
+            return
+        }
         if (envelope.protocolVersion < WatchProtocol.MIN_SUPPORTED_VERSION) {
             Timber.w("dropping unsupported envelope v=%d", envelope.protocolVersion)
             return
@@ -700,7 +851,7 @@ class WearBridgeClient(private val context: Context) {
                         scope.launch { _syncEvents.emit(threadDelta) }
                     }
                 }
-                localNotificationManager.show(
+                showLocalNotificationAfterCachedSettingsPrime(
                     notification = p.notification,
                     generatedAtMs = envelope.generatedAtMs,
                     expiresAtMs = envelope.expiresAtMs,
@@ -907,6 +1058,21 @@ class WearBridgeClient(private val context: Context) {
         else -> CACHE_PERSIST_DEBOUNCE_MS
     }
 
+    private fun showLocalNotificationAfterCachedSettingsPrime(
+        notification: WatchMessageNotification,
+        generatedAtMs: Long,
+        expiresAtMs: Long?,
+    ) {
+        scope.launch {
+            diskPrimeJob?.join()
+            localNotificationManager.show(
+                notification = notification,
+                generatedAtMs = generatedAtMs,
+                expiresAtMs = expiresAtMs,
+            )
+        }
+    }
+
     private fun threadCacheKey(roomId: String, threadRootEventId: String): String = "$roomId/$threadRootEventId"
 
     private fun threadCachePrefix(roomId: String): String = "$roomId/"
@@ -915,7 +1081,8 @@ class WearBridgeClient(private val context: Context) {
         existing: List<io.element.android.watchbridge.contract.WatchTimelineItem>,
         incoming: List<io.element.android.watchbridge.contract.WatchTimelineItem>,
     ): List<io.element.android.watchbridge.contract.WatchTimelineItem> {
-        return (existing + incoming)
+        val matchedLocalEchoes = localEchoesMatchedByIncomingTimelineItems(existing, incoming)
+        return (existing.filterNot { it.eventId in matchedLocalEchoes } + incoming)
             .associateBy { it.eventId }
             .values
             .toList()
@@ -925,10 +1092,68 @@ class WearBridgeClient(private val context: Context) {
         existing: List<io.element.android.watchbridge.contract.WatchThreadItem>,
         incoming: List<io.element.android.watchbridge.contract.WatchThreadItem>,
     ): List<io.element.android.watchbridge.contract.WatchThreadItem> {
-        return (existing + incoming)
+        val matchedLocalEchoes = localEchoesMatchedByIncomingThreadItems(existing, incoming)
+        return (existing.filterNot { it.eventId in matchedLocalEchoes } + incoming)
             .associateBy { it.eventId }
             .values
             .toList()
+    }
+
+    private fun localEchoesMatchedByIncomingTimelineItems(
+        existing: List<WatchTimelineItem>,
+        incoming: List<WatchTimelineItem>,
+    ): Set<String> {
+        val confirmedOwnTextItems = incoming.filter { it.isConfirmedOwnTextItem() }
+        if (confirmedOwnTextItems.isEmpty()) return emptySet()
+        return existing
+            .filter { it.isLocalEchoTextItem() }
+            .filter { localEcho ->
+                confirmedOwnTextItems.any { confirmed -> localEcho.matchesConfirmedTextItem(confirmed) }
+            }
+            .mapTo(mutableSetOf()) { it.eventId }
+    }
+
+    private fun localEchoesMatchedByIncomingThreadItems(
+        existing: List<WatchThreadItem>,
+        incoming: List<WatchThreadItem>,
+    ): Set<String> {
+        val confirmedOwnTextItems = incoming.filter { it.isConfirmedOwnTextItem() }
+        if (confirmedOwnTextItems.isEmpty()) return emptySet()
+        return existing
+            .filter { it.isLocalEchoTextItem() }
+            .filter { localEcho ->
+                confirmedOwnTextItems.any { confirmed -> localEcho.matchesConfirmedTextItem(confirmed) }
+            }
+            .mapTo(mutableSetOf()) { it.eventId }
+    }
+
+    private fun WatchTimelineItem.isLocalEchoTextItem(): Boolean {
+        return eventId.startsWith(LOCAL_ECHO_EVENT_ID_PREFIX) && kind == WatchTimelineItemKind.TEXT && bodyText?.isNotBlank() == true
+    }
+
+    private fun WatchTimelineItem.isConfirmedOwnTextItem(): Boolean {
+        return !eventId.startsWith(LOCAL_ECHO_EVENT_ID_PREFIX) && isOwn && kind == WatchTimelineItemKind.TEXT && bodyText?.isNotBlank() == true
+    }
+
+    private fun WatchTimelineItem.matchesConfirmedTextItem(confirmed: WatchTimelineItem): Boolean {
+        return roomId == confirmed.roomId &&
+            bodyText == confirmed.bodyText &&
+            kotlin.math.abs(timestampMs - confirmed.timestampMs) <= LOCAL_ECHO_RECONCILE_WINDOW_MS
+    }
+
+    private fun WatchThreadItem.isLocalEchoTextItem(): Boolean {
+        return eventId.startsWith(LOCAL_ECHO_EVENT_ID_PREFIX) && kind == WatchTimelineItemKind.TEXT && bodyText?.isNotBlank() == true
+    }
+
+    private fun WatchThreadItem.isConfirmedOwnTextItem(): Boolean {
+        return !eventId.startsWith(LOCAL_ECHO_EVENT_ID_PREFIX) && isOwn && kind == WatchTimelineItemKind.TEXT && bodyText?.isNotBlank() == true
+    }
+
+    private fun WatchThreadItem.matchesConfirmedTextItem(confirmed: WatchThreadItem): Boolean {
+        return roomId == confirmed.roomId &&
+            threadRootEventId == confirmed.threadRootEventId &&
+            bodyText == confirmed.bodyText &&
+            kotlin.math.abs(timestampMs - confirmed.timestampMs) <= LOCAL_ECHO_RECONCILE_WINDOW_MS
     }
 
     private data class CachedTimeline(
@@ -940,6 +1165,12 @@ class WearBridgeClient(private val context: Context) {
         val items: List<io.element.android.watchbridge.contract.WatchThreadItem>,
         val hasSnapshot: Boolean,
     )
+}
+
+internal fun orderIncomingEnvelopesForDispatch(envelopes: List<WatchSyncEnvelope>): List<WatchSyncEnvelope> {
+    return envelopes.sortedBy { envelope ->
+        if (envelope.payload is WatchSync.MessageNotification) 1 else 0
+    }
 }
 
 class WatchCommandException(

@@ -18,7 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
-import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchThreadItem
@@ -44,6 +43,9 @@ fun ThreadScreen(
     threadRootEventId: String,
     activity: WearMainActivity,
     onMessageSelected: (String) -> Unit = {},
+    scrollRequestId: Long? = null,
+    forceScrollToBottom: Boolean = false,
+    onScrollRequestHandled: (Long) -> Unit = {},
     savedListPosition: SavedScalingListPosition? = null,
     onListPositionChange: (SavedScalingListPosition) -> Unit = {},
     onError: (String) -> Unit = {},
@@ -108,8 +110,8 @@ fun ThreadScreen(
             composerContextLabel = null,
             isLoading = !hasReceivedDelta,
             emptyText = stringResource(R.string.screen_thread_empty_messages),
-            scrollRequestId = initialBottomScrollRequestId,
-            forceScrollToBottom = true,
+            scrollRequestId = scrollRequestId ?: initialBottomScrollRequestId,
+            forceScrollToBottom = forceScrollToBottom || initialBottomScrollRequestId != null,
         ),
         onMessageSelected = onMessageSelected,
         // No nested-thread navigation inside a thread.
@@ -117,6 +119,8 @@ fun ThreadScreen(
         onScrollRequestHandled = { requestId ->
             if (initialBottomScrollRequestId == requestId) {
                 initialBottomScrollRequestId = null
+            } else {
+                onScrollRequestHandled(requestId)
             }
         },
         savedListPosition = savedListPosition,
@@ -134,16 +138,12 @@ fun ThreadScreen(
                 if (!dictated.isNullOrBlank()) {
                     scope.launch {
                         runCatching {
-                            bridge.sendAwaitTerminalAck {
-                                WatchCommand.SendText(
-                                    requestId = it,
-                                    roomId = roomId,
-                                    threadRootEventId = threadRootEventId,
-                                    text = dictated,
-                                    source = WatchSendSource.DICTATION,
-                                    clientTsMs = System.currentTimeMillis(),
-                                )
-                            }
+                            bridge.sendTextWithLocalEcho(
+                                roomId = roomId,
+                                threadRootEventId = threadRootEventId,
+                                text = dictated,
+                                source = WatchSendSource.DICTATION,
+                            )
                         }.onFailure {
                             onError(activity.watchCommandErrorMessage(it, R.string.watch_error_send_failed))
                         }

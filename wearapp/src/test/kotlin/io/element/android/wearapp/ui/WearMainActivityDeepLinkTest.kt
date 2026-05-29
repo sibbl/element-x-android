@@ -65,6 +65,35 @@ class WearMainActivityDeepLinkTest {
     }
 
     @Test
+    fun `message notification deep link builds room then message back stack`() {
+        val routes = wearDeepLinkBackStackRoutes(
+            WearCompanionDeepLink(roomId = "!room:server", eventId = "\$event:server"),
+        )
+
+        assertThat(routes).containsExactly(
+            "room?roomId=!room%3Aserver",
+            "message?roomId=!room%3Aserver&eventId=%24event%3Aserver&threadRootId=",
+        ).inOrder()
+    }
+
+    @Test
+    fun `thread message notification deep link builds room thread then message back stack`() {
+        val routes = wearDeepLinkBackStackRoutes(
+            WearCompanionDeepLink(
+                roomId = "!room:server",
+                eventId = "\$event:server",
+                threadRootEventId = "\$root:server",
+            ),
+        )
+
+        assertThat(routes).containsExactly(
+            "room?roomId=!room%3Aserver",
+            "thread?roomId=!room%3Aserver&rootId=%24root%3Aserver",
+            "message?roomId=!room%3Aserver&eventId=%24event%3Aserver&threadRootId=%24root%3Aserver",
+        ).inOrder()
+    }
+
+    @Test
     fun `tile clickable ids round-trip room ids`() {
         val clickableId = openRoomTileClickableId("!room:server")
 

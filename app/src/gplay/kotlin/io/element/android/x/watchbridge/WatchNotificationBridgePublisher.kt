@@ -25,9 +25,11 @@ import io.element.android.libraries.push.impl.notifications.model.ResolvedPushEv
 import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.services.toolbox.api.strings.StringProvider
 import io.element.android.watchbridge.contract.WatchBridgeSerialization
+import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchNotificationMessagePreview
+import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchSync
@@ -59,6 +61,7 @@ class WatchNotificationBridgePublisher(
     transport = PlayServicesWatchTransport(context),
     imageLabel = stringProvider.getString(CommonStrings.common_image),
     imagePreviewLoader = context::loadNotificationImagePreview,
+    settingsProvider = { ElementXWatchBridgeRuntime.settingsStore(context).settings.value },
     clearWatchStateForSession = { sessionId ->
         ElementXWatchBridgeRuntime.clearSessionState(context, sessionId)
     },
@@ -68,6 +71,7 @@ internal class WatchNotificationBridgePublisherDelegate(
     private val transport: WatchTransport,
     private val imageLabel: String,
     private val imagePreviewLoader: (NotifiableMessageEvent) -> ByteArray? = { null },
+    private val settingsProvider: () -> WatchCompanionSettings = { WatchCompanionSettings() },
     private val clearWatchStateForSession: suspend (SessionId) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) : CompanionNotificationBridge {
@@ -160,6 +164,7 @@ internal class WatchNotificationBridgePublisherDelegate(
         val bodyText = watchNotificationBodyText()
         val displayName = roomName?.takeIf { it.isNotBlank() }
             ?: senderDisambiguatedDisplayName.orEmpty()
+        val vibrationOverride = conversationVibrationOverride()
         return RenderedNotification(
             notification = WatchMessageNotification(
                 notificationKey = key.notificationKey,
@@ -177,6 +182,8 @@ internal class WatchNotificationBridgePublisherDelegate(
                     .mapNotNull { event -> event.toPreviewMessage() },
                 isNoisy = noisy,
                 imagePreviewBytes = imagePreviewLoader(this),
+                vibrationPatternOverride = vibrationOverride?.pattern,
+                customVibrationPattern = vibrationOverride?.customPattern,
             ),
             activeNotification = ActiveNotification(
                 sessionId = sessionId,
@@ -186,6 +193,19 @@ internal class WatchNotificationBridgePublisherDelegate(
                 eventIds = groupedEvents.mapTo(mutableSetOf()) { it.eventId.value },
             ),
         )
+    }
+
+    private fun NotifiableMessageEvent.conversationVibrationOverride(): NotificationVibrationOverride? {
+        val settings = settingsProvider()
+        settings.notificationVibrations.conversationOverrides.firstOrNull { it.roomId == roomId.value }?.let { override ->
+            override.pattern?.let { pattern ->
+                return NotificationVibrationOverride(
+                    pattern = pattern,
+                    customPattern = override.customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM },
+                )
+            }
+        }
+        return null
     }
 
     private fun NotifiableMessageEvent.watchNotificationBodyText(): String? {
@@ -234,6 +254,11 @@ private data class ActiveNotification(
 private data class RenderedNotification(
     val notification: WatchMessageNotification,
     val activeNotification: ActiveNotification,
+)
+
+private data class NotificationVibrationOverride(
+    val pattern: WatchNotificationVibrationPattern,
+    val customPattern: String?,
 )
 
 private fun WatchSyncEnvelope.withoutImagePreviewIfOversized(): WatchSyncEnvelope {

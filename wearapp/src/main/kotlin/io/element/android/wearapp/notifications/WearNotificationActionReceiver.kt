@@ -16,6 +16,7 @@ import androidx.wear.activity.ConfirmationActivity
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.WearApp
+import io.element.android.wearapp.ui.buildWearLaunchIntent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -119,6 +120,12 @@ class WearNotificationActionReceiver : BroadcastReceiver {
         result.onSuccess {
             if (intent.action == ACTION_REPLY) {
                 uiController.dismiss(notificationKey, notificationId, generatedAtMs, context)
+                uiController.openMessageDetail(
+                    context = context,
+                    roomId = roomId,
+                    eventId = eventId,
+                    threadRootEventId = threadRootEventId,
+                )
             }
         }.onFailure {
             Timber.w(it, "Watch notification action failed action=%s roomId=%s eventId=%s", intent.action, roomId, eventId)
@@ -151,6 +158,13 @@ class WearNotificationActionReceiver : BroadcastReceiver {
             generatedAtMs: Long,
             context: Context,
         )
+
+        fun openMessageDetail(
+            context: Context,
+            roomId: String,
+            eventId: String,
+            threadRootEventId: String?,
+        )
     }
 
     internal class BridgeWearNotificationActionExecutor : WearNotificationActionExecutor {
@@ -180,17 +194,13 @@ class WearNotificationActionReceiver : BroadcastReceiver {
             replyText: String,
         ): Result<Unit> = runCatching {
             val bridgeClient = (context.applicationContext as WearApp).bridgeClient
-            bridgeClient.sendAwaitTerminalAck { requestId ->
-                WatchCommand.SendText(
-                    requestId = requestId,
-                    roomId = roomId,
-                    threadRootEventId = threadRootEventId,
-                    inReplyToEventId = eventId.takeUnless { threadRootEventId != null },
-                    text = replyText,
-                    source = WatchSendSource.QUICK_REPLY,
-                    clientTsMs = System.currentTimeMillis(),
-                )
-            }
+            bridgeClient.sendTextWithLocalEcho(
+                roomId = roomId,
+                threadRootEventId = threadRootEventId,
+                inReplyToEventId = eventId.takeUnless { threadRootEventId != null },
+                text = replyText,
+                source = WatchSendSource.QUICK_REPLY,
+            )
             Unit
         }
     }
@@ -216,6 +226,26 @@ class WearNotificationActionReceiver : BroadcastReceiver {
         ) {
             WearNotificationDismissalStore(context).recordDismissal(notificationKey, generatedAtMs)
             NotificationManagerCompat.from(context).cancel(notificationId)
+        }
+
+        override fun openMessageDetail(
+            context: Context,
+            roomId: String,
+            eventId: String,
+            threadRootEventId: String?,
+        ) {
+            runCatching {
+                context.startActivity(
+                    buildWearLaunchIntent(
+                        context = context,
+                        roomId = roomId,
+                        eventId = eventId,
+                        threadRootEventId = threadRootEventId,
+                    ),
+                )
+            }.onFailure {
+                Timber.w(it, "Unable to open watch message detail from notification action")
+            }
         }
     }
 

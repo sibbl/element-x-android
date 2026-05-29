@@ -61,6 +61,13 @@ class WearNotificationActionReceiverTest {
                     ) {
                         dismissed += DismissCall(notificationKey, notificationId, generatedAtMs)
                     }
+
+                    override fun openMessageDetail(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                    ) = Unit
                 },
                 actionScope = CoroutineScope(Dispatchers.Unconfined),
             )
@@ -121,6 +128,13 @@ class WearNotificationActionReceiverTest {
                     ) {
                         dismissed += DismissCall(notificationKey, notificationId, generatedAtMs)
                     }
+
+                    override fun openMessageDetail(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                    ) = Unit
                 },
                 actionScope = CoroutineScope(Dispatchers.Unconfined),
             )
@@ -148,6 +162,7 @@ class WearNotificationActionReceiverTest {
     fun `reply dismisses only after successful execution`() {
         runBlocking {
             val dismissed = mutableListOf<DismissCall>()
+            val openedDetails = mutableListOf<MessageDetailCall>()
             val executedReplies = mutableListOf<String>()
             val receiver = WearNotificationActionReceiver(
                 executor = object : WearNotificationActionReceiver.WearNotificationActionExecutor {
@@ -180,6 +195,15 @@ class WearNotificationActionReceiverTest {
                     ) {
                         dismissed += DismissCall(notificationKey, notificationId, generatedAtMs)
                     }
+
+                    override fun openMessageDetail(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                    ) {
+                        openedDetails += MessageDetailCall(roomId, eventId, threadRootEventId)
+                    }
                 },
                 actionScope = CoroutineScope(Dispatchers.Unconfined),
             )
@@ -206,6 +230,77 @@ class WearNotificationActionReceiverTest {
 
             assertThat(executedReplies).containsExactly("Sounds good")
             assertThat(dismissed).containsExactly(DismissCall("notif-2", 24, 456L))
+            assertThat(openedDetails).containsExactly(MessageDetailCall("!room:server", "\$event:server", null))
+        }
+    }
+
+    @Test
+    fun `thread reply opens notification message detail after successful execution`() {
+        runBlocking {
+            val openedDetails = mutableListOf<MessageDetailCall>()
+            val receiver = WearNotificationActionReceiver(
+                executor = object : WearNotificationActionReceiver.WearNotificationActionExecutor {
+                    override suspend fun markAsRead(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                    ): Result<Unit> = Result.success(Unit)
+
+                    override suspend fun reply(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                        replyText: String,
+                    ): Result<Unit> = Result.success(Unit)
+                },
+                uiController = object : WearNotificationActionReceiver.WearNotificationActionUiController {
+                    override fun showMarkAsReadConfirmation(context: Context) = Unit
+
+                    override fun dismiss(
+                        notificationKey: String,
+                        notificationId: Int,
+                        generatedAtMs: Long,
+                        context: Context,
+                    ) = Unit
+
+                    override fun openMessageDetail(
+                        context: Context,
+                        roomId: String,
+                        eventId: String,
+                        threadRootEventId: String?,
+                    ) {
+                        openedDetails += MessageDetailCall(roomId, eventId, threadRootEventId)
+                    }
+                },
+                actionScope = CoroutineScope(Dispatchers.Unconfined),
+            )
+
+            val intent = Intent(context, WearNotificationActionReceiver::class.java)
+                .setAction(WearNotificationActionReceiver.ACTION_REPLY)
+                .putExtra(WearNotificationActionReceiver.EXTRA_NOTIFICATION_KEY, "notif-3")
+                .putExtra(WearNotificationActionReceiver.EXTRA_NOTIFICATION_ID, 25)
+                .putExtra(WearNotificationActionReceiver.EXTRA_GENERATED_AT_MS, 789L)
+                .putExtra(WearNotificationActionReceiver.EXTRA_ROOM_ID, "!room:server")
+                .putExtra(WearNotificationActionReceiver.EXTRA_EVENT_ID, "\$thread-event:server")
+                .putExtra(WearNotificationActionReceiver.EXTRA_THREAD_ROOT_EVENT_ID, "\$root:server")
+            val remoteInputResults = android.os.Bundle().apply {
+                putCharSequence(WearNotificationActionReceiver.RESULT_KEY_REPLY_TEXT, "Thread answer")
+            }
+            androidx.core.app.RemoteInput.addResultsToIntent(
+                arrayOf(
+                    androidx.core.app.RemoteInput.Builder(WearNotificationActionReceiver.RESULT_KEY_REPLY_TEXT).build(),
+                ),
+                intent,
+                remoteInputResults,
+            )
+
+            receiver.onReceive(context, intent)
+
+            assertThat(openedDetails).containsExactly(
+                MessageDetailCall("!room:server", "\$thread-event:server", "\$root:server"),
+            )
         }
     }
 
@@ -213,5 +308,11 @@ class WearNotificationActionReceiverTest {
         val notificationKey: String,
         val notificationId: Int,
         val generatedAtMs: Long,
+    )
+
+    private data class MessageDetailCall(
+        val roomId: String,
+        val eventId: String,
+        val threadRootEventId: String?,
     )
 }

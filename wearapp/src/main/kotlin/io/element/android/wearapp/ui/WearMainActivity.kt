@@ -54,7 +54,6 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import io.element.android.appconfig.WearCompanionDeepLink
-import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchLongPressConversationAction
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.WearApp
@@ -82,6 +81,7 @@ class WearMainActivity : ComponentActivity() {
     private var pendingTileDirectReplyRoomId by mutableStateOf<String?>(null)
     private var pendingTileReadLatest by mutableStateOf<PendingTileReadLatest?>(null)
     private var pendingRoomScrollRequest by mutableStateOf<PendingRoomScrollRequest?>(null)
+    private var pendingThreadScrollRequest by mutableStateOf<PendingThreadScrollRequest?>(null)
     private var transientErrorMessage by mutableStateOf<String?>(null)
     private var favoritesRequestedRoomCount by mutableIntStateOf(30)
     private var favoritesRestoredPage by mutableIntStateOf(-1)
@@ -160,12 +160,14 @@ class WearMainActivity : ComponentActivity() {
                 pendingDeepLink?.let { deepLink ->
                     when {
                         deepLink.threadRootEventId != null -> {
+                            prepareDeepLinkBackStackScroll(deepLink)
                             navigateFromRoot(nav = nav, deepLink = deepLink)
                         }
                         deepLink.eventId == null -> {
                             openRoomAtBottom(deepLink.roomId)
                         }
                         else -> {
+                            prepareDeepLinkBackStackScroll(deepLink)
                             navigateFromRoot(nav = nav, deepLink = deepLink)
                         }
                     }
@@ -179,15 +181,11 @@ class WearMainActivity : ComponentActivity() {
                         if (!dictated.isNullOrBlank()) {
                             scope.launch {
                                 runCatching {
-                                    bridge.sendAwaitTerminalAck {
-                                        WatchCommand.SendText(
-                                            requestId = it,
-                                            roomId = roomId,
-                                            text = dictated,
-                                            source = WatchSendSource.DICTATION,
-                                            clientTsMs = System.currentTimeMillis(),
-                                        )
-                                    }
+                                    bridge.sendTextWithLocalEcho(
+                                        roomId = roomId,
+                                        text = dictated,
+                                        source = WatchSendSource.DICTATION,
+                                    )
                                 }.onFailure {
                                     transientErrorMessage = this@WearMainActivity.watchCommandErrorMessage(
                                         it,
@@ -245,15 +243,11 @@ class WearMainActivity : ComponentActivity() {
                                                     if (!dictated.isNullOrBlank()) {
                                                         scope.launch {
                                                             runCatching {
-                                                                bridge.sendAwaitTerminalAck {
-                                                                    WatchCommand.SendText(
-                                                                        requestId = it,
-                                                                        roomId = room.roomId,
-                                                                        text = dictated,
-                                                                        source = WatchSendSource.DICTATION,
-                                                                        clientTsMs = System.currentTimeMillis(),
-                                                                    )
-                                                                }
+                                                                bridge.sendTextWithLocalEcho(
+                                                                    roomId = room.roomId,
+                                                                    text = dictated,
+                                                                    source = WatchSendSource.DICTATION,
+                                                                )
                                                             }.onFailure {
                                                                 transientErrorMessage = this@WearMainActivity.watchCommandErrorMessage(
                                                                     it,
@@ -340,11 +334,19 @@ class WearMainActivity : ComponentActivity() {
                                         }
                                     },
                                     onReplySent = { sourceEventId, sourceWasLastMessage ->
-                                        pendingRoomScrollRequest = PendingRoomScrollRequest(
-                                            roomId = roomId,
-                                            targetEventId = sourceEventId.takeUnless { sourceWasLastMessage },
-                                            forceScrollToBottom = sourceWasLastMessage,
-                                        )
+                                        if (threadRootEventId == null) {
+                                            pendingRoomScrollRequest = PendingRoomScrollRequest(
+                                                roomId = roomId,
+                                                targetEventId = sourceEventId.takeUnless { sourceWasLastMessage },
+                                                forceScrollToBottom = sourceWasLastMessage,
+                                            )
+                                        } else {
+                                            pendingThreadScrollRequest = PendingThreadScrollRequest(
+                                                roomId = roomId,
+                                                threadRootEventId = threadRootEventId,
+                                                forceScrollToBottom = true,
+                                            )
+                                        }
                                         nav.popBackStack()
                                     },
                                     onError = { transientErrorMessage = it },
@@ -362,6 +364,8 @@ class WearMainActivity : ComponentActivity() {
                             composable("thread?roomId={roomId}&rootId={rootId}") { entry ->
                                 val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
                                 val rootId = entry.arguments?.getString("rootId")?.let(Uri::decode) ?: return@composable
+                                val threadScrollRequest = pendingThreadScrollRequest
+                                    ?.takeIf { it.roomId == roomId && it.threadRootEventId == rootId }
                                 ThreadScreen(
                                     bridge = bridge,
                                     roomId = roomId,
@@ -370,6 +374,13 @@ class WearMainActivity : ComponentActivity() {
                                     onMessageSelected = { eventId ->
                                         nav.navigate(messageRoute(roomId = roomId, eventId = eventId, threadRootEventId = rootId)) {
                                             launchSingleTop = true
+                                        }
+                                    },
+                                    scrollRequestId = threadScrollRequest?.requestId,
+                                    forceScrollToBottom = threadScrollRequest?.forceScrollToBottom == true,
+                                    onScrollRequestHandled = { requestId ->
+                                        if (pendingThreadScrollRequest?.requestId == requestId) {
+                                            pendingThreadScrollRequest = null
                                         }
                                     },
                                     savedListPosition = threadListPositions["$roomId/$rootId"],
@@ -461,10 +472,33 @@ class WearMainActivity : ComponentActivity() {
         }
     }
 
+    private fun prepareDeepLinkBackStackScroll(deepLink: WearCompanionDeepLink) {
+        roomListPositions.remove(deepLink.roomId)
+        pendingRoomScrollRequest = PendingRoomScrollRequest(
+            roomId = deepLink.roomId,
+            forceScrollToBottom = true,
+        )
+        deepLink.threadRootEventId?.let { threadRootEventId ->
+            threadListPositions.remove("${deepLink.roomId}/$threadRootEventId")
+            pendingThreadScrollRequest = PendingThreadScrollRequest(
+                roomId = deepLink.roomId,
+                threadRootEventId = threadRootEventId,
+                forceScrollToBottom = true,
+            )
+        }
+    }
+
     private data class PendingRoomScrollRequest(
         val roomId: String,
         val requestId: Long = System.currentTimeMillis(),
         val targetEventId: String? = null,
+        val forceScrollToBottom: Boolean = false,
+    )
+
+    private data class PendingThreadScrollRequest(
+        val roomId: String,
+        val threadRootEventId: String,
+        val requestId: Long = System.currentTimeMillis(),
         val forceScrollToBottom: Boolean = false,
     )
 }
@@ -563,20 +597,32 @@ private fun navigateFromRoot(
     nav: androidx.navigation.NavHostController,
     deepLink: WearCompanionDeepLink,
 ) {
-    val threadRootEventId = deepLink.threadRootEventId
-    val eventId = deepLink.eventId
-    val route = when {
-        eventId != null -> messageRoute(deepLink.roomId, eventId, threadRootEventId)
-        threadRootEventId != null -> threadRoute(
-            roomId = deepLink.roomId,
-            rootId = threadRootEventId,
-        )
-        else -> roomRoute(deepLink.roomId)
-    }
-    nav.navigate(route) {
-        popUpTo("favorites") {
-            inclusive = false
+    wearDeepLinkBackStackRoutes(deepLink).forEachIndexed { index, route ->
+        nav.navigate(route) {
+            if (index == 0) {
+                popUpTo("favorites") {
+                    inclusive = false
+                }
+            }
+            launchSingleTop = true
         }
-        launchSingleTop = true
+    }
+}
+
+internal fun wearDeepLinkBackStackRoutes(deepLink: WearCompanionDeepLink): List<String> {
+    return buildList {
+        add(roomRoute(deepLink.roomId))
+        deepLink.threadRootEventId?.let { rootId ->
+            add(threadRoute(roomId = deepLink.roomId, rootId = rootId))
+        }
+        deepLink.eventId?.let { eventId ->
+            add(
+                messageRoute(
+                    roomId = deepLink.roomId,
+                    eventId = eventId,
+                    threadRootEventId = deepLink.threadRootEventId,
+                ),
+            )
+        }
     }
 }

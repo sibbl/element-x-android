@@ -37,10 +37,20 @@ object WatchDataPaths {
     fun roomTimeline(roomId: String): String = "$ROOM_TIMELINE/$roomId"
     fun thread(roomId: String, threadRootEventId: String): String = "$THREAD/$roomId/$threadRootEventId"
     fun voiceDraftChannel(draftId: String): String = "$VOICE_DRAFT_CHANNEL/$draftId"
+    fun voiceDraftChannel(applicationId: String, draftId: String): String =
+        "$VOICE_DRAFT_CHANNEL/${applicationId.toDataPathSegment()}/${draftId.toDataPathSegment()}"
+    fun voiceDraftId(path: String, applicationId: String): String? {
+        val prefix = "$VOICE_DRAFT_CHANNEL/${applicationId.toDataPathSegment()}/"
+        return path
+            .takeIf { it.startsWith(prefix) }
+            ?.removePrefix(prefix)
+            ?.takeIf { it.isNotBlank() }
+            ?.fromDataPathSegment()
+    }
     fun voiceDraftId(path: String): String? = path
         .takeIf { it.startsWith("$VOICE_DRAFT_CHANNEL/") }
         ?.removePrefix("$VOICE_DRAFT_CHANNEL/")
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf { it.isNotBlank() && '/' !in it }
 
     private fun String.toDataPathSegment(): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(toByteArray(Charsets.UTF_8))
