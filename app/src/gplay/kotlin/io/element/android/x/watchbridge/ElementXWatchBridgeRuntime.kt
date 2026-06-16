@@ -11,7 +11,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Bitmap.CompressFormat
 import android.graphics.BitmapFactory
-import coil3.ImageLoader
+import com.google.android.gms.wearable.ChannelClient
+import com.google.android.gms.wearable.Wearable
 import io.element.android.libraries.androidutils.bitmap.calculateInSampleSize
 import io.element.android.libraries.androidutils.bitmap.resizeToMax
 import io.element.android.libraries.designsystem.components.avatar.AvatarSize
@@ -57,7 +58,6 @@ import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageT
 import io.element.android.libraries.matrix.api.timeline.item.event.toEventOrTransactionId
 import io.element.android.libraries.matrix.api.timeline.item.virtual.VirtualTimelineItem
 import io.element.android.libraries.matrix.ui.model.getAvatarData
-import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
 import io.element.android.libraries.push.api.notifications.NotificationCleaner
 import io.element.android.services.appnavstate.api.currentSessionId
 import io.element.android.watchbridge.ElementXWatchPort
@@ -96,6 +96,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
@@ -181,6 +182,28 @@ object ElementXWatchBridgeRuntime {
                     dispatcher.onVoiceDraftAudio(draftId, audioBytes)
                 }
             }.onFailure { Timber.e(it, "WatchBridge voice draft dispatch failed") }
+        }
+    }
+
+    fun receiveVoiceDraftAudioChannel(context: Context, channel: ChannelClient.Channel) {
+        val appContext = context.applicationContext
+        val draftId = WatchDataPaths.voiceDraftId(channel.path, appContext.packageName)
+        val channelClient = Wearable.getChannelClient(appContext)
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (draftId == null) {
+                    Timber.d("Ignoring voice channel for another app variant or non-voice path=%s", channel.path)
+                    return@launch
+                }
+                val audioBytes = channelClient.getInputStream(channel).await().use { input -> input.readBytes() }
+                Timber.d("WatchBridge listener received voice draft=%s bytes=%d", draftId, audioBytes.size)
+                dispatchVoiceDraftAudio(appContext, draftId, audioBytes)
+            } catch (failure: Throwable) {
+                Timber.w(failure, "Failed to receive watch voice draft path=%s", channel.path)
+            } finally {
+                runCatching { channelClient.close(channel).await() }
+                    .onFailure { Timber.w(it, "Failed to close watch voice channel path=%s", channel.path) }
+            }
         }
     }
 
@@ -307,8 +330,6 @@ object ElementXWatchBridgeRuntime {
         return MatrixRoomListWatchPort(
             context = context,
             client = client,
-            imageLoader = graph.imageLoaderHolder.get(client),
-            notificationBitmapLoader = graph.notificationBitmapLoader,
             notificationCleaner = graph.notificationCleaner,
         )
     }
@@ -330,8 +351,6 @@ object ElementXWatchBridgeRuntime {
 private class MatrixRoomListWatchPort(
     private val context: Context,
     internal val client: MatrixClient,
-    private val imageLoader: ImageLoader,
-    private val notificationBitmapLoader: NotificationBitmapLoader,
     private val notificationCleaner: NotificationCleaner,
 ) : ElementXWatchPort {
     private val roomList = client.roomListService.createRoomList(
@@ -367,7 +386,7 @@ private class MatrixRoomListWatchPort(
         return WatchRoomSummary(
             roomId = roomId,
             displayName = info.name ?: info.canonicalAlias?.value ?: roomId,
-            avatarUri = room.avatarUri(),
+            avatarUri = room.watchAvatarUri(),
             kind = info.watchKind(),
             isEncrypted = info.isEncrypted == true,
             canSendMessages = true,
@@ -535,14 +554,8 @@ private class MatrixRoomListWatchPort(
 
     override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> {
         val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
-        val avatarData = room.avatarData()
-        if (avatarData.url == null) return Result.success(null)
-        val bitmap = notificationBitmapLoader.getRoomBitmap(
-            avatarData = avatarData,
-            imageLoader = imageLoader,
-            targetSize = WATCH_AVATAR_SIZE_PX,
-        ) ?: return Result.success(null)
-        return Result.success(bitmap.toPngByteArray())
+        val avatarUrl = room.watchAvatarData().url ?: return Result.success(null)
+        return loadWatchAvatarBytes(client.matrixMediaLoader, avatarUrl)
     }
 
     override suspend fun markAsRead(roomId: String, eventId: String, threadRootEventId: String?): Result<Unit> {
@@ -623,8 +636,8 @@ private fun RoomSummary.isWatchVisibleRoom(): Boolean {
 private suspend fun RoomSummary.toWatchRoom(resolveJoinedRoom: suspend (String) -> JoinedRoom?): WatchFavoriteRoom {
     val unreadCount = max(info.numUnreadMessages, info.numUnreadNotifications).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     val avatarUri = when {
-        info.isDm -> resolveJoinedRoom(roomId.value)?.avatarUri() ?: info.avatarUrl?.mxcToHttpThumbnail(64)
-        else -> info.avatarUrl?.mxcToHttpThumbnail(64)
+        info.isDm -> resolveJoinedRoom(roomId.value)?.watchAvatarUri() ?: info.watchAvatarUri()
+        else -> info.watchAvatarUri()
     }
     return WatchFavoriteRoom(
         roomId = roomId.value,
@@ -846,6 +859,25 @@ internal suspend fun loadWatchMediaPreviewBytes(
     }
 }
 
+internal suspend fun loadWatchAvatarBytes(
+    mediaLoader: MatrixMediaLoader,
+    avatarUrl: String,
+): Result<ByteArray?> {
+    val source = MediaSource(avatarUrl)
+    val thumbnailBytes = mediaLoader.loadMediaThumbnail(
+        source = source,
+        width = WATCH_AVATAR_SIZE_PX,
+        height = WATCH_AVATAR_SIZE_PX,
+    ).getOrNull()
+
+    normalizeWatchMediaPreviewBytes(thumbnailBytes, WATCH_AVATAR_SIZE_PX.toInt())?.let { return Result.success(it) }
+
+    return mediaLoader.loadMediaContent(source).mapCatching { bytes ->
+        normalizeWatchMediaPreviewBytes(bytes, WATCH_AVATAR_SIZE_PX.toInt())
+            ?: error("Unable to decode watch avatar")
+    }
+}
+
 internal fun normalizeWatchMediaPreviewBytes(
     bytes: ByteArray?,
     maxDimensionPx: Int = WATCH_MEDIA_PREVIEW_SIZE_PX.toInt(),
@@ -941,20 +973,26 @@ private fun ProfileDetails.displayName(): String? = when (this) {
     else -> null
 }
 
-private suspend fun JoinedRoom.avatarData() = info().let { roomInfo ->
+internal fun RoomInfo.watchAvatarData() = if (avatarUrl == null && heroes.isNotEmpty()) {
+    heroes.first().getAvatarData(AvatarSize.RoomListItem)
+} else {
+    getAvatarData(AvatarSize.RoomListItem)
+}
+
+private fun RoomInfo.watchAvatarUri(): String? = watchAvatarData().url?.mxcToHttpThumbnail(64)
+
+internal suspend fun JoinedRoom.watchAvatarData() = info().let { roomInfo ->
     if (roomInfo.isDm) {
         getDirectRoomMember()
             ?.getAvatarData(AvatarSize.UserListItem)
             ?.takeIf { it.url != null }
-            ?: roomInfo.heroes.firstOrNull { it.avatarUrl != null }
-                ?.getAvatarData(AvatarSize.UserListItem)
-            ?: roomInfo.getAvatarData(AvatarSize.RoomListItem)
+            ?: roomInfo.watchAvatarData()
     } else {
-        roomInfo.getAvatarData(AvatarSize.RoomListItem)
+        roomInfo.watchAvatarData()
     }
 }
 
-private suspend fun JoinedRoom.avatarUri(): String? = avatarData().url?.mxcToHttpThumbnail(64)
+private suspend fun JoinedRoom.watchAvatarUri(): String? = watchAvatarData().url?.mxcToHttpThumbnail(64)
 
 private fun Bitmap.toPngByteArray(): ByteArray = ByteArrayOutputStream().use { output ->
     compress(CompressFormat.PNG, 100, output)

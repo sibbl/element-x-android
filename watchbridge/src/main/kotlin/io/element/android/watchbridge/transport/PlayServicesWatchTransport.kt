@@ -39,13 +39,16 @@ class PlayServicesWatchTransport(
     private val messageClient: MessageClient by lazy { Wearable.getMessageClient(context) }
     private val capabilityClient: CapabilityClient by lazy { Wearable.getCapabilityClient(context) }
 
-    override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) = withContext(Dispatchers.IO) {
+    override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean) = withContext(Dispatchers.IO) {
         val bytes = WatchBridgeSerialization.encodeEnvelopeToBytes(envelope.stampedForApplicationId(context.packageName))
         require(bytes.size <= WatchProtocol.MAX_PAYLOAD_BYTES) { "Payload too large: ${bytes.size}" }
         val request = PutDataMapRequest.create(path).apply {
             dataMap.putByteArray("envelope", bytes)
             dataMap.putLong("ts", envelope.generatedAtMs)
-        }.asPutDataRequest().setUrgent()
+        }.asPutDataRequest()
+        if (urgent) {
+            request.setUrgent()
+        }
         dataClient.putDataItem(request).await()
         Unit
     }

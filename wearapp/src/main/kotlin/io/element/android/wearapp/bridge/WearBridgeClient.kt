@@ -47,6 +47,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,11 +78,53 @@ private const val LOCAL_ECHO_RECONCILE_WINDOW_MS = 2 * 60 * 1_000L
 
 internal fun mediaPreviewCacheKey(roomId: String, eventId: String): String = "$roomId/$eventId"
 
+internal suspend fun performVoiceDraftUpload(
+    requestId: String,
+    acks: Flow<WatchAck>,
+    sendCommand: suspend () -> Unit,
+    uploadBytes: suspend () -> Unit,
+    timeoutMs: Long = VOICE_UPLOAD_TIMEOUT_MS,
+): WatchAck = coroutineScope {
+    val readyAck = async(start = CoroutineStart.UNDISPATCHED) {
+        acks.filter { it.requestId == requestId }
+            .first { it is WatchAck.Pending || it.isVoiceUploadTerminal() }
+    }
+    val terminalAck = async(start = CoroutineStart.UNDISPATCHED) {
+        acks.filter { it.requestId == requestId }
+            .first { it.isVoiceUploadTerminal() }
+    }
+
+    try {
+        sendCommand()
+        when (val ack = withTimeout(timeoutMs) { readyAck.await() }) {
+            is WatchAck.Pending -> uploadBytes()
+            is WatchAck.Failed -> throw WatchCommandException(ack.code, ack.message)
+            is WatchAck.Unsupported -> throw WatchCommandException(WatchErrorCode.FEATURE_DISABLED, "phone/watch versions are incompatible")
+            else -> return@coroutineScope ack
+        }
+
+        when (val ack = withTimeout(timeoutMs) { terminalAck.await() }) {
+            is WatchAck.Failed -> throw WatchCommandException(ack.code, ack.message)
+            is WatchAck.Unsupported -> throw WatchCommandException(WatchErrorCode.FEATURE_DISABLED, "phone/watch versions are incompatible")
+            else -> ack
+        }
+    } finally {
+        readyAck.cancel()
+        terminalAck.cancel()
+    }
+}
+
+private fun WatchAck.isVoiceUploadTerminal(): Boolean =
+    this is WatchAck.Sent || this is WatchAck.Failed || this is WatchAck.Unsupported
+
 private infix fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean = when {
     this == null -> other == null
     other == null -> false
     else -> contentEquals(other)
 }
+
+internal fun WatchTimelineItem.isPendingWatchLocalEcho(): Boolean =
+    eventId.startsWith(LOCAL_ECHO_EVENT_ID_PREFIX)
 
 internal fun WatchMessageNotification.toTimelineItemForOpenConversation(): WatchTimelineItem? {
     if (threadRootEventId != null) return null
@@ -181,8 +224,11 @@ class WearBridgeClient(private val context: Context) {
     private val pendingCachePersists = ConcurrentHashMap<String, WatchSyncEnvelope>()
     /** Outstanding debounce jobs for disk cache writes. */
     private val pendingCachePersistJobs = ConcurrentHashMap<String, Job>()
-    /** Disk cache restore job. Notifications wait for this so vibration settings survive process death. */
-    private var diskPrimeJob: Job? = null
+    /** Lightweight disk cache restore job. Notifications wait for this so vibration settings survive process death. */
+    private var notificationDiskPrimeJob: Job? = null
+    /** Full disk restore is deferred until the interactive UI opens. */
+    private var fullDiskPrimeJob: Job? = null
+    private var hasPrimedFullDiskCache = false
     /** Debounced tile refresh request to avoid hammering Wear tiles during sync bursts. */
     private var pendingTileRefreshJob: Job? = null
     /** Avoid registering listeners repeatedly if app/service startup paths re-enter [start]. */
@@ -348,7 +394,7 @@ class WearBridgeClient(private val context: Context) {
         capabilityClient.addListener(phoneCapabilityListener, phoneCapabilityName())
             .addOnFailureListener { Timber.w(it, "phone capability listener registration failed") }
         scope.launch { probePhoneCapability() }
-        diskPrimeJob = scope.launch { primeCachedStateFromDisk() }
+        notificationDiskPrimeJob = scope.launch { primeNotificationStateFromDisk(roomId = null) }
     }
 
     fun stop() {
@@ -365,6 +411,8 @@ class WearBridgeClient(private val context: Context) {
         pendingCachePersists.clear()
         pendingDataLayerPrimeJob?.cancel()
         pendingDataLayerPrimeJob = null
+        fullDiskPrimeJob?.cancel()
+        fullDiskPrimeJob = null
     }
 
     fun refreshPhoneReachability() {
@@ -379,6 +427,19 @@ class WearBridgeClient(private val context: Context) {
                 hasPrimedDataLayer = true
             } finally {
                 pendingDataLayerPrimeJob = null
+            }
+        }
+    }
+
+    fun refreshCachedStateFromDisk() {
+        if (hasPrimedFullDiskCache || fullDiskPrimeJob?.isActive == true) return
+        fullDiskPrimeJob = scope.launch {
+            try {
+                notificationDiskPrimeJob?.join()
+                primeCachedStateFromDisk()
+                hasPrimedFullDiskCache = true
+            } finally {
+                fullDiskPrimeJob = null
             }
         }
     }
@@ -452,32 +513,25 @@ class WearBridgeClient(private val context: Context) {
     suspend fun uploadVoiceDraftAwaitTerminalAck(
         draft: WatchVoiceDraft,
         audioFile: File,
-    ): WatchAck = coroutineScope {
+    ): WatchAck {
         val requestId = UUID.randomUUID().toString()
-        val ackDeferred = async(start = CoroutineStart.UNDISPATCHED) {
-            acks.filter { it.requestId == requestId }
-                .first {
-                    it is WatchAck.Sent ||
-                        it is WatchAck.Failed ||
-                        it is WatchAck.Unsupported ||
-                        it is WatchAck.PayloadReady
-                }
-        }
-        try {
-            sendCommand(
-                WatchCommand.UploadVoiceDraft(
-                    requestId = requestId,
-                    draft = draft,
-                ),
+        return try {
+            performVoiceDraftUpload(
+                requestId = requestId,
+                acks = acks,
+                sendCommand = {
+                    sendCommand(
+                        WatchCommand.UploadVoiceDraft(
+                            requestId = requestId,
+                            draft = draft,
+                        ),
+                    )
+                },
+                uploadBytes = {
+                    uploadVoiceDraftBytes(draftId = draft.draftId, audioFile = audioFile)
+                },
             )
-            uploadVoiceDraftBytes(draftId = draft.draftId, audioFile = audioFile)
-            when (val ack = withTimeout(VOICE_UPLOAD_TIMEOUT_MS) { ackDeferred.await() }) {
-                is WatchAck.Failed -> throw WatchCommandException(ack.code, ack.message)
-                is WatchAck.Unsupported -> throw WatchCommandException(WatchErrorCode.FEATURE_DISABLED, "phone/watch versions are incompatible")
-                else -> ack
-            }
         } catch (failure: Throwable) {
-            ackDeferred.cancel()
             if (failure is WatchCommandException) throw failure
             val code = when {
                 failure.message?.contains("phone not reachable", ignoreCase = true) == true -> WatchErrorCode.PHONE_APP_UNAVAILABLE
@@ -554,13 +608,9 @@ class WearBridgeClient(private val context: Context) {
     ) = withContext(Dispatchers.IO) {
         val node = resolvePhoneNode() ?: error("phone not reachable")
         val channel = channelClient.openChannel(node.id, WatchDataPaths.voiceDraftChannel(context.packageName, draftId)).await()
-        try {
-            channelClient.getOutputStream(channel).await().use { output ->
-                audioFile.inputStream().use { input -> input.copyTo(output) }
-                output.flush()
-            }
-        } finally {
-            channelClient.close(channel).await()
+        channelClient.getOutputStream(channel).await().use { output ->
+            audioFile.inputStream().use { input -> input.copyTo(output) }
+            output.flush()
         }
     }
 
@@ -685,6 +735,14 @@ class WearBridgeClient(private val context: Context) {
                 dispatchIncoming(envelope, persist = false)
             }
         }.onFailure { Timber.w(it, "prime disk cache failed") }
+    }
+
+    private suspend fun primeNotificationStateFromDisk(roomId: String?) = withContext(Dispatchers.IO) {
+        runCatching {
+            cacheStore.restoreNotificationEnvelopes(roomId).forEach { envelope ->
+                dispatchIncoming(envelope, persist = false)
+            }
+        }.onFailure { Timber.w(it, "prime notification disk cache failed") }
     }
 
     private suspend fun probePhoneCapability() = withContext(Dispatchers.IO) {
@@ -1064,7 +1122,8 @@ class WearBridgeClient(private val context: Context) {
         expiresAtMs: Long?,
     ) {
         scope.launch {
-            diskPrimeJob?.join()
+            notificationDiskPrimeJob?.join()
+            primeNotificationStateFromDisk(notification.roomId)
             localNotificationManager.show(
                 notification = notification,
                 generatedAtMs = generatedAtMs,

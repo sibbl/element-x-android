@@ -77,7 +77,7 @@ class WearCompanionTestNotificationSenderTest {
             .isEqualTo(WatchNotificationVibrationPattern.TRIPLE)
         assertThat(payload.notification.customVibrationPattern).isNull()
         assertThat(payload.notification.notificationKey)
-            .isEqualTo("wear-companion-test:groups:1234")
+            .isEqualTo("wear-companion-test:groups")
         assertThat(payload.notification.roomDisplayName).isEqualTo(sample.roomDisplayName)
         assertThat(payload.notification.senderDisplayName).isEqualTo(sample.senderDisplayName)
         assertThat(payload.notification.bodyText).isEqualTo(sample.previewMessages.last())
@@ -164,9 +164,54 @@ class WearCompanionTestNotificationSenderTest {
         assertThat(publication.first)
             .isEqualTo(WatchDataPaths.notification("wear-companion-test:category-custom:dms"))
         assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.DM)
-        assertThat(payload.notification.notificationKey).isEqualTo("wear-companion-test:dms-custom:1750")
+        assertThat(payload.notification.notificationKey).isEqualTo("wear-companion-test:dms-custom")
         assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
         assertThat(payload.notification.customVibrationPattern).isEqualTo("90 45 180")
+    }
+
+    @Test
+    fun `sender publishes repeated category custom tests with a stable notification and unique events`() = runTest {
+        val transport = RecordingTransport()
+        var now = 2_500L
+        val sender = WearCompanionTestNotificationSender(
+            context = context,
+            transport = transport,
+            clock = { now++ },
+            sampleProvider = {
+                WearCompanionTestNotificationSample(
+                    roomDisplayName = "Taylor",
+                    senderDisplayName = "Taylor",
+                    bodyText = "Custom buzz test.",
+                )
+            },
+        )
+
+        repeat(4) {
+            sender.sendCategoryPatternTest(
+                category = WearCompanionVibrationCategory.DMS,
+                customPattern = "90 45 180",
+            )
+        }
+
+        assertThat(transport.publications.map { it.first }).containsExactly(
+            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
+            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
+            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
+            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
+        ).inOrder()
+        val notifications = transport.publications.map { (it.second.payload as WatchSync.MessageNotification).notification }
+        assertThat(notifications.map { it.notificationKey }).containsExactly(
+            "wear-companion-test:dms-custom",
+            "wear-companion-test:dms-custom",
+            "wear-companion-test:dms-custom",
+            "wear-companion-test:dms-custom",
+        ).inOrder()
+        assertThat(notifications.map { it.eventId }).containsExactly(
+            "\$wear-companion-test-dms-2500:local",
+            "\$wear-companion-test-dms-2501:local",
+            "\$wear-companion-test-dms-2502:local",
+            "\$wear-companion-test-dms-2503:local",
+        ).inOrder()
     }
 
     @Test
@@ -211,7 +256,7 @@ class WearCompanionTestNotificationSenderTest {
     private class RecordingTransport : WatchTransport {
         val publications = mutableListOf<Pair<String, WatchSyncEnvelope>>()
 
-        override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+        override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean) {
             publications += path to envelope
         }
 

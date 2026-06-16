@@ -53,6 +53,7 @@ import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.bridge.isPendingWatchLocalEcho
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
 import io.element.android.wearapp.ui.common.PressableWearChip
 import io.element.android.wearapp.ui.common.wearTapAndLongPress
@@ -96,15 +97,29 @@ internal fun TimelineMessageRow(
                 .fillMaxWidth(),
             label = if (showSender) {
                 {
-                    Text(
-                        text = item.senderDisplayName ?: item.senderId,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryTextColor,
-                        ),
-                    )
+                    if (item.isPendingWatchLocalEcho()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(10.dp))
+                            Text(
+                                text = stringResource(R.string.screen_room_sending),
+                                maxLines = 1,
+                                style = MaterialTheme.typography.bodySmall.copy(color = secondaryTextColor),
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = item.senderDisplayName ?: item.senderId,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor,
+                            ),
+                        )
+                    }
                 }
             } else {
                 {

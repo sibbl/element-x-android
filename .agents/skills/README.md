@@ -15,4 +15,5 @@ Load the relevant file(s) before making changes in the matching area:
 | Audio: STT / TTS / voice | [audio-guidelines.md](audio-guidelines.md) |
 | Background execution | [background-behavior.md](background-behavior.md) |
 | Release + rebase | [release-and-rebase.md](release-and-rebase.md) |
+| ADB deployment | [adb-deployment.md](adb-deployment.md) |
 | Testing | [testing-and-smoke-checks.md](testing-and-smoke-checks.md) |

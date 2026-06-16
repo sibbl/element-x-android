@@ -15,6 +15,7 @@ import io.element.android.appconfig.WearCompanionDeepLink
 import io.element.android.appconfig.buildWearCompanionDeepLink
 import io.element.android.appconfig.parseWearCompanionDeepLink
 import io.element.android.watchbridge.contract.WatchTileConversationAction
+import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 
 private const val TILE_CLICKABLE_OPEN_APP_ID = "open-app"
 private const val TILE_CLICKABLE_OPEN_ROOM_PREFIX = "open-room:"
@@ -26,6 +27,10 @@ private const val TILE_CLICKABLE_OPEN_LATEST_PREFIX = "open-latest-message:"
 private const val EXTRA_TILE_DIRECT_REPLY_ROOM_ID = "tile-direct-reply-room-id"
 private const val EXTRA_TILE_READ_LATEST_ROOM_ID = "tile-read-latest-room-id"
 private const val EXTRA_TILE_READ_LATEST_TEXT = "tile-read-latest-text"
+internal const val EXTRA_VOICE_ROOM_ID = "roomId"
+internal const val EXTRA_VOICE_ROOM_DISPLAY_NAME = "roomDisplayName"
+internal const val EXTRA_VOICE_THREAD_ROOT_EVENT_ID = "threadRootEventId"
+internal const val EXTRA_VOICE_IN_REPLY_TO_EVENT_ID = "inReplyToEventId"
 
 internal data class TileConversationClickable(
     val roomId: String,
@@ -138,6 +143,22 @@ internal fun buildWearTileReadLatestIntent(
     return Intent(context, WearMainActivity::class.java).apply {
         putExtra(EXTRA_TILE_READ_LATEST_ROOM_ID, roomId)
         previewText?.takeIf { it.isNotBlank() }?.let { putExtra(EXTRA_TILE_READ_LATEST_TEXT, it) }
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+}
+
+internal fun buildVoiceRecorderIntent(
+    context: Context,
+    roomId: String,
+    roomDisplayName: String? = null,
+    threadRootEventId: String? = null,
+    inReplyToEventId: String? = null,
+): Intent {
+    return Intent(context, VoiceRecorderActivity::class.java).apply {
+        putExtra(EXTRA_VOICE_ROOM_ID, roomId)
+        roomDisplayName?.let { putExtra(EXTRA_VOICE_ROOM_DISPLAY_NAME, it) }
+        threadRootEventId?.let { putExtra(EXTRA_VOICE_THREAD_ROOT_EVENT_ID, it) }
+        inReplyToEventId?.let { putExtra(EXTRA_VOICE_IN_REPLY_TO_EVENT_ID, it) }
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 }

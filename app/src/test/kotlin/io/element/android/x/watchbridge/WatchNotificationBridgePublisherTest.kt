@@ -334,7 +334,7 @@ class WatchNotificationBridgePublisherTest {
         val published = mutableListOf<Pair<String, WatchSyncEnvelope>>()
         val deleted = mutableListOf<String>()
 
-        override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+        override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean) {
             published += path to envelope
         }
 

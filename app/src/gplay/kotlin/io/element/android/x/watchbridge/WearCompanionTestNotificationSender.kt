@@ -159,7 +159,7 @@ private fun WearCompanionTestNotificationSample.toNotification(
 ): WatchMessageNotification {
     val previewMessages = previewMessages.ifEmpty { listOf(bodyText) }
     return WatchMessageNotification(
-        notificationKey = "$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX:$notificationKeySuffix:$generatedAtMs",
+        notificationKey = "$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX:$notificationKeySuffix",
         roomId = roomId,
         eventId = eventId,
         roomDisplayName = roomDisplayName,

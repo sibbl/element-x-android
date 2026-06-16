@@ -44,7 +44,7 @@ class FakeNotificationConversationService : NotificationConversationService {
     data class OnSendMessageCall(
         val sessionId: SessionId,
         val roomId: RoomId,
-        val roomName: String,
+        val roomName: String?,
         val roomIsDirect: Boolean,
         val roomAvatarUrl: String?,
     )

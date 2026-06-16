@@ -27,7 +27,6 @@ import androidx.wear.protolayout.DimensionBuilders.wrap
 import androidx.wear.protolayout.LayoutElementBuilders.Box
 import androidx.wear.protolayout.LayoutElementBuilders.Column
 import androidx.wear.protolayout.LayoutElementBuilders.CONTENT_SCALE_MODE_CROP
-import androidx.wear.protolayout.LayoutElementBuilders.FONT_WEIGHT_BOLD
 import androidx.wear.protolayout.LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER
 import androidx.wear.protolayout.LayoutElementBuilders.Image
 import androidx.wear.protolayout.LayoutElementBuilders.LayoutElement
@@ -50,6 +49,7 @@ import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchTileConversationAction
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeCacheStore
+import io.element.android.wearapp.ui.buildVoiceRecorderIntent
 import io.element.android.wearapp.ui.buildWearLaunchIntent
 import io.element.android.wearapp.ui.buildWearTileDirectReplyIntent
 import io.element.android.wearapp.ui.buildWearTileReadLatestIntent
@@ -58,7 +58,6 @@ import io.element.android.wearapp.ui.isOpenAppTileClickableId
 import io.element.android.wearapp.ui.openAppTileClickableId
 import io.element.android.wearapp.ui.parseRoomTileClickableId
 import io.element.android.wearapp.ui.roomTileClickableId
-import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
@@ -113,7 +112,6 @@ abstract class ConversationTileServiceBase : TileService() {
 
             TileBuilders.Tile.Builder()
                 .setResourcesVersion(snapshot.resourcesVersion)
-                .setFreshnessIntervalMillis(60_000L)
                 .setTileTimeline(Timeline.fromLayoutElement(buildLayout(snapshot.rooms, snapshot.tileAction, snapshot.latestEventIds)))
                 .build()
         }.onFailure {
@@ -353,13 +351,7 @@ abstract class ConversationTileServiceBase : TileService() {
                     WatchTileConversationAction.QUICK_REPLY_VOICE,
                     WatchTileConversationAction.VOICE_RECORDING -> {
                         launchIntent(
-                            Intent(this, VoiceRecorderActivity::class.java)
-                                .putExtra("roomId", target.roomId)
-                                .addFlags(
-                                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                                ),
+                            buildVoiceRecorderIntent(context = this, roomId = target.roomId),
                         )
                     }
                     WatchTileConversationAction.OPEN_LATEST -> {

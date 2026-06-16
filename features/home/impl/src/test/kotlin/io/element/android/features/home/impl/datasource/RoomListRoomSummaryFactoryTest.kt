@@ -31,7 +31,7 @@ fun aRoomListRoomSummaryFactory(
 
 class RoomListRoomSummaryFactoryTest {
     @Test
-    fun `create uses DM hero avatar when room avatar is missing`() {
+    fun `create keeps official room avatar projection when DM room avatar is missing`() {
         val hero = MatrixUser(
             userId = A_USER_ID,
             displayName = A_USER_NAME,
@@ -48,13 +48,14 @@ class RoomListRoomSummaryFactoryTest {
 
         val result = aRoomListRoomSummaryFactory().create(roomSummary)
 
-        assertThat(result.avatarData.id).isEqualTo(A_USER_ID.value)
-        assertThat(result.avatarData.name).isEqualTo(A_USER_NAME)
-        assertThat(result.avatarData.url).isEqualTo(AN_AVATAR_URL)
+        assertThat(result.avatarData.url).isNull()
+        assertThat(result.heroes.single().id).isEqualTo(A_USER_ID.value)
+        assertThat(result.heroes.single().name).isEqualTo(A_USER_NAME)
+        assertThat(result.heroes.single().url).isEqualTo(AN_AVATAR_URL)
     }
 
     @Test
-    fun `create keeps room avatar ahead of DM hero avatar`() {
+    fun `create keeps explicit room avatar ahead of DM hero avatar`() {
         val roomAvatarUrl = "mxc://room/avatar"
         val hero = MatrixUser(
             userId = A_USER_ID,
@@ -73,4 +74,5 @@ class RoomListRoomSummaryFactoryTest {
 
         assertThat(result.avatarData.url).isEqualTo(roomAvatarUrl)
     }
+
 }

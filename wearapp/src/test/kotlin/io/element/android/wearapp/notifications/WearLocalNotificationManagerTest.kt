@@ -25,10 +25,14 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class WearLocalNotificationManagerTest {
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    private val notificationManager = context.getSystemService(NotificationManager::class.java)
 
     @Before
     fun clearNotifications() {
         NotificationManagerCompat.from(context).cancelAll()
+        notificationManager.notificationChannels.forEach { channel ->
+            notificationManager.deleteNotificationChannel(channel.id)
+        }
     }
 
     @Test
@@ -43,14 +47,13 @@ class WearLocalNotificationManagerTest {
     }
 
     @Test
-    fun `custom local watch notification channels use a minimal vibration signal for peeking`() {
+    fun `manual local watch notification channels own their full vibration waveform`() {
         val silentChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.SILENT)
         val doubleChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.DOUBLE)
         val longChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.LONG)
         val tripleChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.TRIPLE)
         val pulseChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.PULSE)
         val escalatingChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.ESCALATING)
-        val customChannel = buildWearLocalNotificationChannel(context, WatchNotificationVibrationPattern.CUSTOM)
 
         assertThat(silentChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.SILENT))
         assertThat(silentChannel.shouldVibrate()).isFalse()
@@ -59,32 +62,42 @@ class WearLocalNotificationManagerTest {
 
         assertThat(doubleChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.DOUBLE))
         assertThat(doubleChannel.shouldVibrate()).isTrue()
-        assertThat(doubleChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 1L))
+        assertThat(doubleChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 90L, 90L, 170L))
 
         assertThat(longChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.LONG))
         assertThat(longChannel.shouldVibrate()).isTrue()
-        assertThat(longChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 1L))
+        assertThat(longChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 800L))
 
         assertThat(tripleChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.TRIPLE))
         assertThat(tripleChannel.shouldVibrate()).isTrue()
-        assertThat(tripleChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 1L))
+        assertThat(tripleChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 70L, 70L, 100L, 70L, 130L))
 
         assertThat(pulseChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.PULSE))
         assertThat(pulseChannel.shouldVibrate()).isTrue()
-        assertThat(pulseChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 1L))
+        assertThat(pulseChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 120L, 110L, 120L, 110L, 120L, 110L, 120L))
 
         assertThat(escalatingChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.ESCALATING))
         assertThat(escalatingChannel.shouldVibrate()).isTrue()
-        assertThat(escalatingChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 1L))
-
-        assertThat(customChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.CUSTOM))
-        assertThat(customChannel.shouldVibrate()).isTrue()
-        assertThat(customChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 1L))
+        assertThat(escalatingChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 60L, 70L, 110L, 70L, 220L))
     }
 
     @Test
-    fun `show triggers manual watch haptics for custom patterns`() {
-        val playedPatterns = mutableListOf<WearResolvedNotificationVibration>()
+    fun `custom local watch notification channel uses the selected waveform`() {
+        val vibration = WearResolvedNotificationVibration(
+            pattern = WatchNotificationVibrationPattern.CUSTOM,
+            customTimingsMs = listOf(0L, 120L, 60L, 240L),
+        )
+
+        val channel = buildWearLocalNotificationChannel(context, vibration)
+
+        assertThat(channel.id).startsWith("wear_companion_messages_v15_generic_custom_")
+        assertThat(channel.shouldVibrate()).isTrue()
+        assertThat(channel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 120L, 60L, 240L))
+        assertThat(channel.sound).isNull()
+    }
+
+    @Test
+    fun `show uses one channel per source and effective preset pattern`() {
         val manager = WearLocalNotificationManager(
             context = context,
             factory = WearLocalNotificationFactory(
@@ -98,74 +111,35 @@ class WearLocalNotificationManagerTest {
                 },
                 roomInfoProvider = { null },
             ),
-            hapticPlayer = object : WearLocalNotificationHapticPlayer {
-                override fun play(vibration: WearResolvedNotificationVibration) {
-                    playedPatterns += vibration
-                }
-            },
             notificationsAllowedProvider = { true },
         )
 
-        manager.show(
-            notification = WatchMessageNotification(
-                notificationKey = "manual-haptic",
-                roomId = "!room:server",
-                eventId = "\$event:server",
-                roomDisplayName = "Team Wear",
-                timestampMs = 100L,
-            ),
-            generatedAtMs = 100L,
-            expiresAtMs = null,
-        )
+        repeat(5) { index ->
+            manager.show(
+                notification = WatchMessageNotification(
+                    notificationKey = "same-room-notification",
+                    roomId = "!room:server",
+                    eventId = "\$event-$index:server",
+                    roomDisplayName = "Team Wear",
+                    timestampMs = 100L + index,
+                ),
+                generatedAtMs = 100L + index,
+                expiresAtMs = null,
+            )
+        }
 
-        assertThat(playedPatterns).containsExactly(
-            WearResolvedNotificationVibration(pattern = WatchNotificationVibrationPattern.TRIPLE),
-        )
+        val createdManualChannels = notificationManager.notificationChannels
+            .filter { it.id == "wear_companion_messages_v15_group_triple" }
+
+        assertThat(createdManualChannels).hasSize(1)
+        assertThat(createdManualChannels.single().vibrationPattern?.toList())
+            .isEqualTo(listOf(0L, 70L, 70L, 100L, 70L, 130L))
+        assertThat(notificationManager.activeNotifications.single().notification.channelId)
+            .isEqualTo("wear_companion_messages_v15_group_triple")
     }
 
     @Test
-    fun `show suppresses manual watch haptics while interruptions are blocked`() {
-        val playedPatterns = mutableListOf<WearResolvedNotificationVibration>()
-        val manager = WearLocalNotificationManager(
-            context = context,
-            factory = WearLocalNotificationFactory(
-                context = context,
-                settingsProvider = {
-                    WatchCompanionSettings(
-                        notificationVibrations = WatchNotificationVibrationSettings(
-                            groups = WatchNotificationVibrationPattern.TRIPLE,
-                        ),
-                    )
-                },
-                roomInfoProvider = { null },
-            ),
-            hapticPlayer = object : WearLocalNotificationHapticPlayer {
-                override fun play(vibration: WearResolvedNotificationVibration) {
-                    playedPatterns += vibration
-                }
-            },
-            notificationsAllowedProvider = { true },
-            manualHapticsAllowedProvider = { false },
-        )
-
-        manager.show(
-            notification = WatchMessageNotification(
-                notificationKey = "manual-haptic-dnd",
-                roomId = "!room:server",
-                eventId = "\$event:server",
-                roomDisplayName = "Team Wear",
-                timestampMs = 100L,
-            ),
-            generatedAtMs = 100L,
-            expiresAtMs = null,
-        )
-
-        assertThat(playedPatterns).isEmpty()
-    }
-
-    @Test
-    fun `show triggers manual watch haptics for valid custom waveform patterns`() {
-        val playedPatterns = mutableListOf<WearResolvedNotificationVibration>()
+    fun `show creates custom waveform channels from the selected pattern`() {
         val manager = WearLocalNotificationManager(
             context = context,
             factory = WearLocalNotificationFactory(
@@ -173,90 +147,38 @@ class WearLocalNotificationManagerTest {
                 settingsProvider = { WatchCompanionSettings() },
                 roomInfoProvider = { null },
             ),
-            hapticPlayer = object : WearLocalNotificationHapticPlayer {
-                override fun play(vibration: WearResolvedNotificationVibration) {
-                    playedPatterns += vibration
-                }
-            },
             notificationsAllowedProvider = { true },
         )
 
-        manager.show(
-            notification = WatchMessageNotification(
-                notificationKey = "manual-custom-haptic",
-                roomId = "!room:server",
-                eventId = "\$event-custom:server",
-                roomDisplayName = "Team Wear",
-                timestampMs = 100L,
-                vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
-                customVibrationPattern = "120 60 240",
-            ),
-            generatedAtMs = 100L,
-            expiresAtMs = null,
-        )
-
-        assertThat(playedPatterns).containsExactly(
-            WearResolvedNotificationVibration(
-                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                customTimingsMs = listOf(0L, 120L, 60L, 240L),
-            ),
-        )
-    }
-
-    @Test
-    fun `show triggers manual watch haptics for saved category custom waveforms`() {
-        val playedPatterns = mutableListOf<WearResolvedNotificationVibration>()
-        val manager = WearLocalNotificationManager(
-            context = context,
-            factory = WearLocalNotificationFactory(
-                context = context,
-                settingsProvider = {
-                    WatchCompanionSettings(
-                        notificationVibrations = WatchNotificationVibrationSettings(
-                            groups = WatchNotificationVibrationPattern.CUSTOM,
-                            groupsCustomPattern = "120 60 240",
-                        ),
-                    )
-                },
-                roomInfoProvider = { null },
-            ),
-            hapticPlayer = object : WearLocalNotificationHapticPlayer {
-                override fun play(vibration: WearResolvedNotificationVibration) {
-                    playedPatterns += vibration
-                }
-            },
-            notificationsAllowedProvider = { true },
-        )
-
-        manager.show(
-            notification = WatchMessageNotification(
-                notificationKey = "manual-custom-category-haptic",
-                roomId = "!room:server",
-                eventId = "\$event-category-custom:server",
-                roomDisplayName = "Team Wear",
-                timestampMs = 100L,
-            ),
-            generatedAtMs = 100L,
-            expiresAtMs = null,
-        )
-
-        assertThat(playedPatterns).containsExactly(
-            WearResolvedNotificationVibration(
-                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                customTimingsMs = listOf(0L, 120L, 60L, 240L),
-            ),
-        )
-    }
-
-    @Test
-    fun `show does not trigger manual watch haptics for default or silent patterns`() {
-        val playedPatterns = mutableListOf<WearResolvedNotificationVibration>()
-        val hapticPlayer = object : WearLocalNotificationHapticPlayer {
-            override fun play(vibration: WearResolvedNotificationVibration) {
-                playedPatterns += vibration
-            }
+        repeat(2) { index ->
+            manager.show(
+                notification = WatchMessageNotification(
+                    notificationKey = "manual-custom-haptic-$index",
+                    roomId = "!room:server",
+                    eventId = "\$event-custom-$index:server",
+                    roomDisplayName = "Team Wear",
+                    timestampMs = 100L + index,
+                    vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
+                    customVibrationPattern = "120 60 240",
+                ),
+                generatedAtMs = 100L + index,
+                expiresAtMs = null,
+            )
         }
 
+        val customChannels = notificationManager.notificationChannels
+            .filter { it.id.startsWith("wear_companion_messages_v15_notification_override_custom_") }
+
+        assertThat(customChannels.map { it.id }).hasSize(1)
+        customChannels.forEach { channel ->
+            assertThat(channel.shouldVibrate()).isTrue()
+            assertThat(channel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 120L, 60L, 240L))
+            assertThat(channel.sound).isNull()
+        }
+    }
+
+    @Test
+    fun `show keeps default and silent patterns on their fixed channels`() {
         val defaultManager = WearLocalNotificationManager(
             context = context,
             factory = WearLocalNotificationFactory(
@@ -264,7 +186,6 @@ class WearLocalNotificationManagerTest {
                 settingsProvider = { WatchCompanionSettings() },
                 roomInfoProvider = { null },
             ),
-            hapticPlayer = hapticPlayer,
             notificationsAllowedProvider = { true },
         )
         defaultManager.show(
@@ -292,7 +213,6 @@ class WearLocalNotificationManagerTest {
                 },
                 roomInfoProvider = { null },
             ),
-            hapticPlayer = hapticPlayer,
             notificationsAllowedProvider = { true },
         )
         silentManager.show(
@@ -307,6 +227,12 @@ class WearLocalNotificationManagerTest {
             expiresAtMs = null,
         )
 
-        assertThat(playedPatterns).isEmpty()
+        val activeChannelIds = notificationManager.activeNotifications
+            .map { it.notification.channelId }
+
+        assertThat(activeChannelIds).containsAtLeast(
+            "wear_companion_messages_v15_group_default",
+            "wear_companion_messages_v15_group_silent",
+        )
     }
 }

@@ -17,7 +17,7 @@ import io.element.android.watchbridge.contract.WatchSyncEnvelope
  */
 interface WatchTransport {
     /** Emit a snapshot / delta to the watch via `DataClient`. */
-    suspend fun publishSync(path: String, envelope: WatchSyncEnvelope)
+    suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean = true)
 
     /** Send a one-shot envelope to the watch via `MessageClient`. Returns the phone node id used. */
     suspend fun sendMessage(path: String, envelope: WatchSyncEnvelope): String

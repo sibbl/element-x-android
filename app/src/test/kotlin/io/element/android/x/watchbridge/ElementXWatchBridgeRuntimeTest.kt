@@ -28,10 +28,22 @@ import io.element.android.libraries.matrix.api.timeline.item.event.FormattedBody
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageFormat
 import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
+import io.element.android.libraries.matrix.api.user.MatrixUser
+import io.element.android.libraries.matrix.test.AN_AVATAR_URL
+import io.element.android.libraries.matrix.test.A_USER_ID
+import io.element.android.libraries.matrix.test.A_USER_NAME
 import io.element.android.libraries.matrix.test.media.aMediaSource
+import io.element.android.libraries.matrix.test.room.FakeBaseRoom
+import io.element.android.libraries.matrix.test.room.FakeJoinedRoom
+import io.element.android.libraries.matrix.test.room.aRoomMember
+import io.element.android.libraries.matrix.test.room.aRoomInfo
 import io.element.android.libraries.matrix.test.timeline.aMessageContent
 import io.element.android.libraries.matrix.test.timeline.aProfileDetails
 import io.element.android.libraries.matrix.test.timeline.anEventTimelineItem
+import io.element.android.watchbridge.contract.WatchBridgeSerialization
+import io.element.android.watchbridge.contract.WatchProtocol
+import io.element.android.watchbridge.contract.WatchSync
+import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -47,6 +59,75 @@ import kotlin.math.max
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class ElementXWatchBridgeRuntimeTest {
+
+    @Test
+    fun `watch avatar projection prefers explicit room avatar over heroes`() {
+        val roomAvatarUrl = "mxc://server/room-avatar"
+        val hero = MatrixUser(A_USER_ID, A_USER_NAME, AN_AVATAR_URL)
+
+        val result = aRoomInfo(avatarUrl = roomAvatarUrl, heroes = listOf(hero)).watchAvatarData()
+
+        assertThat(result.url).isEqualTo(roomAvatarUrl)
+    }
+
+    @Test
+    fun `watch avatar projection uses first hero when room avatar is missing`() {
+        val hero = MatrixUser(A_USER_ID, A_USER_NAME, AN_AVATAR_URL)
+
+        val result = aRoomInfo(avatarUrl = null, heroes = listOf(hero)).watchAvatarData()
+
+        assertThat(result.id).isEqualTo(A_USER_ID.value)
+        assertThat(result.url).isEqualTo(AN_AVATAR_URL)
+    }
+
+    @Test
+    fun `watch DM avatar projection uses direct member image`() = runTest {
+        val directAvatarUrl = "mxc://server/direct-member"
+        val room = FakeJoinedRoom(
+            baseRoom = FakeBaseRoom(
+                initialRoomInfo = aRoomInfo(isDm = true, avatarUrl = null, heroes = emptyList()),
+                getDirectRoomMemberResult = {
+                    aRoomMember(userId = A_USER_ID, displayName = A_USER_NAME, avatarUrl = directAvatarUrl)
+                },
+            ),
+        )
+
+        val result = room.watchAvatarData()
+
+        assertThat(result.id).isEqualTo(A_USER_ID.value)
+        assertThat(result.url).isEqualTo(directAvatarUrl)
+    }
+
+    @Test
+    fun `watch avatar loading normalizes large source and fits data layer payload limit`() = runTest {
+        val sourceBytes = createImageBytes(width = 2_048, height = 1_536)
+        val mediaLoader = object : MatrixMediaLoader {
+            override suspend fun loadMediaContent(source: MediaSource): Result<ByteArray> = Result.success(sourceBytes)
+
+            override suspend fun loadMediaThumbnail(source: MediaSource, width: Long, height: Long): Result<ByteArray> =
+                Result.failure(IllegalStateException("thumbnail unavailable"))
+
+            override suspend fun downloadMediaFile(
+                source: MediaSource,
+                mimeType: String?,
+                filename: String?,
+                useCache: Boolean,
+            ): Result<MediaFile> = error("unused in test")
+        }
+
+        val avatarBytes = requireNotNull(loadWatchAvatarBytes(mediaLoader, AN_AVATAR_URL).getOrThrow())
+        val decoded = BitmapFactory.decodeByteArray(avatarBytes, 0, avatarBytes.size)
+        val envelopeBytes = WatchBridgeSerialization.encodeEnvelopeToBytes(
+            WatchSyncEnvelope(
+                generatedAtMs = 1L,
+                payload = WatchSync.AvatarUpdate(roomId = "!room:server", imageBytes = avatarBytes),
+            )
+        )
+
+        assertThat(decoded).isNotNull()
+        assertThat(max(decoded!!.width, decoded.height)).isAtMost(64)
+        assertThat(envelopeBytes.size).isAtMost(WatchProtocol.MAX_PAYLOAD_BYTES)
+    }
 
     @Test
     fun `thread responses are excluded from room timeline projection`() {

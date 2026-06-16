@@ -55,6 +55,17 @@ internal class WearBridgeCacheStore(
         }
     }
 
+    suspend fun restoreNotificationEnvelopes(roomId: String? = null): List<WatchSyncEnvelope> = withContext(ioDispatcher) {
+        mutex.withLock {
+            if (!rootDir.exists()) return@withLock emptyList()
+            buildList {
+                favoritesFile().takeIf(File::exists)?.let { addIfDecoded(it) }
+                settingsFile().takeIf(File::exists)?.let { addIfDecoded(it) }
+                roomId?.let { avatarFile(it).takeIf(File::exists)?.let { file -> addIfDecoded(file) } }
+            }
+        }
+    }
+
     suspend fun persist(envelope: WatchSyncEnvelope) = withContext(ioDispatcher) {
         mutex.withLock {
             when (val payload = envelope.payload) {

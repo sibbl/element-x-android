@@ -103,6 +103,71 @@ class WearBridgeCacheStoreTest {
     }
 
     @Test
+    fun `notification restore only reads settings favorites and target room avatar`() = runTest {
+        val rootDir = tempDir()
+        val store = WearBridgeCacheStore(rootDir)
+
+        store.persist(
+            WatchSyncEnvelope(
+                generatedAtMs = 1L,
+                payload = WatchSync.FavoritesSnapshot(
+                    rooms = listOf(
+                        io.element.android.watchbridge.contract.WatchFavoriteRoom(
+                            roomId = "!room:server",
+                            displayName = "Alice",
+                            kind = WatchRoomKind.DM,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        store.persist(
+            WatchSyncEnvelope(
+                generatedAtMs = 2L,
+                payload = WatchSync.SettingsUpdate(io.element.android.watchbridge.contract.WatchCompanionSettings()),
+            ),
+        )
+        store.persist(
+            WatchSyncEnvelope(
+                generatedAtMs = 3L,
+                payload = WatchSync.TimelineDelta(
+                    roomId = "!room:server",
+                    fromTimelineVersion = 0L,
+                    toTimelineVersion = 1L,
+                    items = listOf(
+                        WatchTimelineItem(
+                            eventId = "\$event:server",
+                            roomId = "!room:server",
+                            senderId = "@alice:server",
+                            senderDisplayName = "Alice",
+                            timestampMs = 10L,
+                            kind = WatchTimelineItemKind.TEXT,
+                            bodyText = "Should not be restored for notification wake",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        store.persist(
+            WatchSyncEnvelope(
+                generatedAtMs = 4L,
+                payload = WatchSync.AvatarUpdate(
+                    roomId = "!room:server",
+                    imageBytes = byteArrayOf(1, 2, 3),
+                ),
+            ),
+        )
+
+        val restored = WearBridgeCacheStore(rootDir).restoreNotificationEnvelopes("!room:server")
+
+        assertThat(restored.map { it.payload::class }).containsExactly(
+            WatchSync.FavoritesSnapshot::class,
+            WatchSync.SettingsUpdate::class,
+            WatchSync.AvatarUpdate::class,
+        )
+    }
+
+    @Test
     fun `room invalidation removes room timeline and avatar artifacts`() = runTest {
         val rootDir = tempDir()
         val store = WearBridgeCacheStore(rootDir)

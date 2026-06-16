@@ -158,4 +158,16 @@ class WearMainActivityDeepLinkTest {
         )
         assertThat(consumePendingTileReadLatest(intent)).isNull()
     }
+
+    @Test
+    fun `voice recorder intent preserves room target after tile quick reply navigation`() {
+        val intent = buildVoiceRecorderIntent(
+            context = ApplicationProvider.getApplicationContext(),
+            roomId = "!room:server",
+            roomDisplayName = "Room",
+        )
+
+        assertThat(intent.getStringExtra(EXTRA_VOICE_ROOM_ID)).isEqualTo("!room:server")
+        assertThat(intent.getStringExtra(EXTRA_VOICE_ROOM_DISPLAY_NAME)).isEqualTo("Room")
+    }
 }

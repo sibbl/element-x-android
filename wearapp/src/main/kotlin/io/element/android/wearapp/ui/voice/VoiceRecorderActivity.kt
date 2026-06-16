@@ -62,6 +62,9 @@ import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.audio.VoiceRecorder
 import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.ui.EXTRA_VOICE_IN_REPLY_TO_EVENT_ID
+import io.element.android.wearapp.ui.EXTRA_VOICE_ROOM_ID
+import io.element.android.wearapp.ui.EXTRA_VOICE_THREAD_ROOT_EVENT_ID
 import io.element.android.wearapp.ui.buildWearLaunchIntent
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.theme.WearAppTheme
@@ -91,12 +94,12 @@ class VoiceRecorderActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val roomId = intent.getStringExtra("roomId") ?: run {
+        val roomId = intent.getStringExtra(EXTRA_VOICE_ROOM_ID) ?: run {
             finish()
             return
         }
-        val threadRootEventId = intent.getStringExtra("threadRootEventId")
-        val inReplyToEventId = intent.getStringExtra("inReplyToEventId")
+        val threadRootEventId = intent.getStringExtra(EXTRA_VOICE_THREAD_ROOT_EVENT_ID)
+        val inReplyToEventId = intent.getStringExtra(EXTRA_VOICE_IN_REPLY_TO_EVENT_ID)
         val returnToEventId = intent.getStringExtra(EXTRA_RETURN_TO_EVENT_ID)
         val bridge = (application as WearApp).bridgeClient
 
@@ -247,7 +250,12 @@ private fun VoiceRecorderUi(
 
         when {
             sending -> {
-                CircularProgressIndicator(modifier = Modifier.size(40.dp))
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                Text(
+                    text = stringResource(R.string.screen_voice_recorder_sending),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
 
             !hasRecordPermission -> {

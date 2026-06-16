@@ -52,7 +52,6 @@ class WatchBridgeDispatcher(
     private val settingsStore: WatchCompanionSettingsStore? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-
     private val requests = LruBoundedMap<String, RequestState>(capacity = 64)
     private var favoritesJob: Job? = null
     private var settingsJob: Job? = null
@@ -60,6 +59,7 @@ class WatchBridgeDispatcher(
     private val threadJobs = mutableMapOf<String, Job>()
     private val publishedAvatarKeys = mutableMapOf<String, String?>()
     private val latestAvatarKeys = mutableMapOf<String, String?>()
+    private var latestVisibleRooms = emptyList<WatchFavoriteRoom>()
     private val avatarRetryJobs = mutableMapOf<String, Job>()
     private val pendingVoiceDraftCommands = ConcurrentHashMap<String, WatchCommand.UploadVoiceDraft>()
     private val pendingVoiceDraftAudio = ConcurrentHashMap<String, ByteArray>()
@@ -73,13 +73,9 @@ class WatchBridgeDispatcher(
                 port.ensureRoomListLoaded(INITIAL_ROOM_LOAD_COUNT)
             }.onFailure { Timber.w(it, "initial room load failed") }
             port.favorites().collectLatest { rooms ->
+                latestVisibleRooms = rooms.take(MAX_AVATAR_SYNC_COUNT)
                 Timber.d("publishing favorites snapshot count=%d", rooms.size)
-                runCatching {
-                    transport.publishSync(
-                        path = WatchDataPaths.FAVORITES,
-                        envelope = envelope(WatchSync.FavoritesSnapshot(rooms)),
-                    )
-                }.onFailure { Timber.w(it, "publish favorites failed") }
+                publishFavoritesSnapshot(rooms = rooms, urgent = false)
                 publishAvatarUpdates(rooms)
             }
         }
@@ -101,15 +97,22 @@ class WatchBridgeDispatcher(
     }
 
     fun stop() {
-        favoritesJob?.cancel(); favoritesJob = null
-        settingsJob?.cancel(); settingsJob = null
-        roomJobs.values.forEach { it.cancel() }; roomJobs.clear()
-        threadJobs.values.forEach { it.cancel() }; threadJobs.clear()
-        avatarRetryJobs.values.forEach { it.cancel() }; avatarRetryJobs.clear()
-        voiceDraftJobs.values.forEach { it.cancel() }; voiceDraftJobs.clear()
+        favoritesJob?.cancel()
+        favoritesJob = null
+        settingsJob?.cancel()
+        settingsJob = null
+        roomJobs.values.forEach { it.cancel() }
+        roomJobs.clear()
+        threadJobs.values.forEach { it.cancel() }
+        threadJobs.clear()
+        avatarRetryJobs.values.forEach { it.cancel() }
+        avatarRetryJobs.clear()
+        voiceDraftJobs.values.forEach { it.cancel() }
+        voiceDraftJobs.clear()
         pendingVoiceDraftCommands.clear()
         pendingVoiceDraftAudio.clear()
         latestAvatarKeys.clear()
+        latestVisibleRooms = emptyList()
     }
 
     fun onVoiceDraftAudio(draftId: String, audioBytes: ByteArray) {
@@ -147,7 +150,13 @@ class WatchBridgeDispatcher(
             when (cmd) {
                 is WatchCommand.RefreshRooms -> {
                     port.ensureRoomListLoaded(cmd.minimumCount)
-                    // Collection is live via [start]; loading more triggers the next snapshot.
+                    // Recover a reset/reinstalled watch even if this phone process remembers prior publications.
+                    publishFavoritesSnapshot(rooms = latestVisibleRooms, urgent = true)
+                    latestVisibleRooms.forEach { room ->
+                        avatarRetryJobs.remove(room.roomId)?.cancel()
+                        publishedAvatarKeys.remove(room.roomId)
+                    }
+                    publishAvatarUpdates(latestVisibleRooms)
                     ack(WatchAck.Sent(cmd.requestId))
                 }
                 is WatchCommand.OpenRoom -> openRoom(cmd)
@@ -472,6 +481,16 @@ class WatchBridgeDispatcher(
         }
     }
 
+    private suspend fun publishFavoritesSnapshot(rooms: List<WatchFavoriteRoom>, urgent: Boolean) {
+        runCatching {
+            transport.publishSync(
+                path = WatchDataPaths.FAVORITES,
+                envelope = envelope(WatchSync.FavoritesSnapshot(rooms)),
+                urgent = urgent,
+            )
+        }.onFailure { Timber.w(it, "publish favorites failed") }
+    }
+
     private suspend fun publishAvatarUpdate(roomId: String, avatarKey: String?, allowRetry: Boolean) {
         if (publishedAvatarKeys.containsKey(roomId) && publishedAvatarKeys[roomId] == avatarKey) return
 
@@ -497,6 +516,7 @@ class WatchBridgeDispatcher(
             transport.publishSync(
                 path = WatchDataPaths.avatar(roomId),
                 envelope = envelope(WatchSync.AvatarUpdate(roomId = roomId, imageBytes = bytes)),
+                urgent = true,
             )
             publishedAvatarKeys[roomId] = avatarKey
         }.onFailure {
@@ -512,6 +532,7 @@ class WatchBridgeDispatcher(
             transport.publishSync(
                 path = WatchDataPaths.avatar(roomId),
                 envelope = envelope(WatchSync.AvatarUpdate(roomId = roomId, imageBytes = null)),
+                urgent = true,
             )
             publishedAvatarKeys[roomId] = null
         }.onFailure { Timber.w(it, "publish avatar removal failed for room=%s", roomId) }

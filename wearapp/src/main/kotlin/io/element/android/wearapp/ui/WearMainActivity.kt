@@ -23,10 +23,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -56,18 +56,17 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import io.element.android.appconfig.WearCompanionDeepLink
 import io.element.android.watchbridge.contract.WatchLongPressConversationAction
 import io.element.android.watchbridge.contract.WatchSendSource
-import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.R
+import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
-import io.element.android.wearapp.ui.room.ImageViewerScreen
 import io.element.android.wearapp.ui.favorites.FavoritesScreen
 import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
+import io.element.android.wearapp.ui.room.ImageViewerScreen
 import io.element.android.wearapp.ui.room.MessageDetailScreen
 import io.element.android.wearapp.ui.room.RoomScreen
 import io.element.android.wearapp.ui.thread.ThreadScreen
 import io.element.android.wearapp.ui.theme.WearAppTheme
-import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -124,16 +123,12 @@ class WearMainActivity : ComponentActivity() {
         pendingTileDirectReplyRoomId = consumePendingTileDirectReplyRoomId(intent)
         pendingTileReadLatest = consumePendingTileReadLatest(intent)
         val bridge = (application as WearApp).bridgeClient
+        bridge.refreshCachedStateFromDisk()
         bridge.refreshCachedStateFromDataLayer()
         setContent {
             val nav = rememberSwipeDismissableNavController()
             val scope = rememberCoroutineScope()
-            val tileActionTts = remember { WearTextToSpeech(this@WearMainActivity) }
-            DisposableEffect(tileActionTts) {
-                onDispose {
-                    tileActionTts.shutdown()
-                }
-            }
+            val tileActionTtsProvider = rememberWearTextToSpeechProvider()
             val openRoomAtBottom: (String) -> Unit = { roomId ->
                 pendingRoomScrollRequest = PendingRoomScrollRequest(
                     roomId = roomId,
@@ -203,7 +198,7 @@ class WearMainActivity : ComponentActivity() {
                     if (pending.previewText.isNullOrBlank()) {
                         openRoomAtBottom(pending.roomId)
                     } else {
-                        tileActionTts.speak(pending.previewText)
+                        tileActionTtsProvider().speak(pending.previewText)
                     }
                     pendingTileReadLatest = null
                 }
@@ -221,19 +216,14 @@ class WearMainActivity : ComponentActivity() {
                             composable("favorites") {
                                 val settings by bridge.companionSettings.collectAsState()
                                 val scope = rememberCoroutineScope()
-                                val tts = remember { WearTextToSpeech(this@WearMainActivity) }
-                                DisposableEffect(tts) {
-                                    onDispose {
-                                        tts.shutdown()
-                                    }
-                                }
+                                val ttsProvider = rememberWearTextToSpeechProvider()
                                 FavoritesScreen(
                                     bridge = bridge,
                                     onRoomSelected = openRoomAtBottom,
                                     onLongPressRoom = { room ->
                                         when (settings.longPressConversationAction) {
                                             WatchLongPressConversationAction.READ_LATEST -> {
-                                                room.lastPreviewText?.let { tts.speak(it) }
+                                                room.lastPreviewText?.let { ttsProvider().speak(it) }
                                             }
                                             WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> {
                                                 openLatestMessageOrRoom(room.roomId)
@@ -260,9 +250,11 @@ class WearMainActivity : ComponentActivity() {
                                             }
                                             WatchLongPressConversationAction.QUICK_REPLY_VOICE -> {
                                                 startActivity(
-                                                    Intent(this@WearMainActivity, VoiceRecorderActivity::class.java)
-                                                        .putExtra("roomId", room.roomId)
-                                                        .putExtra("roomDisplayName", room.displayName),
+                                                    buildVoiceRecorderIntent(
+                                                        context = this@WearMainActivity,
+                                                        roomId = room.roomId,
+                                                        roomDisplayName = room.displayName,
+                                                    ),
                                                 )
                                             }
                                             WatchLongPressConversationAction.OPEN_LATEST -> {
@@ -505,6 +497,21 @@ class WearMainActivity : ComponentActivity() {
 
 private const val FAVORITES_PAGE_KEY = "favorites"
 private const val RECENTS_PAGE_KEY = "recents"
+
+@Composable
+private fun WearMainActivity.rememberWearTextToSpeechProvider(): () -> WearTextToSpeech {
+    var textToSpeech by remember { mutableStateOf<WearTextToSpeech?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            textToSpeech?.shutdown()
+        }
+    }
+    return remember {
+        {
+            textToSpeech ?: WearTextToSpeech(this).also { textToSpeech = it }
+        }
+    }
+}
 
 internal enum class WearNotificationPermissionState {
     Granted,

@@ -10,6 +10,7 @@
     <string name="screen_room_loading_title">Conversation</string>
     <string name="screen_room_loading_messages">Loading messages…</string>
     <string name="screen_room_empty_messages">No messages yet</string>
+    <string name="screen_room_sending">Sending…</string>
     <string name="screen_thread_empty_messages">Empty thread</string>
     <string name="screen_favorites_recent_contacts_title">Recent contacts</string>
     <string name="screen_message_detail_loading">Opening message…</string>

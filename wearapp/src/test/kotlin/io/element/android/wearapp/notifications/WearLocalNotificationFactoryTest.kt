@@ -194,7 +194,7 @@ class WearLocalNotificationFactoryTest {
 
         val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = null)
 
-        assertThat(notification.channelId).isEqualTo(WearLocalNotificationManager.CHANNEL_ID)
+        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v15_group_default")
     }
 
     @Test
@@ -258,13 +258,37 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(groupNotification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.TRIPLE))
+            .isEqualTo("wear_companion_messages_v15_group_triple")
         assertThat(dmNotification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.PULSE))
+            .isEqualTo("wear_companion_messages_v15_dm_pulse")
         assertThat(favoriteGroupNotification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.ESCALATING))
+            .isEqualTo("wear_companion_messages_v15_favorite_group_escalating")
         assertThat(favoriteDmNotification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.LONG))
+            .isEqualTo("wear_companion_messages_v15_favorite_dm_long")
+    }
+
+    @Test
+    fun `manual vibration notifications are still alerting so Wear OS can peek them`() {
+        val notification = createFactory(
+            settings = WatchCompanionSettings(
+                notificationVibrations = WatchNotificationVibrationSettings(
+                    groups = WatchNotificationVibrationPattern.TRIPLE,
+                ),
+            ),
+        ).build(
+            model(
+                roomId = "!group:server",
+                roomKind = WatchRoomKind.GROUP,
+            ),
+            generatedAtMs = 100L,
+            expiresAtMs = null,
+        )
+
+        assertThat(notification.channelId)
+            .isEqualTo("wear_companion_messages_v15_group_triple")
+        assertThat(notification.flags and Notification.FLAG_ONLY_ALERT_ONCE).isEqualTo(0)
+        assertThat(notification.group).isNotEqualTo("silent")
+        assertThat(notification.groupAlertBehavior).isNotEqualTo(Notification.GROUP_ALERT_SUMMARY)
     }
 
     @Test
@@ -288,7 +312,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.ESCALATING))
+            .isEqualTo("wear_companion_messages_v15_notification_override_escalating")
     }
 
     @Test
@@ -316,7 +340,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.ESCALATING))
+            .isEqualTo("wear_companion_messages_v15_room_${"!dm:server".stableShortHash()}_escalating")
     }
 
     @Test
@@ -339,6 +363,7 @@ class WearLocalNotificationFactoryTest {
             WearResolvedNotificationVibration(
                 pattern = WatchNotificationVibrationPattern.CUSTOM,
                 customTimingsMs = listOf(0L, 120L, 60L, 240L),
+                source = WearNotificationVibrationSource.Groups,
             ),
         )
     }
@@ -362,7 +387,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.DEFAULT))
+            .isEqualTo("wear_companion_messages_v15_group_default")
     }
 
     @Test
@@ -387,7 +412,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.DEFAULT))
+            .isEqualTo("wear_companion_messages_v15_room_${"!room:server".stableShortHash()}_default")
     }
 
     @Test
@@ -403,8 +428,25 @@ class WearLocalNotificationFactoryTest {
             WearResolvedNotificationVibration(
                 pattern = WatchNotificationVibrationPattern.CUSTOM,
                 customTimingsMs = listOf(0L, 120L, 60L, 240L),
+                source = WearNotificationVibrationSource.NotificationOverride,
             ),
         )
+    }
+
+    @Test
+    fun `explicit custom vibration notification uses the alerting custom channel`() {
+        val model = model(roomId = "!room:server").copy(
+            vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
+            customVibrationPattern = "120 60 240",
+        )
+
+        val notification = createFactory().build(
+            model,
+            generatedAtMs = 100L,
+            expiresAtMs = null,
+        )
+
+        assertThat(notification.channelId).startsWith("wear_companion_messages_v15_notification_override_custom_")
     }
 
     @Test

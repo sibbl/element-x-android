@@ -39,12 +39,13 @@ import java.util.ArrayDeque
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WatchBridgeDispatcherTest {
-
     private open class RecordingTransport : WatchTransport {
         val publications = mutableListOf<Pair<String, WatchSyncEnvelope>>()
+        val publicationUrgency = mutableListOf<Pair<String, Boolean>>()
         val messages = mutableListOf<Pair<String, WatchSyncEnvelope>>()
-        override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+        override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean) {
             publications += path to envelope
+            publicationUrgency += path to urgent
         }
         override suspend fun sendMessage(path: String, envelope: WatchSyncEnvelope): String {
             messages += path to envelope
@@ -139,6 +140,7 @@ class WatchBridgeDispatcherTest {
         checkNotNull(published) { "favorites snapshot not published" }
         val payload = published.second.payload as WatchSync.FavoritesSnapshot
         assertThat(payload.rooms).hasSize(1)
+        assertThat(transport.publicationUrgency.single { it.first == WatchDataPaths.FAVORITES }.second).isFalse()
         assertThat(port.ensureLoadedCalls).isNotEmpty()
     }
 
@@ -382,7 +384,7 @@ class WatchBridgeDispatcherTest {
     @Test
     fun `open room publish failure returns failed ack instead of crashing`() = runTest(StandardTestDispatcher()) {
         val transport = object : RecordingTransport() {
-            override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+            override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean) {
                 throw IllegalStateException("boom")
             }
         }
@@ -417,7 +419,7 @@ class WatchBridgeDispatcherTest {
     @Test
     fun `fetch thread publish failure returns failed ack instead of crashing`() = runTest(StandardTestDispatcher()) {
         val transport = object : RecordingTransport() {
-            override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope) {
+            override suspend fun publishSync(path: String, envelope: WatchSyncEnvelope, urgent: Boolean) {
                 throw IllegalStateException("boom")
             }
         }
@@ -543,6 +545,9 @@ class WatchBridgeDispatcherTest {
 
         assertThat(avatarPayloads).hasSize(2)
         assertThat(avatarPayloads.last().imageBytes?.toList()).containsExactly(7.toByte(), 8.toByte(), 9.toByte()).inOrder()
+        assertThat(transport.publicationUrgency.filter { it.first == WatchDataPaths.avatar("!a:s") }.map { it.second })
+            .containsExactly(true, true)
+            .inOrder()
     }
 
     @Test
@@ -571,6 +576,44 @@ class WatchBridgeDispatcherTest {
             .filterIsInstance<WatchSync.AvatarUpdate>()
             .single { it.roomId == "!dm:s" }
         assertThat(avatarPayload.imageBytes?.toList()).containsExactly(1.toByte(), 2.toByte(), 3.toByte()).inOrder()
+        assertThat(transport.publicationUrgency.single { it.first == WatchDataPaths.avatar("!dm:s") }.second).isTrue()
+    }
+
+    @Test
+    fun `refresh rooms urgently republishes favorites and avatars for a reset watch`() = runTest(StandardTestDispatcher()) {
+        val roomId = "!dm:s"
+        val transport = RecordingTransport()
+        val port = StubPort(
+            favorites = listOf(
+                WatchFavoriteRoom(
+                    roomId = roomId,
+                    displayName = "Alice",
+                    avatarUri = "mxc://server/avatar",
+                    kind = WatchRoomKind.DM,
+                ),
+            ),
+            avatarThumbnailResults = ArrayDeque<Result<ByteArray?>>().apply {
+                add(Result.success(byteArrayOf(1, 2, 3)))
+                add(Result.success(byteArrayOf(1, 2, 3)))
+            },
+        )
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.start()
+        runCurrent()
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.RefreshRooms(requestId = "refresh", minimumCount = 30),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(transport.publications.count { it.first == WatchDataPaths.FAVORITES }).isEqualTo(2)
+        assertThat(transport.publications.count { it.first == WatchDataPaths.avatar(roomId) }).isEqualTo(2)
+        assertThat(transport.publicationUrgency.last { it.first == WatchDataPaths.FAVORITES }.second).isTrue()
+        assertThat(transport.publicationUrgency.filter { it.first == WatchDataPaths.avatar(roomId) }.map { it.second })
+            .containsExactly(true, true)
     }
 
     @Test

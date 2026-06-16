@@ -34,7 +34,7 @@ class RoomListRoomSummaryFactory(
 ) {
     fun create(roomSummary: RoomSummary): RoomListRoomSummary {
         val roomInfo = roomSummary.info
-        val avatarData = roomInfo.roomListAvatarData(size = AvatarSize.RoomListItem)
+        val avatarData = roomInfo.getAvatarData(size = AvatarSize.RoomListItem)
         return RoomListRoomSummary(
             id = roomSummary.roomId.value,
             roomId = roomSummary.roomId,
@@ -106,10 +106,4 @@ class RoomListRoomSummaryFactory(
             is LatestEventValue.RoomInvite -> LatestEvent.None
         }
     }
-}
-
-private fun RoomInfo.roomListAvatarData(size: AvatarSize) = if (isDm && avatarUrl == null) {
-    heroes.firstOrNull()?.getAvatarData(size) ?: getAvatarData(size)
-} else {
-    getAvatarData(size)
 }

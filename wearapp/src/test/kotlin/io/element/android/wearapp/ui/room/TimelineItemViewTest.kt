@@ -215,6 +215,29 @@ class TimelineItemViewTest {
         rule.runOnIdle { assertThat(longPressed).isTrue() }
     }
 
+    @Test
+    fun `pending watch message shows sending state instead of internal sender`() {
+        val sending = rule.activity.getString(R.string.screen_room_sending)
+
+        rule.setContent {
+            WearAppTheme {
+                TimelineMessageRow(
+                    item = aTextTimelineItem().copy(
+                        eventId = "\$watch-local-test",
+                        senderId = "@watch-local",
+                        senderDisplayName = null,
+                        isOwn = true,
+                    ),
+                    onClick = {},
+                    onOpenThread = null,
+                )
+            }
+        }
+
+        rule.onNodeWithText(sending).assertExists()
+        rule.onNodeWithText("@watch-local").assertDoesNotExist()
+    }
+
     private fun anImageTimelineItem() = WatchTimelineItem(
         eventId = "\$image:server",
         roomId = "!room:server",
