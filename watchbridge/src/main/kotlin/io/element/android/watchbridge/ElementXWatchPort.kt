@@ -60,7 +60,7 @@ interface ElementXWatchPort {
     ): Result<String>
 
     /** Materialize a playback descriptor for an existing voice message event. */
-    suspend fun playbackDescriptor(roomId: String, eventId: String): Result<WatchPlaybackDescriptor>
+    suspend fun playbackDescriptor(roomId: String, eventId: String, threadRootEventId: String?): Result<WatchPlaybackDescriptor>
 
     /** Small circular avatar thumbnail for a room / DM member when available. */
     suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> = Result.success(null)

@@ -7,15 +7,17 @@
 
 package io.element.android.wearapp.audio
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 
 /**
- * Simple voice message player for the watch. Streams audio from an HTTP URL.
+ * Simple voice message player for the watch.
  */
 class WearVoicePlayer {
     enum class State { IDLE, LOADING, PLAYING, ERROR }
@@ -25,7 +27,7 @@ class WearVoicePlayer {
 
     private var player: MediaPlayer? = null
 
-    fun play(url: String) {
+    fun play(context: Context, uri: Uri) {
         stop()
         _state.value = State.LOADING
         try {
@@ -36,7 +38,7 @@ class WearVoicePlayer {
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                setDataSource(url)
+                setDataSource(context, uri)
                 setOnPreparedListener {
                     _state.value = State.PLAYING
                     start()

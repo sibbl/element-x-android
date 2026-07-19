@@ -36,4 +36,5 @@ data class WatchMessageNotification(
     val imagePreviewBytes: ByteArray? = null,
     val vibrationPatternOverride: WatchNotificationVibrationPattern? = null,
     val customVibrationPattern: String? = null,
+    val vibrationSettingsSnapshot: WatchNotificationVibrationSettings? = null,
 )

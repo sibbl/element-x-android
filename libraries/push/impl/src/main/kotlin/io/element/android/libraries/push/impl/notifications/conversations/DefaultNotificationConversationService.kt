@@ -15,6 +15,7 @@ import androidx.core.app.Person
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import coil3.ImageLoader
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.SingleIn
@@ -28,8 +29,10 @@ import io.element.android.libraries.di.annotations.ApplicationContext
 import io.element.android.libraries.matrix.api.MatrixClientProvider
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.SessionId
+import io.element.android.libraries.matrix.ui.media.AVATAR_THUMBNAIL_SIZE_IN_PIXEL
 import io.element.android.libraries.matrix.ui.media.ImageLoaderHolder
 import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
+import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationShortcutRoom
 import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationService
 import io.element.android.libraries.push.impl.intent.IntentProvider
 import io.element.android.libraries.push.impl.notifications.shortcut.createShortcutId
@@ -93,44 +96,63 @@ class DefaultNotificationConversationService(
         val client = matrixClientProvider.getOrRestore(sessionId).getOrNull() ?: return
         val imageLoader = imageLoaderHolder.get(client)
 
-        val defaultShortcutIconSize = ShortcutManagerCompat.getIconMaxWidth(context)
-        val name = roomName?.takeIf { it.isNotBlank() } ?: roomId.value
-        val icon = bitmapLoader.getRoomBitmap(
-            avatarData = AvatarData(
-                id = roomId.value,
-                name = name,
-                url = roomAvatarUrl,
-                size = AvatarSize.RoomDetailsHeader,
-            ),
+        val shortcutInfo = createShortcutInfo(
+            sessionId = sessionId,
+            roomId = roomId,
+            roomName = roomName,
+            roomIsDirect = roomIsDirect,
+            roomAvatarUrl = roomAvatarUrl,
             imageLoader = imageLoader,
-            targetSize = defaultShortcutIconSize.toLong()
-        )?.let(IconCompat::createWithBitmap)
-
-        val conversationPerson = Person.Builder()
-            .setName(roomName)
-            .setIcon(icon)
-            .setKey(roomId.value)
-            .build()
-
-        val shortcutInfo = ShortcutInfoCompat.Builder(context, createShortcutId(sessionId, roomId))
-            .setShortLabel(name)
-            .setIcon(icon)
-            .setPerson(conversationPerson)
-            .setIntent(intentProvider.getViewRoomIntent(sessionId, roomId, threadId = null, eventId = null))
-            .setCategories(categories)
-            .setLongLived(true)
-            .let {
-                when (roomIsDirect) {
-                    true -> it.addCapabilityBinding("actions.intent.SEND_MESSAGE")
-                    false -> it.addCapabilityBinding("actions.intent.SEND_MESSAGE", "message.recipient.@type", listOf("Audience"))
-                }
-            }
-            .build()
+            categories = categories,
+        )
 
         runCatchingExceptions { ShortcutManagerCompat.pushDynamicShortcut(context, shortcutInfo) }
             .onFailure {
                 Timber.e(it, "Failed to create shortcut for room $roomId in session $sessionId")
             }
+    }
+
+    override suspend fun onRecentRoomsChanged(
+        sessionId: SessionId,
+        rooms: List<NotificationConversationShortcutRoom>,
+    ) {
+        if (lockScreenService.isPinSetup().first()) {
+            // We don't create shortcuts when a pin code is set for privacy reasons
+            return
+        }
+
+        val maxShortcutCount = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context).coerceAtLeast(0)
+        if (maxShortcutCount == 0) {
+            clearShortcuts()
+            return
+        }
+
+        val categories = setOfNotNull(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) ShortcutInfo.SHORTCUT_CATEGORY_CONVERSATION else null
+        )
+        val client = matrixClientProvider.getOrRestore(sessionId).getOrNull() ?: return
+        val imageLoader = imageLoaderHolder.get(client)
+        val shortcutInfos = rooms
+            .distinctBy { it.roomId }
+            .take(maxShortcutCount)
+            .mapIndexed { rank, room ->
+                createShortcutInfo(
+                    sessionId = sessionId,
+                    roomId = room.roomId,
+                    roomName = room.roomName,
+                    roomIsDirect = room.roomIsDirect,
+                    roomAvatarUrl = room.roomAvatarUrl,
+                    imageLoader = imageLoader,
+                    categories = categories,
+                    rank = rank,
+                )
+            }
+
+        runCatchingExceptions {
+            ShortcutManagerCompat.setDynamicShortcuts(context, shortcutInfos)
+        }.onFailure {
+            Timber.e(it, "Failed to update recent room shortcuts for session $sessionId")
+        }
     }
 
     override suspend fun onLeftRoom(sessionId: SessionId, roomId: RoomId) {
@@ -201,5 +223,58 @@ class DefaultNotificationConversationService(
         }.onFailure {
             Timber.e(it, "Failed to remove shortcuts for session $sessionId after logout")
         }
+    }
+
+    private suspend fun createShortcutInfo(
+        sessionId: SessionId,
+        roomId: RoomId,
+        roomName: String?,
+        roomIsDirect: Boolean,
+        roomAvatarUrl: String?,
+        imageLoader: ImageLoader,
+        categories: Set<String>,
+        rank: Int? = null,
+    ): ShortcutInfoCompat {
+        val defaultShortcutIconSize = ShortcutManagerCompat.getIconMaxWidth(context)
+            .coerceAtLeast(AVATAR_THUMBNAIL_SIZE_IN_PIXEL.toInt())
+        val name = roomName?.takeIf { it.isNotBlank() } ?: roomId.value
+        val icon = bitmapLoader.getRoomBitmap(
+            avatarData = AvatarData(
+                id = roomId.value,
+                name = name,
+                url = roomAvatarUrl,
+                size = AvatarSize.RoomDetailsHeader,
+            ),
+            imageLoader = imageLoader,
+            targetSize = defaultShortcutIconSize.toLong()
+        )?.let(IconCompat::createWithBitmap)
+
+        val conversationPerson = Person.Builder()
+            .setName(name)
+            .setIcon(icon)
+            .setKey(roomId.value)
+            .build()
+
+        return ShortcutInfoCompat.Builder(context, createShortcutId(sessionId, roomId))
+            .setShortLabel(name)
+            .setIcon(icon)
+            .setPerson(conversationPerson)
+            .setIntent(intentProvider.getViewRoomIntent(sessionId, roomId, threadId = null, eventId = null))
+            .setCategories(categories)
+            .setLongLived(true)
+            .let { builder ->
+                when (roomIsDirect) {
+                    true -> builder.addCapabilityBinding("actions.intent.SEND_MESSAGE")
+                    false -> builder.addCapabilityBinding("actions.intent.SEND_MESSAGE", "message.recipient.@type", listOf("Audience"))
+                }
+            }
+            .let { builder ->
+                if (rank == null) {
+                    builder
+                } else {
+                    builder.setRank(rank)
+                }
+            }
+            .build()
     }
 }

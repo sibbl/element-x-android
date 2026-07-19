@@ -75,6 +75,7 @@ import java.util.Locale
 class WearMainActivity : ComponentActivity() {
 
     private var pendingDictationResult: ((String?) -> Unit)? = null
+    private val dictationLaunchGate = DictationLaunchGate()
     private var notificationPermissionState by mutableStateOf(WearNotificationPermissionState.Granted)
     private var pendingDeepLink by mutableStateOf<WearCompanionDeepLink?>(null)
     private var pendingTileDirectReplyRoomId by mutableStateOf<String?>(null)
@@ -103,17 +104,24 @@ class WearMainActivity : ComponentActivity() {
                 ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
                 ?.firstOrNull()
         } else null
+        dictationLaunchGate.finish()
         pendingDictationResult?.invoke(text)
         pendingDictationResult = null
     }
 
     fun launchDictation(onResult: (String?) -> Unit) {
+        if (!dictationLaunchGate.tryStart()) return
         pendingDictationResult = onResult
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
         }
-        dictationLauncher.launch(intent)
+        runCatching { dictationLauncher.launch(intent) }
+            .onFailure {
+                dictationLaunchGate.finish()
+                pendingDictationResult = null
+                onResult(null)
+            }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -129,19 +137,26 @@ class WearMainActivity : ComponentActivity() {
             val nav = rememberSwipeDismissableNavController()
             val scope = rememberCoroutineScope()
             val tileActionTtsProvider = rememberWearTextToSpeechProvider()
-            val openRoomAtBottom: (String) -> Unit = { roomId ->
+            val openRoomAtBottom: (String, Boolean) -> Unit = { roomId, resetBackStack ->
                 pendingRoomScrollRequest = PendingRoomScrollRequest(
                     roomId = roomId,
                     forceScrollToBottom = true,
                 )
                 nav.navigate(roomRoute(roomId)) {
+                    if (resetBackStack) {
+                        popUpTo("favorites") {
+                            inclusive = false
+                            saveState = false
+                        }
+                        restoreState = false
+                    }
                     launchSingleTop = true
                 }
             }
             val openLatestMessageOrRoom: (String) -> Unit = { roomId ->
                 val latestEventId = bridge.getCachedTimeline(roomId).lastOrNull()?.eventId
                 if (latestEventId == null) {
-                    openRoomAtBottom(roomId)
+                    openRoomAtBottom(roomId, false)
                 } else {
                     nav.navigate(messageRoute(roomId = roomId, eventId = latestEventId)) {
                         launchSingleTop = true
@@ -152,26 +167,29 @@ class WearMainActivity : ComponentActivity() {
                 requestNotificationPermissionIfNeeded()
             }
             LaunchedEffect(pendingDeepLink) {
-                pendingDeepLink?.let { deepLink ->
+                val deepLink = pendingDeepLink ?: return@LaunchedEffect
+                pendingDeepLink = null
+                deepLink.let {
                     when {
-                        deepLink.threadRootEventId != null -> {
-                            prepareDeepLinkBackStackScroll(deepLink)
-                            navigateFromRoot(nav = nav, deepLink = deepLink)
+                        it.threadRootEventId != null -> {
+                            prepareDeepLinkBackStackScroll(it)
+                            navigateFromRoot(nav = nav, deepLink = it)
                         }
-                        deepLink.eventId == null -> {
-                            openRoomAtBottom(deepLink.roomId)
+                        it.eventId == null -> {
+                            openRoomAtBottom(it.roomId, true)
                         }
                         else -> {
-                            prepareDeepLinkBackStackScroll(deepLink)
-                            navigateFromRoot(nav = nav, deepLink = deepLink)
+                            prepareDeepLinkBackStackScroll(it)
+                            navigateFromRoot(nav = nav, deepLink = it)
                         }
                     }
-                    pendingDeepLink = null
                 }
             }
             LaunchedEffect(pendingTileDirectReplyRoomId) {
-                pendingTileDirectReplyRoomId?.let { roomId ->
-                    openRoomAtBottom(roomId)
+                pendingTileDirectReplyRoomId?.let { pendingRoomId ->
+                    pendingTileDirectReplyRoomId = null
+                    val roomId = pendingRoomId
+                    openRoomAtBottom(roomId, true)
                     launchDictation { dictated ->
                         if (!dictated.isNullOrBlank()) {
                             scope.launch {
@@ -190,17 +208,17 @@ class WearMainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    pendingTileDirectReplyRoomId = null
                 }
             }
             LaunchedEffect(pendingTileReadLatest) {
-                pendingTileReadLatest?.let { pending ->
+                val pending = pendingTileReadLatest ?: return@LaunchedEffect
+                pendingTileReadLatest = null
+                pending.let {
                     if (pending.previewText.isNullOrBlank()) {
-                        openRoomAtBottom(pending.roomId)
+                        openRoomAtBottom(pending.roomId, true)
                     } else {
                         tileActionTtsProvider().speak(pending.previewText)
                     }
-                    pendingTileReadLatest = null
                 }
             }
             LaunchedEffect(transientErrorMessage) {
@@ -219,7 +237,7 @@ class WearMainActivity : ComponentActivity() {
                                 val ttsProvider = rememberWearTextToSpeechProvider()
                                 FavoritesScreen(
                                     bridge = bridge,
-                                    onRoomSelected = openRoomAtBottom,
+                                    onRoomSelected = { roomId -> openRoomAtBottom(roomId, false) },
                                     onLongPressRoom = { room ->
                                         when (settings.longPressConversationAction) {
                                             WatchLongPressConversationAction.READ_LATEST -> {
@@ -609,10 +627,26 @@ private fun navigateFromRoot(
             if (index == 0) {
                 popUpTo("favorites") {
                     inclusive = false
+                    saveState = false
                 }
             }
-            launchSingleTop = true
+            launchSingleTop = false
+            restoreState = false
         }
+    }
+}
+
+internal class DictationLaunchGate {
+    private var inFlight = false
+
+    fun tryStart(): Boolean {
+        if (inFlight) return false
+        inFlight = true
+        return true
+    }
+
+    fun finish() {
+        inFlight = false
     }
 }
 

@@ -131,5 +131,6 @@ data class WatchPlaybackDescriptor(
     val playbackUri: String,
     val durationMs: Long,
     val mimeType: String,
+    val audioBase64: String? = null,
     val requiresBluetoothPreferred: Boolean = false,
 )

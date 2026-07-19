@@ -102,6 +102,55 @@ class WatchNotificationBridgePublisherTest {
     }
 
     @Test
+    fun `message notification bodies preserve line breaks instead of becoming one-line previews`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(
+                    eventId = "\$multiline:server",
+                    timestamp = 1L,
+                    body = "First line\r\nSecond    line\n\n\nThird line",
+                ),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.bodyText).isEqualTo("First line\nSecond line\n\nThird line")
+        assertThat(payload.notification.previewMessages.single().bodyText).isEqualTo("First line\nSecond line\n\nThird line")
+    }
+
+    @Test
+    fun `message notification bodies are no longer truncated to short previews`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            clock = { 100L },
+        )
+        val longBody = "Long message ".repeat(40).trim()
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(
+                    eventId = "\$long:server",
+                    timestamp = 1L,
+                    body = longBody,
+                ),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.bodyText).isEqualTo(longBody)
+        assertThat(payload.notification.bodyText?.endsWith("…")).isFalse()
+    }
+
+    @Test
     fun `direct room notifications preserve dm room kind`() = runTest {
         val transport = RecordingTransport()
         val publisher = WatchNotificationBridgePublisherDelegate(
@@ -156,6 +205,47 @@ class WatchNotificationBridgePublisherTest {
         val payload = transport.published.single().second.payload as WatchSync.MessageNotification
         assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
         assertThat(payload.notification.customVibrationPattern).isEqualTo("120 60 240")
+        assertThat(payload.notification.vibrationSettingsSnapshot?.conversationOverrides).containsExactly(
+            WatchConversationVibrationOverride(
+                roomId = "!room:server",
+                pattern = WatchNotificationVibrationPattern.CUSTOM,
+                customPattern = "120 60 240",
+            ),
+        )
+    }
+
+    @Test
+    fun `notification embeds vibration settings snapshot for category alerting`() = runTest {
+        val transport = RecordingTransport()
+        val publisher = WatchNotificationBridgePublisherDelegate(
+            transport = transport,
+            imageLabel = "Image",
+            settingsProvider = {
+                WatchCompanionSettings(
+                    notificationVibrations = WatchNotificationVibrationSettings(
+                        groups = WatchNotificationVibrationPattern.TRIPLE,
+                        favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
+                        favoriteGroupsCustomPattern = "100 50 400",
+                    ),
+                )
+            },
+            clock = { 100L },
+        )
+
+        publisher.onMessageNotificationsRendered(
+            listOf(
+                aNotifiableMessageEvent(eventId = "\$group:server", timestamp = 2L, body = "Hello group"),
+            ),
+        )
+
+        val payload = transport.published.single().second.payload as WatchSync.MessageNotification
+        assertThat(payload.notification.vibrationSettingsSnapshot).isEqualTo(
+            WatchNotificationVibrationSettings(
+                groups = WatchNotificationVibrationPattern.TRIPLE,
+                favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
+                favoriteGroupsCustomPattern = "100 50 400",
+            ),
+        )
     }
 
     @Test

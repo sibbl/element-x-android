@@ -7,11 +7,13 @@
 
 package io.element.android.wearapp.notifications
 
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchCompanionSettings
+import io.element.android.watchbridge.contract.WatchConversationVibrationOverride
 import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
@@ -90,7 +92,7 @@ class WearLocalNotificationManagerTest {
 
         val channel = buildWearLocalNotificationChannel(context, vibration)
 
-        assertThat(channel.id).startsWith("wear_companion_messages_v15_generic_custom_")
+        assertThat(channel.id).startsWith("wear_companion_messages_v16_generic_custom_")
         assertThat(channel.shouldVibrate()).isTrue()
         assertThat(channel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 120L, 60L, 240L))
         assertThat(channel.sound).isNull()
@@ -129,13 +131,13 @@ class WearLocalNotificationManagerTest {
         }
 
         val createdManualChannels = notificationManager.notificationChannels
-            .filter { it.id == "wear_companion_messages_v15_group_triple" }
+            .filter { it.id == "wear_companion_messages_v16_group_triple" }
 
         assertThat(createdManualChannels).hasSize(1)
         assertThat(createdManualChannels.single().vibrationPattern?.toList())
             .isEqualTo(listOf(0L, 70L, 70L, 100L, 70L, 130L))
         assertThat(notificationManager.activeNotifications.single().notification.channelId)
-            .isEqualTo("wear_companion_messages_v15_group_triple")
+            .isEqualTo("wear_companion_messages_v16_group_triple")
     }
 
     @Test
@@ -167,7 +169,7 @@ class WearLocalNotificationManagerTest {
         }
 
         val customChannels = notificationManager.notificationChannels
-            .filter { it.id.startsWith("wear_companion_messages_v15_notification_override_custom_") }
+            .filter { it.id.startsWith("wear_companion_messages_v16_notification_override_custom_") }
 
         assertThat(customChannels.map { it.id }).hasSize(1)
         customChannels.forEach { channel ->
@@ -175,6 +177,69 @@ class WearLocalNotificationManagerTest {
             assertThat(channel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 120L, 60L, 240L))
             assertThat(channel.sound).isNull()
         }
+    }
+
+    @Test
+    fun `show routes around a stale room-specific custom waveform channel before posting`() {
+        val roomId = "!dm:server"
+        val desiredVibration = WearResolvedNotificationVibration(
+            pattern = WatchNotificationVibrationPattern.CUSTOM,
+            customTimingsMs = listOf(0L, 120L, 60L, 240L),
+            source = WearNotificationVibrationSource.Conversation(roomId),
+        )
+        val channelId = wearLocalNotificationChannelId(desiredVibration)
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                channelId,
+                "Broken custom room channel",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+            },
+        )
+        assertThat(notificationManager.getNotificationChannel(channelId).shouldVibrate()).isFalse()
+
+        val manager = WearLocalNotificationManager(
+            context = context,
+            factory = WearLocalNotificationFactory(
+                context = context,
+                settingsProvider = {
+                    WatchCompanionSettings(
+                        notificationVibrations = WatchNotificationVibrationSettings(
+                            conversationOverrides = listOf(
+                                WatchConversationVibrationOverride(
+                                    roomId = roomId,
+                                    pattern = WatchNotificationVibrationPattern.CUSTOM,
+                                    customPattern = "120 60 240",
+                                ),
+                            ),
+                        ),
+                    )
+                },
+                roomInfoProvider = { null },
+            ),
+            notificationsAllowedProvider = { true },
+        )
+
+        manager.show(
+            notification = WatchMessageNotification(
+                notificationKey = "room-custom-haptic",
+                roomId = roomId,
+                eventId = "\$event-room-custom:server",
+                roomDisplayName = "Alice",
+                timestampMs = 100L,
+            ),
+            generatedAtMs = 100L,
+            expiresAtMs = null,
+        )
+
+        val repairedChannelId = notificationManager.activeNotifications.single().notification.channelId
+        assertThat(repairedChannelId).startsWith("${channelId}_repair_")
+        val repairedChannel = notificationManager.getNotificationChannel(repairedChannelId)
+        assertThat(repairedChannel.shouldVibrate()).isTrue()
+        assertThat(repairedChannel.vibrationPattern?.toList()).isEqualTo(listOf(0L, 120L, 60L, 240L))
+        assertThat(notificationManager.getNotificationChannel(channelId).shouldVibrate()).isFalse()
     }
 
     @Test
@@ -231,8 +296,8 @@ class WearLocalNotificationManagerTest {
             .map { it.notification.channelId }
 
         assertThat(activeChannelIds).containsAtLeast(
-            "wear_companion_messages_v15_group_default",
-            "wear_companion_messages_v15_group_silent",
+            "wear_companion_messages_v16_group_default",
+            "wear_companion_messages_v16_group_silent",
         )
     }
 }

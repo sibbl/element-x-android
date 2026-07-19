@@ -82,6 +82,7 @@ sealed interface WatchCommand : WatchPayload {
         override val requestId: String,
         val roomId: String,
         val eventId: String,
+        val threadRootEventId: String? = null,
     ) : WatchCommand
 
     @Serializable

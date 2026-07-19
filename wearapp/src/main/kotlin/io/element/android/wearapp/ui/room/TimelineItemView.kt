@@ -84,6 +84,7 @@ internal fun TimelineMessageRow(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val bodyOverflow = TextOverflow.Clip
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -127,10 +128,11 @@ internal fun TimelineMessageRow(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
                         onRequestMediaPreview = onRequestMediaPreview,
-                        maxLines = 10,
+                        maxLines = Int.MAX_VALUE,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = primaryTextColor,
                         ),
+                        overflow = bodyOverflow,
                     )
                 }
             },
@@ -140,10 +142,11 @@ internal fun TimelineMessageRow(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
                         onRequestMediaPreview = onRequestMediaPreview,
-                        maxLines = 10,
+                        maxLines = Int.MAX_VALUE,
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = secondaryTextColor,
                         ),
+                        overflow = bodyOverflow,
                     )
                 }
             } else null,
@@ -254,7 +257,7 @@ internal fun MessageDetailedBody(
     mediaPreviewBytes: ByteArray? = null,
     onRequestMediaPreview: (() -> Unit)? = null,
     onOpenImage: (() -> Unit)? = null,
-    onPlayVoice: ((String) -> Unit)? = null,
+    onPlayVoice: ((WatchTimelineItem) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     when (item.kind) {
@@ -470,7 +473,7 @@ internal fun rememberDecodedImageBitmap(
 @Composable
 private fun VoiceMessageDetailedView(
     item: WatchTimelineItem,
-    onPlay: ((String) -> Unit)? = null,
+    onPlay: ((WatchTimelineItem) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val meta = item.voiceMessageMeta
@@ -491,11 +494,10 @@ private fun VoiceMessageDetailedView(
             if (meta.waveform.isNotEmpty()) {
                 WaveformView(waveform = meta.waveform)
             }
-            val audioUrl = meta.audioUrl
-            if (audioUrl != null && onPlay != null) {
+            if (onPlay != null) {
                 FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onPlay(audioUrl) },
+                    onClick = { onPlay(item) },
                 ) {
                     Text("▶  ${stringResource(R.string.play_voice_message)}")
                 }

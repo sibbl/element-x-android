@@ -170,4 +170,16 @@ class WearMainActivityDeepLinkTest {
         assertThat(intent.getStringExtra(EXTRA_VOICE_ROOM_ID)).isEqualTo("!room:server")
         assertThat(intent.getStringExtra(EXTRA_VOICE_ROOM_DISPLAY_NAME)).isEqualTo("Room")
     }
+
+    @Test
+    fun `dictation launch gate rejects duplicate starts until finished`() {
+        val gate = DictationLaunchGate()
+
+        assertThat(gate.tryStart()).isTrue()
+        assertThat(gate.tryStart()).isFalse()
+
+        gate.finish()
+
+        assertThat(gate.tryStart()).isTrue()
+    }
 }

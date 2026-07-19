@@ -7,9 +7,11 @@
 
 package io.element.android.x.watchbridge
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import io.element.android.libraries.architecture.AsyncData
 import io.element.android.libraries.matrix.api.core.EventId
@@ -19,10 +21,12 @@ import io.element.android.libraries.matrix.api.core.UserId
 import io.element.android.libraries.matrix.api.media.MatrixMediaLoader
 import io.element.android.libraries.matrix.api.media.MediaFile
 import io.element.android.libraries.matrix.api.media.MediaSource
+import io.element.android.libraries.matrix.api.media.MediaUploadHandler
 import io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem
 import io.element.android.libraries.matrix.api.timeline.item.EmbeddedEventInfo
 import io.element.android.libraries.matrix.api.timeline.item.EventThreadInfo
 import io.element.android.libraries.matrix.api.timeline.item.ThreadSummary
+import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EventOrTransactionId
 import io.element.android.libraries.matrix.api.timeline.item.event.FormattedBody
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageFormat
@@ -30,6 +34,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageTy
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
 import io.element.android.libraries.matrix.api.user.MatrixUser
 import io.element.android.libraries.matrix.test.AN_AVATAR_URL
+import io.element.android.libraries.matrix.test.A_ROOM_ID
 import io.element.android.libraries.matrix.test.A_USER_ID
 import io.element.android.libraries.matrix.test.A_USER_NAME
 import io.element.android.libraries.matrix.test.media.aMediaSource
@@ -37,6 +42,7 @@ import io.element.android.libraries.matrix.test.room.FakeBaseRoom
 import io.element.android.libraries.matrix.test.room.FakeJoinedRoom
 import io.element.android.libraries.matrix.test.room.aRoomMember
 import io.element.android.libraries.matrix.test.room.aRoomInfo
+import io.element.android.libraries.matrix.test.timeline.FakeTimeline
 import io.element.android.libraries.matrix.test.timeline.aMessageContent
 import io.element.android.libraries.matrix.test.timeline.aProfileDetails
 import io.element.android.libraries.matrix.test.timeline.anEventTimelineItem
@@ -44,6 +50,7 @@ import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
+import io.element.android.watchbridge.contract.WatchVoiceDraft
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -53,6 +60,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.URL
 import kotlin.math.max
 
@@ -208,6 +216,87 @@ class ElementXWatchBridgeRuntimeTest {
         )
 
         assertThat(projection.items.single().voiceMessageMeta?.audioUrl).isNull()
+    }
+
+    @Test
+    fun `audio timeline projection carries playable audio metadata`() {
+        val audioEvent = MatrixTimelineItem.Event(
+            uniqueId = UniqueId("audio"),
+            event = anEventTimelineItem(
+                eventId = EventId("\$audio:server"),
+                timestamp = 1L,
+                content = aMessageContent(
+                    body = "Audio message",
+                    messageType = AudioMessageType(
+                        filename = "audio.mp3",
+                        caption = null,
+                        formattedCaption = null,
+                        source = MediaSource("mxc://server/audio"),
+                        info = null,
+                    ),
+                ),
+            ),
+        )
+
+        val projection = listOf(audioEvent).toWatchTimelineProjection(
+            roomId = "!room:server",
+            limit = 20,
+        )
+
+        val item = projection.items.single()
+        assertThat(item.kind.name).isEqualTo("VOICE")
+        assertThat(item.voiceMessageMeta).isNotNull()
+        assertThat(item.voiceMessageMeta?.audioUrl).isNull()
+    }
+
+    @Test
+    fun `watch voice message waits for upload handler before reporting success`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        lateinit var uploadHandler: RecordingMediaUploadHandler
+        val timeline = FakeTimeline().apply {
+            sendVoiceMessageLambda = { file, _, _, _ ->
+                uploadHandler = RecordingMediaUploadHandler(file)
+                Result.success(uploadHandler)
+            }
+        }
+        val room = FakeJoinedRoom(liveTimeline = timeline)
+
+        val result = sendWatchVoiceMessage(
+            context = context,
+            room = room,
+            draft = aWatchVoiceDraft(),
+            audioBytes = byteArrayOf(1, 2, 3, 4),
+        )
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(uploadHandler.awaitCalled).isTrue()
+        assertThat(uploadHandler.fileExistedWhenAwaited).isTrue()
+        assertThat(uploadHandler.file.exists()).isFalse()
+    }
+
+    @Test
+    fun `watch voice message returns failure when upload handler fails`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val uploadFailure = IllegalStateException("upload failed")
+        lateinit var uploadHandler: RecordingMediaUploadHandler
+        val timeline = FakeTimeline().apply {
+            sendVoiceMessageLambda = { file, _, _, _ ->
+                uploadHandler = RecordingMediaUploadHandler(file, Result.failure(uploadFailure))
+                Result.success(uploadHandler)
+            }
+        }
+        val room = FakeJoinedRoom(liveTimeline = timeline)
+
+        val result = sendWatchVoiceMessage(
+            context = context,
+            room = room,
+            draft = aWatchVoiceDraft(),
+            audioBytes = byteArrayOf(1, 2, 3, 4),
+        )
+
+        assertThat(result.exceptionOrNull()).isSameInstanceAs(uploadFailure)
+        assertThat(uploadHandler.awaitCalled).isTrue()
+        assertThat(uploadHandler.file.exists()).isFalse()
     }
 
     @Test
@@ -381,5 +470,35 @@ class ElementXWatchBridgeRuntimeTest {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)
             output.toByteArray()
         }
+    }
+
+    private fun aWatchVoiceDraft() = WatchVoiceDraft(
+        draftId = "draft-id",
+        roomId = A_ROOM_ID.value,
+        tempAudioUri = "file://watch/voice.ogg",
+        durationMs = 3_000L,
+        mimeType = "audio/ogg",
+        sampleRateHz = 16_000,
+        channelCount = 1,
+        sizeBytes = 4L,
+        waveform = listOf(25, 50, 75),
+    )
+
+    private class RecordingMediaUploadHandler(
+        val file: File,
+        private val result: Result<Unit> = Result.success(Unit),
+    ) : MediaUploadHandler {
+        var awaitCalled = false
+            private set
+        var fileExistedWhenAwaited = false
+            private set
+
+        override suspend fun await(): Result<Unit> {
+            awaitCalled = true
+            fileExistedWhenAwaited = file.exists()
+            return result
+        }
+
+        override fun cancel() = Unit
     }
 }

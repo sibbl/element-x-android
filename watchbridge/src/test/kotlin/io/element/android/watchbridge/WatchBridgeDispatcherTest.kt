@@ -72,6 +72,7 @@ class WatchBridgeDispatcherTest {
         var ensureLoadedCalls: MutableList<Int> = mutableListOf()
         val roomMediaPreviewCalls = mutableListOf<Pair<String, String>>()
         val voiceDraftCalls = mutableListOf<Pair<WatchVoiceDraft, ByteArray>>()
+        val playbackDescriptorCalls = mutableListOf<PlaybackDescriptorCall>()
         val markAsReadCalls = mutableListOf<MarkAsReadCall>()
         override fun favorites(): Flow<List<WatchFavoriteRoom>> = flowOf(favorites)
         override suspend fun ensureRoomListLoaded(minimumCount: Int) {
@@ -99,8 +100,9 @@ class WatchBridgeDispatcherTest {
             voiceDraftCalls += draft to audioBytes
             return sendVoiceResult
         }
-        override suspend fun playbackDescriptor(roomId: String, eventId: String) =
-            Result.success(
+        override suspend fun playbackDescriptor(roomId: String, eventId: String, threadRootEventId: String?): Result<WatchPlaybackDescriptor> {
+            playbackDescriptorCalls += PlaybackDescriptorCall(roomId, eventId, threadRootEventId)
+            return Result.success(
                 WatchPlaybackDescriptor(
                     eventId = eventId,
                     roomId = roomId,
@@ -109,6 +111,7 @@ class WatchBridgeDispatcherTest {
                     mimeType = "audio/ogg",
                 ),
             )
+        }
         override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> =
             if (avatarThumbnailResults.isEmpty()) Result.success(null) else avatarThumbnailResults.removeFirst()
         override suspend fun markAsRead(roomId: String, eventId: String, threadRootEventId: String?): Result<Unit> {
@@ -118,6 +121,12 @@ class WatchBridgeDispatcherTest {
     }
 
     private data class MarkAsReadCall(
+        val roomId: String,
+        val eventId: String,
+        val threadRootEventId: String?,
+    )
+
+    private data class PlaybackDescriptorCall(
         val roomId: String,
         val eventId: String,
         val threadRootEventId: String?,
@@ -292,6 +301,33 @@ class WatchBridgeDispatcherTest {
             .filterIsInstance<WatchAck.Sent>()
             .singleOrNull { it.requestId == "mark-read-1" }
         assertThat(sentAck).isNotNull()
+    }
+
+    @Test
+    fun `request playback forwards thread root and returns descriptor`() = runTest(StandardTestDispatcher()) {
+        val transport = RecordingTransport()
+        val port = StubPort()
+        val dispatcher = WatchBridgeDispatcher(port, transport, this, clock = { 0L })
+
+        dispatcher.onEnvelope(
+            WatchSyncEnvelope(
+                generatedAtMs = 0L,
+                payload = WatchCommand.RequestPlayback(
+                    requestId = "playback-1",
+                    roomId = "!a:s",
+                    eventId = "\$voice:s",
+                    threadRootEventId = "\$root:s",
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(port.playbackDescriptorCalls).containsExactly(PlaybackDescriptorCall("!a:s", "\$voice:s", "\$root:s"))
+        val ack = transport.messages
+            .map { it.second.payload }
+            .filterIsInstance<WatchAck.PlaybackReady>()
+            .singleOrNull { it.requestId == "playback-1" }
+        assertThat(ack?.descriptor?.eventId).isEqualTo("\$voice:s")
     }
 
     @Test

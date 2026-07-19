@@ -22,6 +22,7 @@ import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchThreadItem
 import io.element.android.watchbridge.contract.WatchTimelineItem
+import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
@@ -31,6 +32,7 @@ import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.room.RoomView
 import io.element.android.wearapp.ui.room.RoomViewState
 import io.element.android.wearapp.ui.room.displayText
+import io.element.android.wearapp.ui.room.hasTextForTts
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
@@ -127,7 +129,11 @@ fun ThreadScreen(
         onListPositionChange = onListPositionChange,
         mediaPreviewFlowProvider = bridge::mediaPreviewFlow,
         onRequestMediaPreview = bridge::requestMediaPreview,
-        onLongPressMessage = { item -> tts.speak(item.displayText()) },
+        onLongPressMessage = { item ->
+            if (item.hasTextForTts()) {
+                tts.speak(item.displayText())
+            }
+        },
         onReact = {
             timelineItems.lastOrNull()?.let { lastItem ->
                 onMessageSelected(lastItem.eventId)
@@ -179,6 +185,6 @@ internal fun WatchThreadItem.toTimelineItem(): WatchTimelineItem = WatchTimeline
     reactions = reactions,
     voiceMessageMeta = voiceMessageMeta,
     mediaPreview = mediaPreview,
-    readableByTts = true,
+    readableByTts = kind in setOf(WatchTimelineItemKind.TEXT, WatchTimelineItemKind.EMOTE, WatchTimelineItemKind.NOTICE),
     threadLastReplyText = null,
 )

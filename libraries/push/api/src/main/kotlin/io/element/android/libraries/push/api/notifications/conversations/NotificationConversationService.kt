@@ -28,6 +28,15 @@ interface NotificationConversationService {
     )
 
     /**
+     * Called when the ordered list of recent rooms changes.
+     * It should update the app launcher conversation shortcuts in the same order, newest first.
+     */
+    suspend fun onRecentRoomsChanged(
+        sessionId: SessionId,
+        rooms: List<NotificationConversationShortcutRoom>,
+    )
+
+    /**
      * Called when a room is left.
      * It should remove the conversation shortcut for this room.
      */
@@ -39,3 +48,10 @@ interface NotificationConversationService {
      */
     suspend fun onAvailableRoomsChanged(sessionId: SessionId, roomIds: Set<RoomId>)
 }
+
+data class NotificationConversationShortcutRoom(
+    val roomId: RoomId,
+    val roomName: String?,
+    val roomIsDirect: Boolean,
+    val roomAvatarUrl: String?,
+)

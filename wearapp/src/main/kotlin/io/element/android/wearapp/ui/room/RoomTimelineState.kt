@@ -100,9 +100,12 @@ internal fun WatchTimelineItem.displayText(): String {
         ?.let { it.toPlainTimelineText() }
         ?.takeIf { it.isNotBlank() }
     return formatted
-        ?: bodyText?.takeIf { it.isNotBlank() }
+        ?: bodyText?.normalizeRawTimelineText()?.takeIf { it.isNotBlank() }
         ?: "[${kind.name.lowercase()}]"
 }
+
+internal fun WatchTimelineItem.hasTextForTts(): Boolean =
+    readableByTts && (formattedText?.toPlainTimelineText()?.isNotBlank() == true || bodyText?.normalizeRawTimelineText()?.isNotBlank() == true)
 
 internal fun WatchTimelineItem.richDisplayText(): AnnotatedString {
     val formatted = formattedText
@@ -110,8 +113,12 @@ internal fun WatchTimelineItem.richDisplayText(): AnnotatedString {
         ?.let { it.toRichTimelineText() }
         ?.takeIf { it.text.isNotBlank() }
     return formatted
-        ?: AnnotatedString(bodyText?.takeIf { it.isNotBlank() } ?: "[${kind.name.lowercase()}]")
+        ?: AnnotatedString(bodyText?.normalizeRawTimelineText()?.takeIf { it.isNotBlank() } ?: "[${kind.name.lowercase()}]")
 }
+
+private fun String.normalizeRawTimelineText(): String =
+    replace("\r\n", "\n")
+        .replace('\r', '\n')
 
 private fun String.toPlainTimelineText(): String {
     return HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_COMPACT)

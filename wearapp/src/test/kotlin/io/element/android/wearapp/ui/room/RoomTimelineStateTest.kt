@@ -39,6 +39,26 @@ class RoomTimelineStateTest {
     }
 
     @Test
+    fun `plain body text preserves normalized line breaks when formatted text is absent`() {
+        val item = aTextTimelineItem(
+            bodyText = "First line\r\nSecond line\rThird line",
+            formattedText = null,
+        )
+
+        assertThat(item.displayText()).isEqualTo("First line\nSecond line\nThird line")
+        assertThat(item.richDisplayText().text).isEqualTo("First line\nSecond line\nThird line")
+    }
+
+    @Test
+    fun `display text preserves block line breaks from formatted html`() {
+        val item = aTextTimelineItem(
+            formattedText = "<p>Intro</p><ul><li>First bullet</li><li>Second bullet</li></ul><blockquote>Quote<br>continued</blockquote>",
+        )
+
+        assertThat(item.displayText()).isEqualTo("Intro\nFirst bullet\nSecond bullet\nQuote\ncontinued")
+    }
+
+    @Test
     fun `rich display text preserves formatting spans`() {
         val item = aTextTimelineItem(
             formattedText = "<strong>Bold</strong> <em>italic</em><br><a href=\"https://example.org\">link</a>",
@@ -55,8 +75,27 @@ class RoomTimelineStateTest {
             .isEqualTo("https://example.org")
     }
 
+    @Test
+    fun `tts readability requires real readable text`() {
+        val textItem = aTextTimelineItem(bodyText = "Hello", formattedText = null)
+        val voiceItem = WatchTimelineItem(
+            eventId = "\$voice:server",
+            roomId = "!room:server",
+            senderId = "@alice:server",
+            senderDisplayName = "Alice",
+            timestampMs = 1L,
+            kind = WatchTimelineItemKind.VOICE,
+            bodyText = null,
+            readableByTts = false,
+        )
+
+        assertThat(textItem.hasTextForTts()).isTrue()
+        assertThat(voiceItem.hasTextForTts()).isFalse()
+    }
+
     private fun aTextTimelineItem(
-        formattedText: String,
+        bodyText: String = "Plain fallback",
+        formattedText: String?,
     ) = WatchTimelineItem(
         eventId = "\$event:server",
         roomId = "!room:server",
@@ -64,7 +103,7 @@ class RoomTimelineStateTest {
         senderDisplayName = "Alice",
         timestampMs = 1L,
         kind = WatchTimelineItemKind.TEXT,
-        bodyText = "Plain fallback",
+        bodyText = bodyText,
         formattedText = formattedText,
     )
 }

@@ -20,9 +20,10 @@ import io.element.android.libraries.matrix.api.MatrixClientProvider
 import io.element.android.libraries.matrix.ui.media.ImageLoaderHolder
 import io.element.android.libraries.push.api.notifications.NotificationBitmapLoader
 import io.element.android.libraries.push.api.notifications.NotificationCleaner
+import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationService
 import io.element.android.libraries.sessionstorage.api.SessionStore
-import io.element.android.services.appnavstate.api.AppNavigationStateService
 import io.element.android.libraries.workmanager.api.di.MetroWorkerFactory
+import io.element.android.services.appnavstate.api.AppNavigationStateService
 import kotlin.reflect.KClass
 
 @DependencyGraph(AppScope::class)
@@ -34,6 +35,7 @@ interface AppGraph : NodeFactoriesBindings {
     val imageLoaderHolder: ImageLoaderHolder
     val notificationBitmapLoader: NotificationBitmapLoader
     val notificationCleaner: NotificationCleaner
+    val notificationConversationService: NotificationConversationService
 
     @Multibinds
     val workerProviders:

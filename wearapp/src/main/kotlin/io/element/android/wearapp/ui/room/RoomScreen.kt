@@ -77,7 +77,9 @@ fun RoomScreen(
         onRequestMediaPreview = bridge::requestMediaPreview,
         onLongPressMessage = { item ->
             when (settings.longPressMessageAction) {
-                WatchLongPressMessageAction.READ_ALOUD -> tts.speak(item.displayText())
+                WatchLongPressMessageAction.READ_ALOUD -> if (item.hasTextForTts()) {
+                    tts.speak(item.displayText())
+                }
                 WatchLongPressMessageAction.CREATE_THREAD -> {
                     val rootId = item.threadRootEventId ?: item.eventId
                     onOpenThread(rootId)

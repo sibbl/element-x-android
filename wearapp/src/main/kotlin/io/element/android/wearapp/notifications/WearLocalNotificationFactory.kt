@@ -86,7 +86,7 @@ internal class WearLocalNotificationFactory(
     },
 ) {
     internal fun selectedVibration(notification: WatchMessageNotification): WearResolvedNotificationVibration {
-        val settings = settingsProvider()
+        val vibrationSettings = notification.vibrationSettingsSnapshot ?: settingsProvider().notificationVibrations
         notification.vibrationPatternOverride?.let {
             return resolveConfiguredVibration(
                 pattern = it,
@@ -94,7 +94,7 @@ internal class WearLocalNotificationFactory(
                 source = WearNotificationVibrationSource.NotificationOverride,
             )
         }
-        settings.notificationVibrations.conversationOverrides
+        vibrationSettings.conversationOverrides
             .firstOrNull { it.roomId == notification.roomId }
             ?.let { roomOverride ->
                 roomOverride.pattern?.let { pattern ->
@@ -108,7 +108,7 @@ internal class WearLocalNotificationFactory(
         val roomInfo = roomInfoProvider(notification.roomId)
         val roomKind = roomInfo?.kind ?: notification.roomKind
         val isFavorite = roomInfo?.isFavorite == true
-        val patterns = settings.notificationVibrations
+        val patterns = vibrationSettings
         val pattern = when {
             isFavorite && roomKind == WatchRoomKind.DM -> patterns.favoriteDms
             isFavorite && roomKind == WatchRoomKind.GROUP -> patterns.favoriteGroups

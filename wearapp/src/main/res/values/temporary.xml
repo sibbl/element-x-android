@@ -72,4 +72,5 @@
     <string name="watch_error_send_failed">Couldn’t send message</string>
     <string name="watch_error_reaction_failed">Couldn’t send reaction</string>
     <string name="watch_error_voice_send_failed">Couldn’t send voice message</string>
+    <string name="watch_error_voice_playback_failed">Couldn’t play voice message</string>
 </resources>

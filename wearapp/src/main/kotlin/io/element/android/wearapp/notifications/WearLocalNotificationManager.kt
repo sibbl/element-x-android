@@ -47,8 +47,10 @@ internal class WearLocalNotificationManager(
             return
         }
         val resolvedVibration = factory.selectedVibration(notification)
-        val channelId = wearLocalNotificationChannelId(resolvedVibration)
-        ensureChannel(resolvedVibration, channelId)
+        val channelId = ensureChannel(
+            resolvedVibration = resolvedVibration,
+            requestedChannelId = wearLocalNotificationChannelId(resolvedVibration),
+        )
         notificationManagerCompat.cancel(wearLocalNotificationId(notification.notificationKey))
         notificationManagerCompat.notify(
             wearLocalNotificationId(notification.notificationKey),
@@ -62,23 +64,53 @@ internal class WearLocalNotificationManager(
 
     private fun ensureChannel(
         resolvedVibration: WearResolvedNotificationVibration,
-        channelId: String,
-    ) {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(
-            buildWearLocalNotificationChannel(
-                context = context,
-                vibration = resolvedVibration,
-                channelId = channelId,
-            ),
+        requestedChannelId: String,
+    ): String {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return requestedChannelId
+        val desiredChannel = buildWearLocalNotificationChannel(
+            context = context,
+            vibration = resolvedVibration,
+            channelId = requestedChannelId,
         )
+        val existingChannel = manager.getNotificationChannel(requestedChannelId)
+        if (existingChannel != null &&
+            requestedChannelId.startsWith(CHANNEL_PREFIX) &&
+            !existingChannel.matchesDesiredNotificationChannel(desiredChannel)
+        ) {
+            val repairedChannelId = "${requestedChannelId}_repair_${desiredChannel.configHash()}"
+            Timber.i("Using repaired watch notification channel id=%s staleId=%s", repairedChannelId, requestedChannelId)
+            manager.createNotificationChannel(
+                buildWearLocalNotificationChannel(
+                    context = context,
+                    vibration = resolvedVibration,
+                    channelId = repairedChannelId,
+                ),
+            )
+            return repairedChannelId
+        }
+        manager.createNotificationChannel(desiredChannel)
+        return requestedChannelId
     }
 
     companion object {
         // Versioned so previously created channels do not keep overriding upgraded alert behavior.
-        // v15 makes NotificationChannel the only source of vibration patterns on Wear OS.
-        internal const val CHANNEL_ID = "wear_companion_messages_v15_generic_default"
+        // v16 routes around stale generated channels when their immutable vibration config no longer matches.
+        internal const val CHANNEL_PREFIX = "wear_companion_messages_v16_"
+        internal const val CHANNEL_ID = "${CHANNEL_PREFIX}generic_default"
     }
+}
+
+private fun NotificationChannel.matchesDesiredNotificationChannel(desiredChannel: NotificationChannel): Boolean {
+    return importance == desiredChannel.importance &&
+        shouldVibrate() == desiredChannel.shouldVibrate() &&
+        vibrationPattern?.toList() == desiredChannel.vibrationPattern?.toList() &&
+        sound == desiredChannel.sound
+}
+
+private fun NotificationChannel.configHash(): String {
+    val patternPart = vibrationPattern?.joinToString(separator = ",") ?: "system"
+    val soundPart = sound?.toString() ?: "none"
+    return "$importance|${shouldVibrate()}|$patternPart|$soundPart".stableShortHash()
 }
 
 private fun defaultCanNotify(
@@ -126,15 +158,15 @@ internal fun buildWearLocalNotificationChannel(
 }
 
 internal fun wearLocalNotificationChannelId(vibration: WearResolvedNotificationVibration): String = when (vibration.pattern) {
-    WatchNotificationVibrationPattern.DEFAULT -> "wear_companion_messages_v15_${vibration.source.idPart}_default"
-    WatchNotificationVibrationPattern.SILENT -> "wear_companion_messages_v15_${vibration.source.idPart}_silent"
-    WatchNotificationVibrationPattern.DOUBLE -> "wear_companion_messages_v15_${vibration.source.idPart}_double"
-    WatchNotificationVibrationPattern.LONG -> "wear_companion_messages_v15_${vibration.source.idPart}_long"
-    WatchNotificationVibrationPattern.TRIPLE -> "wear_companion_messages_v15_${vibration.source.idPart}_triple"
-    WatchNotificationVibrationPattern.PULSE -> "wear_companion_messages_v15_${vibration.source.idPart}_pulse"
-    WatchNotificationVibrationPattern.ESCALATING -> "wear_companion_messages_v15_${vibration.source.idPart}_escalating"
+    WatchNotificationVibrationPattern.DEFAULT -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_default"
+    WatchNotificationVibrationPattern.SILENT -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_silent"
+    WatchNotificationVibrationPattern.DOUBLE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_double"
+    WatchNotificationVibrationPattern.LONG -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_long"
+    WatchNotificationVibrationPattern.TRIPLE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_triple"
+    WatchNotificationVibrationPattern.PULSE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_pulse"
+    WatchNotificationVibrationPattern.ESCALATING -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_escalating"
     WatchNotificationVibrationPattern.CUSTOM -> buildString {
-        append("wear_companion_messages_v15_")
+        append(WearLocalNotificationManager.CHANNEL_PREFIX)
         append(vibration.source.idPart)
         append("_custom_")
         append(vibration.customTimingsMs.stableShortHash())
@@ -143,13 +175,13 @@ internal fun wearLocalNotificationChannelId(vibration: WearResolvedNotificationV
 
 internal fun wearLocalNotificationChannelId(pattern: WatchNotificationVibrationPattern): String = when (pattern) {
     WatchNotificationVibrationPattern.DEFAULT -> WearLocalNotificationManager.CHANNEL_ID
-    WatchNotificationVibrationPattern.SILENT -> "wear_companion_messages_v15_generic_silent"
-    WatchNotificationVibrationPattern.DOUBLE -> "wear_companion_messages_v15_generic_double"
-    WatchNotificationVibrationPattern.LONG -> "wear_companion_messages_v15_generic_long"
-    WatchNotificationVibrationPattern.TRIPLE -> "wear_companion_messages_v15_generic_triple"
-    WatchNotificationVibrationPattern.PULSE -> "wear_companion_messages_v15_generic_pulse"
-    WatchNotificationVibrationPattern.ESCALATING -> "wear_companion_messages_v15_generic_escalating"
-    WatchNotificationVibrationPattern.CUSTOM -> "wear_companion_messages_v15_generic_custom"
+    WatchNotificationVibrationPattern.SILENT -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_silent"
+    WatchNotificationVibrationPattern.DOUBLE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_double"
+    WatchNotificationVibrationPattern.LONG -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_long"
+    WatchNotificationVibrationPattern.TRIPLE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_triple"
+    WatchNotificationVibrationPattern.PULSE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_pulse"
+    WatchNotificationVibrationPattern.ESCALATING -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_escalating"
+    WatchNotificationVibrationPattern.CUSTOM -> "${WearLocalNotificationManager.CHANNEL_PREFIX}generic_custom"
 }
 
 private fun wearLocalNotificationChannelName(

@@ -111,6 +111,37 @@ class WatchBridgeSerializationTest {
     }
 
     @Test
+    fun `playback request and descriptor bytes roundtrip`() {
+        val cmd = WatchCommand.RequestPlayback(
+            requestId = "req-playback",
+            roomId = "!room:server",
+            eventId = "\$voice:server",
+            threadRootEventId = "\$root:server",
+        )
+        val descriptor = WatchPlaybackDescriptor(
+            eventId = "\$voice:server",
+            roomId = "!room:server",
+            playbackUri = "",
+            durationMs = 1234L,
+            mimeType = "audio/ogg",
+            audioBase64 = "AQID",
+        )
+
+        val decodedCmd = ser.decodeEnvelope(ser.encodeEnvelope(WatchSyncEnvelope(generatedAtMs = 0L, payload = cmd))).payload
+        val decodedAck = ser.decodeEnvelope(
+            ser.encodeEnvelope(
+                WatchSyncEnvelope(
+                    generatedAtMs = 0L,
+                    payload = WatchAck.PlaybackReady(requestId = "req-playback", descriptor = descriptor),
+                ),
+            ),
+        ).payload
+
+        assertThat(decodedCmd).isEqualTo(cmd)
+        assertThat((decodedAck as WatchAck.PlaybackReady).descriptor).isEqualTo(descriptor)
+    }
+
+    @Test
     fun `ack types are distinct`() {
         val pending = WatchAck.Pending(requestId = "r", reason = "queued")
         val sent = WatchAck.Sent(requestId = "r", eventId = "\$ev:server")
@@ -176,6 +207,17 @@ class WatchBridgeSerializationTest {
                     isNoisy = true,
                     vibrationPatternOverride = WatchNotificationVibrationPattern.ESCALATING,
                     customVibrationPattern = "120 60 240",
+                    vibrationSettingsSnapshot = WatchNotificationVibrationSettings(
+                        groups = WatchNotificationVibrationPattern.TRIPLE,
+                        favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
+                        favoriteGroupsCustomPattern = "100 50 400",
+                        conversationOverrides = listOf(
+                            WatchConversationVibrationOverride(
+                                roomId = "!room:server",
+                                pattern = WatchNotificationVibrationPattern.ESCALATING,
+                            ),
+                        ),
+                    ),
                 ),
             ),
         )

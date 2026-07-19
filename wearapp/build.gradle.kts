@@ -30,6 +30,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildFeatures {
+        resValues = true
+    }
+
     signingConfigs {
         getByName("debug") {
             keyAlias = "androiddebugkey"

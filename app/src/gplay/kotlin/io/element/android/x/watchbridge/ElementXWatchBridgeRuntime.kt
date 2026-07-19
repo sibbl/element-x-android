@@ -11,6 +11,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Bitmap.CompressFormat
 import android.graphics.BitmapFactory
+import android.util.Base64
 import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.Wearable
 import io.element.android.libraries.androidutils.bitmap.calculateInSampleSize
@@ -59,6 +60,7 @@ import io.element.android.libraries.matrix.api.timeline.item.event.toEventOrTran
 import io.element.android.libraries.matrix.api.timeline.item.virtual.VirtualTimelineItem
 import io.element.android.libraries.matrix.ui.model.getAvatarData
 import io.element.android.libraries.push.api.notifications.NotificationCleaner
+import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationShortcutRoom
 import io.element.android.services.appnavstate.api.currentSessionId
 import io.element.android.watchbridge.ElementXWatchPort
 import io.element.android.watchbridge.WatchBridgeDispatcher
@@ -82,10 +84,12 @@ import io.element.android.watchbridge.transport.PlayServicesWatchTransport
 import io.element.android.x.di.AppGraph
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
@@ -110,6 +114,7 @@ private const val MAX_ROOM_LIST_COUNT = 200
 private const val MAX_LOAD_MORE_ATTEMPTS = 8
 private const val WATCH_AVATAR_SIZE_PX = 64L
 private const val WATCH_MEDIA_PREVIEW_SIZE_PX = 384L
+private const val MAX_WATCH_PLAYBACK_BYTES = 64 * 1024
 private const val MAX_FAVORITE_PREVIEW_TEXT_LENGTH = 180
 private val FAVORITE_PREVIEW_WHITESPACE_REGEX = "\\s+".toRegex()
 private const val WATCH_RUNTIME_PREFS = "element_x_watchbridge_runtime"
@@ -223,7 +228,7 @@ object ElementXWatchBridgeRuntime {
         activeBridge
             ?.takeIf { it.sessionId == sessionId }
             ?.let { bridge ->
-                bridge.dispatcher.stop()
+                bridge.stop()
                 activeBridge = null
             }
         if (rememberedSessionId(appContext) == sessionId.value) {
@@ -243,7 +248,7 @@ object ElementXWatchBridgeRuntime {
             val bridge = activeBridge
             if (bridge != null || rememberedSessionId != null || !hasClearedForMissingSession) {
                 activeBridge = null
-                bridge?.dispatcher?.stop()
+                bridge?.stop()
                 clearWatchState(context, "session cleared")
                 rememberSessionId(context, null)
                 hasClearedForMissingSession = true
@@ -255,7 +260,7 @@ object ElementXWatchBridgeRuntime {
 
         val previousSessionId = activeBridge?.sessionId?.value ?: rememberedSessionId
         if (previousSessionId != null && previousSessionId != sessionId.value) {
-            activeBridge?.dispatcher?.stop()
+            activeBridge?.stop()
             activeBridge = null
             clearWatchState(context, "session changed from $previousSessionId to ${sessionId.value}")
         }
@@ -267,10 +272,40 @@ object ElementXWatchBridgeRuntime {
             settingsStore = settingsStore(context),
         )
         dispatcher.start()
-        activeBridge = ActiveBridge(sessionId, dispatcher)
+        val launcherShortcutsJob = launchLauncherShortcutUpdates(context, sessionId, roomPort, graph)
+        activeBridge = ActiveBridge(sessionId, dispatcher, launcherShortcutsJob)
         rememberSessionId(context, sessionId.value)
         Timber.d("WatchBridge dispatcher started for session=%s", sessionId.value)
         dispatcher
+    }
+
+    private fun launchLauncherShortcutUpdates(
+        context: Context,
+        sessionId: SessionId,
+        roomPort: MatrixRoomListWatchPort,
+        graph: AppGraph,
+    ): Job {
+        return roomPort.client.sessionCoroutineScope.launch {
+            runCatching { roomPort.ensureRoomListLoaded(ROOM_LIST_PAGE_SIZE) }
+                .onFailure { Timber.w(it, "Launcher shortcut room preload failed for session=%s", sessionId.value) }
+            roomPort.launcherRecentRooms()
+                .map { rooms ->
+                    rooms
+                        .map { room ->
+                            NotificationConversationShortcutRoom(
+                                roomId = RoomId(room.roomId),
+                                roomName = room.displayName,
+                                roomIsDirect = room.kind == WatchRoomKind.DM,
+                                roomAvatarUrl = room.avatarUri,
+                            )
+                        }
+                }
+                .distinctUntilChanged()
+                .catch { failure -> Timber.w(failure, "Launcher shortcut room updates failed for session=%s", sessionId.value) }
+                .collect { rooms ->
+                    graph.notificationConversationService.onRecentRoomsChanged(sessionId, rooms)
+                }
+        }
     }
 
     private suspend fun clearWatchState(context: Context, reason: String) {
@@ -345,7 +380,13 @@ object ElementXWatchBridgeRuntime {
     private data class ActiveBridge(
         val sessionId: SessionId,
         val dispatcher: WatchBridgeDispatcher,
-    )
+        val launcherShortcutsJob: Job,
+    ) {
+        fun stop() {
+            dispatcher.stop()
+            launcherShortcutsJob.cancel()
+        }
+    }
 }
 
 private class MatrixRoomListWatchPort(
@@ -364,6 +405,11 @@ private class MatrixRoomListWatchPort(
     override fun favorites(): Flow<List<WatchFavoriteRoom>> = roomList.summaries
         .onEach { summaries -> subscribeToVisibleRooms(summaries, ROOM_LIST_PAGE_SIZE) }
         .map { summaries -> summaries.toWatchRooms { joinedRoom(it) } }
+        .distinctUntilChanged()
+
+    fun launcherRecentRooms(): Flow<List<WatchFavoriteRoom>> = roomList.summaries
+        .onEach { summaries -> subscribeToVisibleRooms(summaries, ROOM_LIST_PAGE_SIZE) }
+        .map { summaries -> summaries.toWatchRoomsInRoomListOrder { joinedRoom(it) } }
         .distinctUntilChanged()
 
     override suspend fun ensureRoomListLoaded(minimumCount: Int) {
@@ -498,58 +544,46 @@ private class MatrixRoomListWatchPort(
     }
 
     override suspend fun sendVoiceMessage(draft: WatchVoiceDraft, audioBytes: ByteArray): Result<String> {
-        return runCatching {
-            require(audioBytes.isNotEmpty()) { "voice draft is empty" }
-            val room = joinedRoom(draft.roomId) ?: throw NoSuchElementException("room not found")
-            val audioFile = File.createTempFile("watch_voice_${draft.draftId}_", ".ogg", context.cacheDir).apply {
-                writeBytes(audioBytes)
-            }
-            val audioInfo = AudioInfo(
-                duration = draft.durationMs.takeIf { it > 0L }?.milliseconds,
-                size = draft.sizeBytes.takeIf { it > 0L } ?: audioBytes.size.toLong(),
-                mimetype = draft.mimeType,
-            )
-            val waveform = draft.waveform
-                .ifEmpty { listOf(32, 48, 64, 52, 36) }
-                .map { (it.coerceIn(0, 100) / 100f) }
-
-            val threadRootEventId = draft.threadRootEventId
-            try {
-                val sendResult = if (threadRootEventId == null) {
-                    room.liveTimeline.sendVoiceMessage(
-                        file = audioFile,
-                        audioInfo = audioInfo,
-                        waveform = waveform,
-                        inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
-                    )
-                } else {
-                    val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
-                    try {
-                        timeline.sendVoiceMessage(
-                            file = audioFile,
-                            audioInfo = audioInfo,
-                            waveform = waveform,
-                            inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
-                        )
-                    } finally {
-                        timeline.close()
-                    }
-                }
-
-                sendResult.map { "" }.getOrThrow()
-            } finally {
-                if (!audioFile.delete() && audioFile.exists()) {
-                    Timber.w("WatchBridge voice draft temp file could not be deleted")
-                }
-            }
-        }.fold(
-            onSuccess = { Result.success(it) },
-            onFailure = { Result.failure(it) },
+        val room = joinedRoom(draft.roomId) ?: return Result.failure(NoSuchElementException("room not found"))
+        return sendWatchVoiceMessage(
+            context = context,
+            room = room,
+            draft = draft,
+            audioBytes = audioBytes,
         )
     }
 
-    override suspend fun playbackDescriptor(roomId: String, eventId: String): Result<WatchPlaybackDescriptor> {
-        return Result.failure(UnsupportedOperationException("watch playback is not wired yet"))
+    override suspend fun playbackDescriptor(roomId: String, eventId: String, threadRootEventId: String?): Result<WatchPlaybackDescriptor> {
+        val room = joinedRoom(roomId) ?: return Result.failure(NoSuchElementException("room not found"))
+        val timeline = if (threadRootEventId == null) {
+            room.liveTimeline
+        } else {
+            room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
+        }
+        return try {
+            val timelineItems = withTimeoutOrNull(1_000.milliseconds) { timeline.timelineItems.first() }.orEmpty()
+            val audio = timelineItems.findPlayableAudioMessage(eventId)
+                ?: return Result.failure(NoSuchElementException("audio event not found"))
+            val declaredSize = audio.info?.size
+            if (declaredSize != null && declaredSize > MAX_WATCH_PLAYBACK_BYTES) {
+                return Result.failure(IllegalArgumentException("audio message is too large for watch playback"))
+            }
+            client.matrixMediaLoader.loadMediaContent(audio.source).mapCatching { bytes ->
+                require(bytes.size <= MAX_WATCH_PLAYBACK_BYTES) { "audio message is too large for watch playback" }
+                WatchPlaybackDescriptor(
+                    eventId = eventId,
+                    roomId = roomId,
+                    playbackUri = "",
+                    durationMs = audio.durationMs,
+                    mimeType = audio.info?.mimetype ?: "audio/ogg",
+                    audioBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+                )
+            }
+        } finally {
+            if (threadRootEventId != null) {
+                timeline.close()
+            }
+        }
     }
 
     override suspend fun roomAvatarThumbnail(roomId: String): Result<ByteArray?> {
@@ -614,6 +648,55 @@ private class MatrixRoomListWatchPort(
         mediaSourcesByRoom.getOrPut(roomId) { ConcurrentHashMap() }
 }
 
+internal suspend fun sendWatchVoiceMessage(
+    context: Context,
+    room: JoinedRoom,
+    draft: WatchVoiceDraft,
+    audioBytes: ByteArray,
+): Result<String> {
+    return runCatching {
+        require(audioBytes.isNotEmpty()) { "voice draft is empty" }
+        val audioFile = File.createTempFile("watch_voice_${draft.draftId}_", ".ogg", context.cacheDir).apply {
+            writeBytes(audioBytes)
+        }
+        val audioInfo = AudioInfo(
+            duration = draft.durationMs.takeIf { it > 0L }?.milliseconds,
+            size = draft.sizeBytes.takeIf { it > 0L } ?: audioBytes.size.toLong(),
+            mimetype = draft.mimeType,
+        )
+        val waveform = draft.waveform
+            .ifEmpty { listOf(32, 48, 64, 52, 36) }
+            .map { (it.coerceIn(0, 100) / 100f) }
+
+        val threadRootEventId = draft.threadRootEventId
+        val timeline = if (threadRootEventId == null) {
+            room.liveTimeline
+        } else {
+            room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
+        }
+        try {
+            val uploadHandler = timeline.sendVoiceMessage(
+                file = audioFile,
+                audioInfo = audioInfo,
+                waveform = waveform,
+                inReplyToEventId = draft.inReplyToEventId?.let(::EventId),
+            ).getOrThrow()
+            uploadHandler.await().getOrThrow()
+            ""
+        } finally {
+            if (threadRootEventId != null) {
+                timeline.close()
+            }
+            if (!audioFile.delete() && audioFile.exists()) {
+                Timber.w("WatchBridge voice draft temp file could not be deleted")
+            }
+        }
+    }.fold(
+        onSuccess = { Result.success(it) },
+        onFailure = { Result.failure(it) },
+    )
+}
+
 private suspend fun List<RoomSummary>.toWatchRooms(resolveJoinedRoom: suspend (String) -> JoinedRoom?): List<WatchFavoriteRoom> {
     val rooms = filter { it.isWatchVisibleRoom() }
     val favorites = mutableListOf<WatchFavoriteRoom>()
@@ -627,6 +710,20 @@ private suspend fun List<RoomSummary>.toWatchRooms(resolveJoinedRoom: suspend (S
         }
     }
     return favorites + recents
+}
+
+private suspend fun List<RoomSummary>.toWatchRoomsInRoomListOrder(resolveJoinedRoom: suspend (String) -> JoinedRoom?): List<WatchFavoriteRoom> {
+    return filter { it.isWatchVisibleRoom() }
+        .map { summary -> summary.toWatchRoom(resolveJoinedRoom) }
+}
+
+private fun List<MatrixTimelineItem>.findPlayableAudioMessage(eventId: String): PlayableAudioMessage? {
+    return asSequence()
+        .mapNotNull { it as? MatrixTimelineItem.Event }
+        .firstOrNull { it.eventId?.value == eventId }
+        ?.event
+        ?.content
+        ?.playableAudio()
 }
 
 private fun RoomSummary.isWatchVisibleRoom(): Boolean {
@@ -956,17 +1053,41 @@ private fun io.element.android.libraries.matrix.api.timeline.item.event.MessageT
 }
 
 private fun EventContent.voiceMeta(): WatchVoiceMeta? {
-    val voice = ((this as? MessageContent)?.type as? VoiceMessageType) ?: return null
-    val duration = voice.details?.duration ?: voice.info?.duration
-    val waveform = voice.details?.waveform?.map { (it * 100).toInt().coerceIn(0, 100) }.orEmpty()
+    val audio = playableAudio() ?: return null
     return WatchVoiceMeta(
-        durationMs = duration?.inWholeMilliseconds ?: 0L,
-        waveform = waveform,
-        mimeType = voice.info?.mimetype ?: "audio/ogg",
-        sizeBytes = voice.info?.size ?: 0L,
+        durationMs = audio.durationMs,
+        waveform = audio.waveform,
+        mimeType = audio.info?.mimetype ?: "audio/ogg",
+        sizeBytes = audio.info?.size ?: 0L,
         audioUrl = null,
     )
 }
+
+private fun EventContent.playableAudio(): PlayableAudioMessage? {
+    val messageType = (this as? MessageContent)?.type
+    return when (messageType) {
+        is VoiceMessageType -> PlayableAudioMessage(
+            source = messageType.source,
+            info = messageType.info,
+            durationMs = (messageType.details?.duration ?: messageType.info?.duration)?.inWholeMilliseconds ?: 0L,
+            waveform = messageType.details?.waveform?.map { (it * 100).toInt().coerceIn(0, 100) }.orEmpty(),
+        )
+        is AudioMessageType -> PlayableAudioMessage(
+            source = messageType.source,
+            info = messageType.info,
+            durationMs = messageType.info?.duration?.inWholeMilliseconds ?: 0L,
+            waveform = emptyList(),
+        )
+        else -> null
+    }
+}
+
+private data class PlayableAudioMessage(
+    val source: MediaSource,
+    val info: AudioInfo?,
+    val durationMs: Long,
+    val waveform: List<Int>,
+)
 
 private fun ProfileDetails.displayName(): String? = when (this) {
     is ProfileDetails.Ready -> displayName

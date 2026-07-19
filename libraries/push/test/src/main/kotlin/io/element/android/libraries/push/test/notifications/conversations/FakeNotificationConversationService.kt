@@ -10,10 +10,12 @@ package io.element.android.libraries.push.test.notifications.conversations
 
 import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.api.core.SessionId
+import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationShortcutRoom
 import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationService
 
 class FakeNotificationConversationService : NotificationConversationService {
     val onSendMessageCalls = mutableListOf<OnSendMessageCall>()
+    val onRecentRoomsChangedCalls = mutableListOf<Pair<SessionId, List<NotificationConversationShortcutRoom>>>()
     val onLeftRoomCalls = mutableListOf<Pair<SessionId, RoomId>>()
     val onAvailableRoomsChangedCalls = mutableListOf<Pair<SessionId, Set<RoomId>>>()
 
@@ -31,6 +33,10 @@ class FakeNotificationConversationService : NotificationConversationService {
             roomIsDirect = roomIsDirect,
             roomAvatarUrl = roomAvatarUrl,
         )
+    }
+
+    override suspend fun onRecentRoomsChanged(sessionId: SessionId, rooms: List<NotificationConversationShortcutRoom>) {
+        onRecentRoomsChangedCalls += sessionId to rooms
     }
 
     override suspend fun onLeftRoom(sessionId: SessionId, roomId: RoomId) {

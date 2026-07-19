@@ -49,8 +49,10 @@ private const val NOTIFICATION_IMAGE_MIN_QUALITY = 42
 private const val NOTIFICATION_IMAGE_QUALITY_STEP = 9
 private const val MAX_NOTIFICATION_PREVIEW_MESSAGES = 4
 private const val MAX_NOTIFICATION_PREVIEW_SENDER_LENGTH = 48
-private const val MAX_NOTIFICATION_PREVIEW_BODY_LENGTH = 160
+private const val MAX_NOTIFICATION_MESSAGE_BODY_LENGTH = 4_000
 private val NOTIFICATION_PREVIEW_WHITESPACE_REGEX = "\\s+".toRegex()
+private val NOTIFICATION_BODY_INLINE_WHITESPACE_REGEX = "[\\t\\x0B\\f ]+".toRegex()
+private val NOTIFICATION_BODY_EXCESSIVE_BLANK_LINES_REGEX = "\\n{3,}".toRegex()
 
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class)
@@ -164,7 +166,8 @@ internal class WatchNotificationBridgePublisherDelegate(
         val bodyText = watchNotificationBodyText()
         val displayName = roomName?.takeIf { it.isNotBlank() }
             ?: senderDisambiguatedDisplayName.orEmpty()
-        val vibrationOverride = conversationVibrationOverride()
+        val settings = settingsProvider()
+        val vibrationOverride = conversationVibrationOverride(settings)
         return RenderedNotification(
             notification = WatchMessageNotification(
                 notificationKey = key.notificationKey,
@@ -184,6 +187,7 @@ internal class WatchNotificationBridgePublisherDelegate(
                 imagePreviewBytes = imagePreviewLoader(this),
                 vibrationPatternOverride = vibrationOverride?.pattern,
                 customVibrationPattern = vibrationOverride?.customPattern,
+                vibrationSettingsSnapshot = settings.notificationVibrations,
             ),
             activeNotification = ActiveNotification(
                 sessionId = sessionId,
@@ -195,8 +199,7 @@ internal class WatchNotificationBridgePublisherDelegate(
         )
     }
 
-    private fun NotifiableMessageEvent.conversationVibrationOverride(): NotificationVibrationOverride? {
-        val settings = settingsProvider()
+    private fun NotifiableMessageEvent.conversationVibrationOverride(settings: WatchCompanionSettings): NotificationVibrationOverride? {
         settings.notificationVibrations.conversationOverrides.firstOrNull { it.roomId == roomId.value }?.let { override ->
             override.pattern?.let { pattern ->
                 return NotificationVibrationOverride(
@@ -210,7 +213,7 @@ internal class WatchNotificationBridgePublisherDelegate(
 
     private fun NotifiableMessageEvent.watchNotificationBodyText(): String? {
         val messageText = body
-            ?.compactNotificationPreviewText(MAX_NOTIFICATION_PREVIEW_BODY_LENGTH)
+            ?.preserveNotificationMessageText(MAX_NOTIFICATION_MESSAGE_BODY_LENGTH)
             ?.takeIf { it.isNotBlank() }
         return messageText ?: imageMimeType?.let { imageLabel }
     }
@@ -219,7 +222,7 @@ internal class WatchNotificationBridgePublisherDelegate(
         val previewBody = watchNotificationBodyText() ?: return null
         return WatchNotificationMessagePreview(
             senderDisplayName = senderDisambiguatedDisplayName
-                ?.compactNotificationPreviewText(MAX_NOTIFICATION_PREVIEW_SENDER_LENGTH)
+                ?.compactNotificationLabelText(MAX_NOTIFICATION_PREVIEW_SENDER_LENGTH)
                 ?.takeIf { it.isNotBlank() },
             bodyText = previewBody,
             timestampMs = timestamp,
@@ -340,8 +343,22 @@ private fun Bitmap.compressForNotification(): ByteArray? {
     return null
 }
 
-private fun String.compactNotificationPreviewText(maxLength: Int): String {
+private fun String.compactNotificationLabelText(maxLength: Int): String {
     val normalized = trim().replace(NOTIFICATION_PREVIEW_WHITESPACE_REGEX, " ")
+    if (normalized.length <= maxLength) return normalized
+    return normalized.take(maxLength - 1).trimEnd() + "…"
+}
+
+private fun String.preserveNotificationMessageText(maxLength: Int): String {
+    val normalized = trim()
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .lines()
+        .joinToString("\n") { line ->
+            line.replace(NOTIFICATION_BODY_INLINE_WHITESPACE_REGEX, " ").trimEnd()
+        }
+        .replace(NOTIFICATION_BODY_EXCESSIVE_BLANK_LINES_REGEX, "\n\n")
+        .trim()
     if (normalized.length <= maxLength) return normalized
     return normalized.take(maxLength - 1).trimEnd() + "…"
 }

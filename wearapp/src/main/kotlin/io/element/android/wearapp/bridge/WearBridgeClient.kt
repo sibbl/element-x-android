@@ -8,6 +8,8 @@
 package io.element.android.wearapp.bridge
 
 import android.content.Context
+import android.net.Uri
+import android.util.Base64
 import androidx.wear.tiles.TileService
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.wearable.CapabilityClient
@@ -28,6 +30,7 @@ import io.element.android.watchbridge.contract.WatchDataPaths
 import io.element.android.watchbridge.contract.WatchErrorCode
 import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchPayload
+import io.element.android.watchbridge.contract.WatchPlaybackDescriptor
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.watchbridge.contract.WatchSync
@@ -75,6 +78,7 @@ private const val TIMELINE_CACHE_PERSIST_DEBOUNCE_MS = 2_000L
 private const val LOCAL_ECHO_EVENT_ID_PREFIX = "\$watch-local-"
 private const val LOCAL_ECHO_SENDER_ID = "@watch-local"
 private const val LOCAL_ECHO_RECONCILE_WINDOW_MS = 2 * 60 * 1_000L
+private const val MAX_PLAYBACK_CACHE_FILES = 20
 
 internal fun mediaPreviewCacheKey(roomId: String, eventId: String): String = "$roomId/$eventId"
 
@@ -284,6 +288,30 @@ class WearBridgeClient(private val context: Context) {
                 pendingMediaPreviewRequests.remove(key)
             }
         }
+    }
+
+    suspend fun requestPlaybackUri(
+        roomId: String,
+        eventId: String,
+        threadRootEventId: String?,
+    ): Uri {
+        val ack = sendAwaitTerminalAck { requestId ->
+            WatchCommand.RequestPlayback(
+                requestId = requestId,
+                roomId = roomId,
+                eventId = eventId,
+                threadRootEventId = threadRootEventId,
+            )
+        }
+        val descriptor = (ack as? WatchAck.PlaybackReady)?.descriptor
+            ?: throw WatchCommandException(WatchErrorCode.PLAYBACK_UNAVAILABLE, "playback descriptor missing")
+        descriptor.audioBase64?.takeIf { it.isNotBlank() }?.let { audioBase64 ->
+            return writePlaybackCacheFile(descriptor, Base64.decode(audioBase64, Base64.DEFAULT))
+        }
+        return descriptor.playbackUri
+            .takeIf { it.isNotBlank() }
+            ?.let(Uri::parse)
+            ?: throw WatchCommandException(WatchErrorCode.PLAYBACK_UNAVAILABLE, "playback media missing")
     }
 
     fun hasCachedThreadSnapshot(roomId: String, threadRootEventId: String): Boolean =
@@ -586,6 +614,39 @@ class WearBridgeClient(private val context: Context) {
             val node = resolvePhoneNode() ?: error("phone not reachable")
             messageClient.sendMessage(node.id, WatchDataPaths.COMMAND, bytes).await()
         }
+    }
+
+    private suspend fun writePlaybackCacheFile(
+        descriptor: WatchPlaybackDescriptor,
+        audioBytes: ByteArray,
+    ): Uri = withContext(Dispatchers.IO) {
+        val cacheDir = File(context.cacheDir, "watch_voice_playback").apply { mkdirs() }
+        trimPlaybackCache(cacheDir)
+        val file = File(cacheDir, descriptor.playbackCacheFileName())
+        file.writeBytes(audioBytes)
+        Uri.fromFile(file)
+    }
+
+    private fun trimPlaybackCache(cacheDir: File) {
+        cacheDir.listFiles()
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(MAX_PLAYBACK_CACHE_FILES)
+            ?.forEach { staleFile ->
+                if (!staleFile.delete() && staleFile.exists()) {
+                    Timber.d("Could not delete stale watch playback cache file")
+                }
+            }
+    }
+
+    private fun WatchPlaybackDescriptor.playbackCacheFileName(): String {
+        val extension = when (mimeType.lowercase()) {
+            "audio/ogg", "audio/opus" -> "ogg"
+            "audio/mpeg", "audio/mp3" -> "mp3"
+            "audio/mp4", "audio/aac", "audio/m4a" -> "m4a"
+            "audio/wav", "audio/x-wav" -> "wav"
+            else -> "audio"
+        }
+        return "${roomId.hashCode()}_${eventId.hashCode()}.$extension"
     }
 
     private suspend fun sendUnsubscribe(roomId: String, threadRootEventId: String?) {

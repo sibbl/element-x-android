@@ -7,7 +7,6 @@
 
 package io.element.android.wearapp.ui.room
 
-import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -19,9 +18,9 @@ import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.audio.WearTextToSpeech
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.WearMainActivity
+import io.element.android.wearapp.ui.buildVoiceRecorderIntent
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
 import io.element.android.wearapp.ui.thread.toTimelineItem
-import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 import kotlinx.coroutines.launch
 
 @Composable
@@ -102,10 +101,13 @@ fun MessageDetailScreen(
         },
         onVoice = {
             activity.startActivity(
-                Intent(activity, VoiceRecorderActivity::class.java)
-                    .putExtra("roomId", roomId)
-                    .putExtra("roomDisplayName", roomName)
-                    .putExtra("inReplyToEventId", item?.eventId),
+                buildVoiceRecorderIntent(
+                    context = activity,
+                    roomId = roomId,
+                    roomDisplayName = roomName,
+                    threadRootEventId = threadRootEventId,
+                    inReplyToEventId = item?.eventId,
+                ),
             )
         },
         onReadAloud = {
@@ -134,6 +136,16 @@ fun MessageDetailScreen(
                     onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_reaction_failed))
                 }
             }
+        },
+        onResolveVoicePlaybackUri = { voiceItem ->
+            bridge.requestPlaybackUri(
+                roomId = roomId,
+                eventId = voiceItem.eventId,
+                threadRootEventId = threadRootEventId,
+            )
+        },
+        onVoicePlaybackError = {
+            onError(activity.watchCommandErrorMessage(it, io.element.android.wearapp.R.string.watch_error_voice_playback_failed))
         },
     )
 }

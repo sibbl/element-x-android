@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -22,6 +23,7 @@ import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchMediaPreview
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
+import io.element.android.watchbridge.contract.WatchVoiceMeta
 import io.element.android.wearapp.R
 import io.element.android.wearapp.ui.theme.WearAppTheme
 import org.junit.Rule
@@ -29,7 +31,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
-import androidx.compose.ui.semantics.SemanticsActions
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
@@ -167,6 +168,27 @@ class TimelineItemViewTest {
     }
 
     @Test
+    fun `message detail voice shows play action without preloaded audio url`() {
+        var requestedItem: WatchTimelineItem? = null
+        val playText = "▶  ${rule.activity.getString(R.string.play_voice_message)}"
+
+        rule.setContent {
+            WearAppTheme {
+                MessageDetailedBody(
+                    item = aVoiceTimelineItem(),
+                    onPlayVoice = { requestedItem = it },
+                )
+            }
+        }
+
+        rule.onNodeWithText(playText).performClick()
+
+        rule.runOnIdle {
+            assertThat(requestedItem?.eventId).isEqualTo("\$voice:server")
+        }
+    }
+
+    @Test
     fun `timeline row thread indicator opens thread root`() {
         var openedThreadRoot: String? = null
         val replyLabel = rule.activity.resources.getQuantityString(R.plurals.thread_indicator_replies, 3, 3)
@@ -256,6 +278,21 @@ class TimelineItemViewTest {
         timestampMs = 2L,
         kind = WatchTimelineItemKind.TEXT,
         bodyText = "Hello from the watch",
+    )
+
+    private fun aVoiceTimelineItem() = WatchTimelineItem(
+        eventId = "\$voice:server",
+        roomId = "!room:server",
+        senderId = "@alice:server",
+        senderDisplayName = "Alice",
+        timestampMs = 3L,
+        kind = WatchTimelineItemKind.VOICE,
+        voiceMessageMeta = WatchVoiceMeta(
+            durationMs = 3_000L,
+            mimeType = "audio/ogg",
+            sizeBytes = 12_000L,
+            audioUrl = null,
+        ),
     )
 
     private fun createPreviewBytes(): ByteArray {

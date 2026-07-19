@@ -179,6 +179,37 @@ class WearLocalNotificationFactoryTest {
     }
 
     @Test
+    fun `text conversation notification preserves multiline message text`() {
+        val model = WatchMessageNotification(
+            notificationKey = "message:@alice:server:!room:server",
+            roomId = "!room:server",
+            eventId = "\$latest:server",
+            roomDisplayName = "Team Wear",
+            roomKind = WatchRoomKind.GROUP,
+            senderDisplayName = "Bob",
+            bodyText = "First line\nSecond line\n\nThird line",
+            timestampMs = 789L,
+            messageCount = 1,
+            previewMessages = listOf(
+                WatchNotificationMessagePreview(
+                    senderDisplayName = "Bob",
+                    bodyText = "First line\nSecond line\n\nThird line",
+                    timestampMs = 789L,
+                ),
+            ),
+            isNoisy = true,
+        )
+
+        val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = null)
+        val messagingStyle = checkNotNull(NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification))
+
+        assertThat(notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+            .isEqualTo("Bob: First line\nSecond line\n\nThird line")
+        assertThat(messagingStyle.messages.single().text.toString())
+            .isEqualTo("First line\nSecond line\n\nThird line")
+    }
+
+    @Test
     fun `watch local notification uses the local vibration channel even when bridged event is quiet`() {
         val model = WatchMessageNotification(
             notificationKey = "message:@alice:server:!room:server",
@@ -194,7 +225,7 @@ class WearLocalNotificationFactoryTest {
 
         val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = null)
 
-        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v15_group_default")
+        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v16_group_default")
     }
 
     @Test
@@ -258,13 +289,13 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(groupNotification.channelId)
-            .isEqualTo("wear_companion_messages_v15_group_triple")
+            .isEqualTo("wear_companion_messages_v16_group_triple")
         assertThat(dmNotification.channelId)
-            .isEqualTo("wear_companion_messages_v15_dm_pulse")
+            .isEqualTo("wear_companion_messages_v16_dm_pulse")
         assertThat(favoriteGroupNotification.channelId)
-            .isEqualTo("wear_companion_messages_v15_favorite_group_escalating")
+            .isEqualTo("wear_companion_messages_v16_favorite_group_escalating")
         assertThat(favoriteDmNotification.channelId)
-            .isEqualTo("wear_companion_messages_v15_favorite_dm_long")
+            .isEqualTo("wear_companion_messages_v16_favorite_dm_long")
     }
 
     @Test
@@ -285,7 +316,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v15_group_triple")
+            .isEqualTo("wear_companion_messages_v16_group_triple")
         assertThat(notification.flags and Notification.FLAG_ONLY_ALERT_ONCE).isEqualTo(0)
         assertThat(notification.group).isNotEqualTo("silent")
         assertThat(notification.groupAlertBehavior).isNotEqualTo(Notification.GROUP_ALERT_SUMMARY)
@@ -312,7 +343,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v15_notification_override_escalating")
+            .isEqualTo("wear_companion_messages_v16_notification_override_escalating")
     }
 
     @Test
@@ -340,7 +371,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v15_room_${"!dm:server".stableShortHash()}_escalating")
+            .isEqualTo("wear_companion_messages_v16_room_${"!dm:server".stableShortHash()}_escalating")
     }
 
     @Test
@@ -369,6 +400,49 @@ class WearLocalNotificationFactoryTest {
     }
 
     @Test
+    fun `notification vibration snapshot is used when cached settings are stale`() {
+        val notification = createFactory(
+            settings = WatchCompanionSettings(
+                notificationVibrations = WatchNotificationVibrationSettings(
+                    groups = WatchNotificationVibrationPattern.DEFAULT,
+                    favoriteGroups = WatchNotificationVibrationPattern.DEFAULT,
+                ),
+            ),
+            knownRooms = listOf(
+                WatchFavoriteRoom(
+                    roomId = "!group:server",
+                    displayName = "Favorite group",
+                    kind = WatchRoomKind.GROUP,
+                    isFavorite = true,
+                ),
+            ),
+        ).build(
+            model(
+                roomId = "!group:server",
+                roomKind = WatchRoomKind.GROUP,
+            ).copy(
+                vibrationSettingsSnapshot = WatchNotificationVibrationSettings(
+                    favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
+                    favoriteGroupsCustomPattern = "100 50 400",
+                ),
+            ),
+            generatedAtMs = 100L,
+            expiresAtMs = null,
+        )
+
+        assertThat(notification.channelId)
+            .isEqualTo(
+                wearLocalNotificationChannelId(
+                    WearResolvedNotificationVibration(
+                        pattern = WatchNotificationVibrationPattern.CUSTOM,
+                        customTimingsMs = listOf(0L, 100L, 50L, 400L),
+                        source = WearNotificationVibrationSource.FavoriteGroups,
+                    ),
+                ),
+            )
+    }
+
+    @Test
     fun `invalid custom category vibration falls back to the default channel`() {
         val notification = createFactory(
             settings = WatchCompanionSettings(
@@ -387,7 +461,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v15_group_default")
+            .isEqualTo("wear_companion_messages_v16_group_default")
     }
 
     @Test
@@ -412,7 +486,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v15_room_${"!room:server".stableShortHash()}_default")
+            .isEqualTo("wear_companion_messages_v16_room_${"!room:server".stableShortHash()}_default")
     }
 
     @Test
@@ -446,7 +520,7 @@ class WearLocalNotificationFactoryTest {
             expiresAtMs = null,
         )
 
-        assertThat(notification.channelId).startsWith("wear_companion_messages_v15_notification_override_custom_")
+        assertThat(notification.channelId).startsWith("wear_companion_messages_v16_notification_override_custom_")
     }
 
     @Test

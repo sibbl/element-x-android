@@ -177,7 +177,7 @@ class WatchBridgeDispatcher(
                     maybeCompleteVoiceDraft(cmd.draft.draftId)
                 }
                 is WatchCommand.RequestPlayback -> {
-                    port.playbackDescriptor(cmd.roomId, cmd.eventId)
+                    port.playbackDescriptor(cmd.roomId, cmd.eventId, cmd.threadRootEventId)
                         .onSuccess { ack(WatchAck.PlaybackReady(cmd.requestId, it)) }
                         .onFailure { ack(WatchAck.Failed(cmd.requestId, WatchErrorCode.PLAYBACK_UNAVAILABLE, it.message)) }
                 }

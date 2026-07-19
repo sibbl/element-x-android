@@ -7,6 +7,7 @@
 
 package io.element.android.wearapp.ui.room
 
+import android.net.Uri
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -75,6 +77,8 @@ internal fun MessageDetailView(
     onOpenImage: (() -> Unit)? = null,
     onOpenOrStartThread: () -> Unit,
     onSendReaction: (reactionKey: String) -> Unit,
+    onResolveVoicePlaybackUri: (suspend (WatchTimelineItem) -> Uri)? = null,
+    onVoicePlaybackError: (Throwable) -> Unit = {},
     scrollState: ScrollState = rememberScrollState(),
     modifier: Modifier = Modifier,
 ) {
@@ -82,6 +86,7 @@ internal fun MessageDetailView(
     val sender = item?.senderDisplayName ?: item?.senderId.orEmpty()
     val scrollFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val voicePlayer = remember { WearVoicePlayer() }
     val voiceState by voicePlayer.state.collectAsState()
@@ -138,11 +143,18 @@ internal fun MessageDetailView(
                     mediaPreviewBytes = mediaPreviewBytes,
                     onRequestMediaPreview = onRequestMediaPreview,
                     onOpenImage = onOpenImage,
-                    onPlayVoice = { url ->
-                        if (voiceState == WearVoicePlayer.State.PLAYING) {
-                            voicePlayer.stop()
-                        } else {
-                            voicePlayer.play(url)
+                    onPlayVoice = onResolveVoicePlaybackUri?.let { resolveVoicePlaybackUri ->
+                        { voiceItem ->
+                            if (voiceState == WearVoicePlayer.State.PLAYING) {
+                                voicePlayer.stop()
+                            } else {
+                                scope.launch {
+                                    runCatching {
+                                        val uri = resolveVoicePlaybackUri(voiceItem)
+                                        voicePlayer.play(context, uri)
+                                    }.onFailure(onVoicePlaybackError)
+                                }
+                            }
                         }
                     },
                     modifier = Modifier
@@ -152,7 +164,7 @@ internal fun MessageDetailView(
                 if (item.reactions.isNotEmpty()) {
                     ReactionsRow(item = item)
                 }
-                if (item.readableByTts && (item.bodyText != null || item.formattedText != null)) {
+                if (item.hasTextForTts()) {
                     val isReadingAloud = readAloudPlaybackState == WearTextToSpeech.PlaybackState.LOADING ||
                         readAloudPlaybackState == WearTextToSpeech.PlaybackState.PLAYING
                     FilledTonalButton(

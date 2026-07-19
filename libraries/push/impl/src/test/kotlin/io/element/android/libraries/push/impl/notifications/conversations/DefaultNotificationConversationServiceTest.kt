@@ -10,18 +10,23 @@ package io.element.android.libraries.push.impl.notifications.conversations
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Build
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import io.element.android.features.lockscreen.test.FakeLockScreenService
+import io.element.android.libraries.designsystem.components.avatar.AvatarData
+import io.element.android.libraries.matrix.api.core.RoomId
 import io.element.android.libraries.matrix.test.A_ROOM_ID
 import io.element.android.libraries.matrix.test.A_ROOM_ID_2
 import io.element.android.libraries.matrix.test.A_SESSION_ID
 import io.element.android.libraries.matrix.test.A_SESSION_ID_2
 import io.element.android.libraries.matrix.test.FakeMatrixClientProvider
+import io.element.android.libraries.matrix.ui.media.AVATAR_THUMBNAIL_SIZE_IN_PIXEL
 import io.element.android.libraries.matrix.ui.media.test.FakeImageLoaderHolder
+import io.element.android.libraries.push.api.notifications.conversations.NotificationConversationShortcutRoom
 import io.element.android.libraries.push.impl.notifications.factories.FakeIntentProvider
 import io.element.android.libraries.push.impl.notifications.shortcut.createShortcutId
 import io.element.android.libraries.push.test.notifications.push.FakeNotificationBitmapLoader
@@ -50,6 +55,98 @@ class DefaultNotificationConversationServiceTest : RobolectricTest() {
 
         val shortcuts = ShortcutManagerCompat.getDynamicShortcuts(context)
         assertThat(shortcuts).isNotEmpty()
+    }
+
+    @Test
+    fun `onRecentRoomsChanged publishes maximum ranked shortcuts with avatars`() = runTest {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        ShortcutManagerCompat.removeAllDynamicShortcuts(context)
+        val avatarRequests = mutableListOf<AvatarData>()
+        val bitmapLoader = FakeNotificationBitmapLoader(
+            getRoomBitmapResult = { avatarData, _, _ ->
+                avatarRequests += avatarData
+                Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            }
+        )
+        val service = createService(context, bitmapLoader = bitmapLoader)
+        val maxShortcutCount = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context)
+        assertThat(maxShortcutCount).isGreaterThan(0)
+        val rooms = (0 until maxShortcutCount + 2).map { index ->
+            NotificationConversationShortcutRoom(
+                roomId = RoomId("!recent$index:matrix.org"),
+                roomName = "Recent $index",
+                roomIsDirect = index % 2 == 0,
+                roomAvatarUrl = "mxc://matrix.org/recent$index",
+            )
+        }
+
+        service.onRecentRoomsChanged(A_SESSION_ID, rooms)
+
+        val shortcuts = ShortcutManagerCompat.getDynamicShortcuts(context)
+        assertThat(shortcuts).hasSize(maxShortcutCount)
+        assertThat(shortcuts.sortedBy { it.rank }.map { it.id }).containsExactlyElementsIn(
+            rooms
+                .take(maxShortcutCount)
+                .map { createShortcutId(A_SESSION_ID, it.roomId) }
+        ).inOrder()
+        assertThat(shortcuts.sortedBy { it.rank }.map { it.rank }).containsExactlyElementsIn(0 until maxShortcutCount).inOrder()
+        assertThat(avatarRequests.map { it.url }).containsExactlyElementsIn(
+            rooms
+                .take(maxShortcutCount)
+                .map { it.roomAvatarUrl }
+        ).inOrder()
+    }
+
+    @Test
+    fun `onRecentRoomsChanged requests launcher icons with usable avatar size`() = runTest {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        ShortcutManagerCompat.removeAllDynamicShortcuts(context)
+        val requestedSizes = mutableListOf<Long>()
+        val bitmapLoader = FakeNotificationBitmapLoader(
+            getRoomBitmapResult = { _, _, targetSize ->
+                requestedSizes += targetSize
+                Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            }
+        )
+        val service = createService(context, bitmapLoader = bitmapLoader)
+
+        service.onRecentRoomsChanged(
+            sessionId = A_SESSION_ID,
+            rooms = listOf(
+                NotificationConversationShortcutRoom(
+                    roomId = A_ROOM_ID,
+                    roomName = "Room title",
+                    roomIsDirect = true,
+                    roomAvatarUrl = "mxc://matrix.org/room",
+                )
+            ),
+        )
+
+        assertThat(requestedSizes).hasSize(1)
+        assertThat(requestedSizes.single()).isAtLeast(AVATAR_THUMBNAIL_SIZE_IN_PIXEL)
+    }
+
+    @Test
+    fun `onRecentRoomsChanged does not publish shortcuts when pin code is enabled`() = runTest {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        ShortcutManagerCompat.removeAllDynamicShortcuts(context)
+        val lockScreenService = FakeLockScreenService()
+        lockScreenService.setIsPinSetup(true)
+        val service = createService(context, lockScreenService = lockScreenService)
+
+        service.onRecentRoomsChanged(
+            sessionId = A_SESSION_ID,
+            rooms = listOf(
+                NotificationConversationShortcutRoom(
+                    roomId = A_ROOM_ID,
+                    roomName = "Room title",
+                    roomIsDirect = true,
+                    roomAvatarUrl = "mxc://matrix.org/room",
+                )
+            ),
+        )
+
+        assertThat(ShortcutManagerCompat.getDynamicShortcuts(context)).isEmpty()
     }
 
     @Test
@@ -176,10 +273,11 @@ class DefaultNotificationConversationServiceTest : RobolectricTest() {
         context: Context = InstrumentationRegistry.getInstrumentation().context,
         sessionObserver: FakeSessionObserver = FakeSessionObserver(),
         lockScreenService: FakeLockScreenService = FakeLockScreenService(),
+        bitmapLoader: FakeNotificationBitmapLoader = FakeNotificationBitmapLoader(),
     ) = DefaultNotificationConversationService(
         context = context,
         intentProvider = FakeIntentProvider(),
-        bitmapLoader = FakeNotificationBitmapLoader(),
+        bitmapLoader = bitmapLoader,
         matrixClientProvider = FakeMatrixClientProvider(),
         imageLoaderHolder = FakeImageLoaderHolder(),
         sessionObserver = sessionObserver,
