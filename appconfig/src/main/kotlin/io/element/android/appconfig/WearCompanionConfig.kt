@@ -12,7 +12,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 
 data class WearCompanionDeepLink(
     val roomId: String,
@@ -49,12 +48,11 @@ fun Context.hasOpenOnWearActivity(): Boolean =
 private fun Context.hasActivity(className: String): Boolean {
     val componentName = ComponentName(packageName, className)
     return runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getActivityInfo(componentName, PackageManager.ComponentInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getActivityInfo(componentName, 0)
-        }
+        // The legacy overload remains supported and is also implemented consistently by
+        // Robolectric. The flags-based overload can incorrectly report dynamically
+        // registered activities as missing in unit tests.
+        @Suppress("DEPRECATION")
+        packageManager.getActivityInfo(componentName, 0)
     }.isSuccess
 }
 
