@@ -588,7 +588,7 @@ internal fun ReactionsRow(
     }
 }
 
-private const val TIMELINE_PREVIEW_MAX_LINES = 4
+private const val TIMELINE_PREVIEW_MAX_LINES = 8
 
 @Composable
 internal fun ThreadIndicatorChip(
