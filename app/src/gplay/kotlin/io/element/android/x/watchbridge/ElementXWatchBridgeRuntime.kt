@@ -31,6 +31,7 @@ import io.element.android.libraries.matrix.api.room.CreateTimelineParams
 import io.element.android.libraries.matrix.api.room.CurrentUserMembership
 import io.element.android.libraries.matrix.api.room.JoinedRoom
 import io.element.android.libraries.matrix.api.room.RoomInfo
+import io.element.android.libraries.matrix.api.room.roomMembers
 import io.element.android.libraries.matrix.api.roomlist.LatestEventValue
 import io.element.android.libraries.matrix.api.roomlist.RoomList
 import io.element.android.libraries.matrix.api.roomlist.RoomSummary
@@ -71,6 +72,7 @@ import io.element.android.watchbridge.contract.WatchMediaPreview
 import io.element.android.watchbridge.contract.WatchPlaybackDescriptor
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchReactionSummary
+import io.element.android.watchbridge.contract.WatchReactionSender
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchSync
@@ -455,7 +457,15 @@ private class MatrixRoomListWatchPort(
             try {
                 emitAll(
                     timeline.timelineItems.map { items ->
-                        val projection = items.toWatchTimelineProjection(roomId = roomId, limit = limit)
+                        val roomInfo = room.info()
+                        val reactionSenderNames = room.membersStateFlow.value.roomMembers().orEmpty()
+                            .associate { member -> member.userId.value to member.displayName.orEmpty().ifBlank { member.userId.value } }
+                        val projection = items.toWatchTimelineProjection(
+                            roomId = roomId,
+                            limit = limit,
+                            pinnedEventIds = roomInfo.pinnedEventIds.mapTo(mutableSetOf()) { it.value },
+                            reactionSenderNames = reactionSenderNames,
+                        )
                         mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
                         projection.items
                     }
@@ -745,6 +755,7 @@ private suspend fun RoomSummary.toWatchRoom(resolveJoinedRoom: suspend (String) 
         hasMentions = info.numUnreadMentions > 0,
         lastActivityTsMs = latestEventTimestamp ?: 0L,
         lastPreviewText = latestEvent.previewText()?.compactWatchPreviewText(MAX_FAVORITE_PREVIEW_TEXT_LENGTH),
+        lastPreviewKind = latestEvent.previewKind(),
         isFavorite = info.isFavorite,
     )
 }
@@ -753,14 +764,23 @@ private fun RoomInfo.watchKind(): WatchRoomKind = if (isDm) WatchRoomKind.DM els
 
 private fun LatestEventValue.previewText(): String? = when (this) {
     LatestEventValue.None -> null
-    is LatestEventValue.Local -> content.previewText()?.let { if (isSending) "Sending: $it" else it }
+    is LatestEventValue.Local -> content.previewText()
     is LatestEventValue.Remote -> content.previewText()
     is LatestEventValue.RoomInvite -> "Invite"
+}
+
+private fun LatestEventValue.previewKind(): WatchTimelineItemKind? = when (this) {
+    LatestEventValue.None,
+    is LatestEventValue.RoomInvite -> null
+    is LatestEventValue.Local -> content.watchKind()
+    is LatestEventValue.Remote -> content.watchKind()
 }
 
 internal fun List<MatrixTimelineItem>.toWatchTimelineProjection(
     roomId: String,
     limit: Int,
+    pinnedEventIds: Set<String> = emptySet(),
+    reactionSenderNames: Map<String, String> = emptyMap(),
 ): TimelineProjection {
     val projectedItems = mutableListOf<WatchTimelineItem>()
     val mediaSources = mutableMapOf<String, MediaPreviewSourceRef>()
@@ -772,7 +792,11 @@ internal fun List<MatrixTimelineItem>.toWatchTimelineProjection(
             is MatrixTimelineItem.Event -> {
                 val event = item.event
                 if (event.threadInfo() is EventThreadInfo.ThreadResponse) return@forEach
-                val projected = event.toWatchTimelineItem(roomId) ?: return@forEach
+                val projected = event.toWatchTimelineItem(
+                    roomId = roomId,
+                    isPinned = event.eventId?.value in pinnedEventIds,
+                    reactionSenderNames = reactionSenderNames,
+                ) ?: return@forEach
                 projectedItems += projected
                 latestEventIdBeforeReadMarker = projected.eventId
                 event.content.mediaPreviewSourceRef()?.let { mediaSources[projected.eventId] = it }
@@ -851,7 +875,11 @@ private fun EventTimelineItem.toWatchThreadItem(
     )
 }
 
-private fun EventTimelineItem.toWatchTimelineItem(roomId: String): WatchTimelineItem? {
+private fun EventTimelineItem.toWatchTimelineItem(
+    roomId: String,
+    isPinned: Boolean = false,
+    reactionSenderNames: Map<String, String> = emptyMap(),
+): WatchTimelineItem? {
     val eventId = eventId?.value ?: return null
     val threadInfo = threadInfo()
     val threadRootEventId = when (threadInfo) {
@@ -873,10 +901,11 @@ private fun EventTimelineItem.toWatchTimelineItem(roomId: String): WatchTimeline
         hasThread = threadInfo is EventThreadInfo.ThreadRoot,
         threadRootEventId = threadRootEventId,
         threadReplyCount = (threadInfo as? EventThreadInfo.ThreadRoot)?.summary?.numberOfReplies?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0,
-        reactions = watchReactions(),
+        reactions = watchReactions(reactionSenderNames),
         voiceMessageMeta = content.voiceMeta(),
         readableByTts = content.watchKind() in setOf(WatchTimelineItemKind.TEXT, WatchTimelineItemKind.EMOTE, WatchTimelineItemKind.NOTICE),
         mediaPreview = content.mediaPreview(),
+        isPinned = isPinned,
     )
 }
 
@@ -999,11 +1028,20 @@ internal fun normalizeWatchMediaPreviewBytes(
     }
 }
 
-private fun EventTimelineItem.watchReactions(): List<WatchReactionSummary> = reactions.map { reaction ->
+private fun EventTimelineItem.watchReactions(
+    senderNames: Map<String, String> = emptyMap(),
+): List<WatchReactionSummary> = reactions.map { reaction ->
     WatchReactionSummary(
         key = reaction.key,
         count = reaction.senders.size,
         reactedBySelf = false,
+        senders = reaction.senders.map { sender ->
+            val userId = sender.senderId.value
+            WatchReactionSender(
+                userId = userId,
+                displayName = senderNames[userId] ?: userId,
+            )
+        },
     )
 }
 

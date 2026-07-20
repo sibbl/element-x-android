@@ -28,8 +28,10 @@ import io.element.android.libraries.matrix.api.timeline.item.EventThreadInfo
 import io.element.android.libraries.matrix.api.timeline.item.ThreadSummary
 import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EventOrTransactionId
+import io.element.android.libraries.matrix.api.timeline.item.event.EventReaction
 import io.element.android.libraries.matrix.api.timeline.item.event.FormattedBody
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageFormat
+import io.element.android.libraries.matrix.api.timeline.item.event.ReactionSender
 import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
 import io.element.android.libraries.matrix.api.user.MatrixUser
@@ -51,6 +53,7 @@ import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.contract.WatchVoiceDraft
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -67,7 +70,6 @@ import kotlin.math.max
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class ElementXWatchBridgeRuntimeTest {
-
     @Test
     fun `watch avatar projection prefers explicit room avatar over heroes`() {
         val roomAvatarUrl = "mxc://server/room-avatar"
@@ -187,6 +189,35 @@ class ElementXWatchBridgeRuntimeTest {
         assertThat(projection.items.map { it.eventId }).containsExactly(threadRootId.value)
         assertThat(projection.items.single().hasThread).isTrue()
         assertThat(projection.items.single().threadReplyCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `timeline projection includes pinned state and reaction sender names`() {
+        val eventId = EventId("\$pinned:server")
+        val reactingUser = UserId("@bob:server")
+        val event = MatrixTimelineItem.Event(
+            uniqueId = UniqueId("pinned"),
+            event = anEventTimelineItem(
+                eventId = eventId,
+                reactions = persistentListOf(
+                    EventReaction(
+                        key = "❤️",
+                        senders = persistentListOf(ReactionSender(reactingUser, 2L)),
+                    ),
+                ),
+                content = aMessageContent(body = "Pinned message"),
+            ),
+        )
+
+        val item = listOf(event).toWatchTimelineProjection(
+            roomId = "!room:server",
+            limit = 20,
+            pinnedEventIds = setOf(eventId.value),
+            reactionSenderNames = mapOf(reactingUser.value to "Bob"),
+        ).items.single()
+
+        assertThat(item.isPinned).isTrue()
+        assertThat(item.reactions.single().senders.single().displayName).isEqualTo("Bob")
     }
 
     @Test

@@ -25,6 +25,7 @@ data class WatchFavoriteRoom(
     val hasMentions: Boolean = false,
     val lastActivityTsMs: Long = 0L,
     val lastPreviewText: String? = null,
+    val lastPreviewKind: WatchTimelineItemKind? = null,
     val isFavorite: Boolean = true,
 )
 
@@ -75,6 +76,7 @@ data class WatchTimelineItem(
     val threadLastReplyText: String? = null,
     val mediaPreview: WatchMediaPreview? = null,
     val isReadMarkerAnchor: Boolean = false,
+    val isPinned: Boolean = false,
 )
 
 /** Reactions aggregated per reaction key. */
@@ -83,6 +85,14 @@ data class WatchReactionSummary(
     val key: String,
     val count: Int,
     val reactedBySelf: Boolean,
+    val senders: List<WatchReactionSender> = emptyList(),
+)
+
+/** A compact reaction sender projection for the watch reaction-details screen. */
+@Serializable
+data class WatchReactionSender(
+    val userId: String,
+    val displayName: String,
 )
 
 /** Metadata describing a voice message event. */
