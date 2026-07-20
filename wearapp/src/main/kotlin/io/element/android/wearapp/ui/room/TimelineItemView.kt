@@ -73,6 +73,7 @@ internal fun TimelineMessageRow(
     onRequestMediaPreview: (() -> Unit)? = null,
     onClick: () -> Unit,
     onOpenThread: ((String) -> Unit)?,
+    onReactionsClick: (() -> Unit)? = null,
     showSender: Boolean = true,
     onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -84,7 +85,7 @@ internal fun TimelineMessageRow(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val bodyOverflow = TextOverflow.Clip
+    val bodyOverflow = TextOverflow.Ellipsis
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -128,7 +129,7 @@ internal fun TimelineMessageRow(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
                         onRequestMediaPreview = onRequestMediaPreview,
-                        maxLines = Int.MAX_VALUE,
+                        maxLines = TIMELINE_PREVIEW_MAX_LINES,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = primaryTextColor,
                         ),
@@ -142,17 +143,27 @@ internal fun TimelineMessageRow(
                         item = item,
                         mediaPreviewBytes = mediaPreviewBytes,
                         onRequestMediaPreview = onRequestMediaPreview,
-                        maxLines = Int.MAX_VALUE,
-                        style = MaterialTheme.typography.bodySmall.copy(
+                        maxLines = TIMELINE_PREVIEW_MAX_LINES,
+                        style = MaterialTheme.typography.bodyMedium.copy(
                             color = secondaryTextColor,
                         ),
                         overflow = bodyOverflow,
                     )
                 }
-            } else null,
+            } else {
+                null
+            },
         )
+        if (item.isPinned) {
+            Text(
+                text = "📌 ${stringResource(R.string.timeline_pinned)}",
+                style = MaterialTheme.typography.bodyExtraSmall,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
         if (item.reactions.isNotEmpty()) {
-            ReactionsRow(item = item)
+            ReactionsRow(item = item, onClick = onReactionsClick)
         }
         if (item.hasThread && onOpenThread != null) {
             val threadRoot = item.threadRootEventId ?: item.eventId
@@ -542,6 +553,7 @@ private fun WaveformView(
 @Composable
 internal fun ReactionsRow(
     item: WatchTimelineItem,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val baseColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -557,6 +569,7 @@ internal fun ReactionsRow(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(if (reaction.reactedBySelf) highlightColor.copy(alpha = 0.3f) else baseColor)
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             ) {
                 Text(
@@ -574,6 +587,8 @@ internal fun ReactionsRow(
         }
     }
 }
+
+private const val TIMELINE_PREVIEW_MAX_LINES = 4
 
 @Composable
 internal fun ThreadIndicatorChip(

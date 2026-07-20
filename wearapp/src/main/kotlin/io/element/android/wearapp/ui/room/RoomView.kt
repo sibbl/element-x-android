@@ -63,6 +63,7 @@ import java.util.Locale
 internal fun RoomView(
     state: RoomViewState,
     onMessageSelected: (String) -> Unit,
+    onReactionsSelected: ((String) -> Unit)? = null,
     onOpenThread: ((String) -> Unit)?,
     onReply: () -> Unit,
     onVoice: (() -> Unit)?,
@@ -114,11 +115,13 @@ internal fun RoomView(
     }
 
     LaunchedEffect(lazyListState, state.timelineKey) {
-        snapshotFlow { isAtBottom(lazyListState) }
+        snapshotFlow { isAtBottom(lazyListState) to lazyListState.isScrollInProgress }
             .distinctUntilChanged()
-            .collect { atBottom ->
-                shouldStickToBottom = atBottom
-                if (!atBottom) {
+            .collect { (atBottom, isUserScrolling) ->
+                if (atBottom) {
+                    shouldStickToBottom = true
+                } else if (isUserScrolling) {
+                    shouldStickToBottom = false
                     followLatestAfterBottomRequest = false
                 }
             }
@@ -268,6 +271,7 @@ internal fun RoomView(
                             saveCurrentPosition()
                             onMessageSelected(entry.eventId)
                         },
+                        onReactionsClick = onReactionsSelected?.let { callback -> { callback(entry.eventId) } },
                         onOpenThread = openThread,
                         onLongPress = onLongPressMessage?.let { callback -> { callback(entry) } },
                     )

@@ -9,10 +9,9 @@ package io.element.android.wearapp.ui.room
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -21,16 +20,15 @@ import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.theme.WearAppTheme
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
-import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class RoomViewTest {
-
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
@@ -172,6 +170,50 @@ class RoomViewTest {
             val totalItems = listState.layoutInfo.totalItemsCount
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             assertThat(lastVisibleIndex).isEqualTo(totalItems - 1)
+        }
+    }
+
+    @Test
+    fun `delayed initial timeline keeps the conversation at the latest item`() {
+        lateinit var listState: ScalingLazyListState
+        val state = mutableStateOf(
+            RoomViewState(
+                timelineKey = "!room:server",
+                displayName = "Delayed room",
+                items = emptyList(),
+                isLoading = true,
+            ),
+        )
+        val items = (1..40).map { index ->
+            WatchTimelineItem(
+                eventId = "\$event-$index:server",
+                roomId = "!room:server",
+                senderId = "@alice:server",
+                senderDisplayName = "Alice",
+                timestampMs = index.toLong(),
+                kind = WatchTimelineItemKind.TEXT,
+                bodyText = "Message $index",
+            )
+        }
+
+        rule.setContent {
+            listState = rememberScalingLazyListState()
+            WearAppTheme {
+                RoomView(
+                    state = state.value,
+                    onMessageSelected = {},
+                    onOpenThread = null,
+                    onReply = {},
+                    onVoice = null,
+                    listState = listState,
+                )
+            }
+        }
+
+        rule.runOnIdle { state.value = state.value.copy(items = items, isLoading = false) }
+        rule.waitUntil(timeoutMillis = 5_000L) {
+            val info = listState.layoutInfo
+            info.totalItemsCount > 0 && info.visibleItemsInfo.lastOrNull()?.index == info.totalItemsCount - 1
         }
     }
 

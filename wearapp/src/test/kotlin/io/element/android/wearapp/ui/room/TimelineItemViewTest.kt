@@ -10,10 +10,10 @@ package io.element.android.wearapp.ui.room
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -21,6 +21,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchMediaPreview
+import io.element.android.watchbridge.contract.WatchReactionSummary
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.watchbridge.contract.WatchVoiceMeta
@@ -35,7 +36,6 @@ import java.io.ByteArrayOutputStream
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [33])
 class TimelineItemViewTest {
-
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
@@ -235,6 +235,26 @@ class TimelineItemViewTest {
             .performSemanticsAction(SemanticsActions.OnLongClick)
 
         rule.runOnIdle { assertThat(longPressed).isTrue() }
+    }
+
+    @Test
+    fun `reaction summary opens reaction details`() {
+        var opened = false
+        rule.setContent {
+            WearAppTheme {
+                TimelineMessageRow(
+                    item = aTextTimelineItem().copy(
+                        reactions = listOf(WatchReactionSummary("❤️", 2, reactedBySelf = false)),
+                    ),
+                    onClick = {},
+                    onOpenThread = null,
+                    onReactionsClick = { opened = true },
+                )
+            }
+        }
+
+        rule.onNodeWithText("❤️ 2").performClick()
+        rule.runOnIdle { assertThat(opened).isTrue() }
     }
 
     @Test

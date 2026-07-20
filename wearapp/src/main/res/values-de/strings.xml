@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timeline_voice_message">Sprachnachricht</string>
+    <string name="play_voice_message">Sprachnachricht abspielen</string>
+    <string name="screen_voice_recorder_title">Sprachnachricht</string>
+    <string name="screen_voice_recorder_sending">Sprachnachricht wird gesendet…</string>
+    <string name="screen_voice_recorder_permission">Mikrofonzugriff erlauben, um Sprachnachrichten aufzunehmen.</string>
+    <string name="screen_voice_recorder_action_hint">Tippe auf Senden, um die Aufnahme zu beenden und zu senden.</string>
+    <string name="a11y_composer_voice">Sprachnachricht aufnehmen</string>
+    <string name="record_voice">Aufnehmen</string>
+    <string name="watch_error_voice_send_failed">Sprachnachricht konnte nicht gesendet werden</string>
+    <string name="watch_error_voice_playback_failed">Sprachnachricht konnte nicht abgespielt werden</string>
+    <string name="timeline_pinned">Angepinnt</string>
+    <string name="reaction_details_title">Reaktionen</string>
+    <string name="reaction_details_empty">Keine Reaktionsdetails verfügbar</string>
+    <string name="reaction_details_unknown">Unbekanntes Mitglied</string>
+</resources>

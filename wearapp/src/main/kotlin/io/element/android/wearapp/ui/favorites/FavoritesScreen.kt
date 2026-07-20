@@ -43,14 +43,14 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import io.element.android.watchbridge.contract.WatchCommand
 import io.element.android.watchbridge.contract.WatchFavoriteRoom
+import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeClient
 import io.element.android.wearapp.ui.common.AvatarBadge
 import io.element.android.wearapp.ui.common.PressableWearChip
-import io.element.android.wearapp.ui.common.wearTapAndLongPress
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 
 private const val ROOM_PAGE_SIZE = 30
@@ -159,8 +159,11 @@ private fun PagerDotsIndicator(
                     .size(if (active) 8.dp else 6.dp)
                     .clip(CircleShape)
                     .background(
-                        if (active) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                        if (active) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f)
+                        },
                     ),
             )
         }
@@ -276,20 +279,10 @@ private fun FavoriteRoomChip(
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
 ) {
-    val subtitle = buildString {
-        if (room.isFavorite) append("★")
-        if (room.unreadCount > 0) {
-            if (isNotEmpty()) append(" · ")
-            append(room.unreadCount)
-        }
-        if (room.hasMentions) {
-            if (isNotEmpty()) append(" · ")
-            append("@")
-        }
-        room.lastPreviewText?.let {
-            if (isNotEmpty()) append(" · ")
-            append(it)
-        }
+    val subtitle = if (room.lastPreviewKind == WatchTimelineItemKind.VOICE) {
+        stringResource(R.string.timeline_voice_message)
+    } else {
+        cleanConversationPreview(room.lastPreviewText)
     }
     val chipColor = when {
         room.hasMentions -> MaterialTheme.colorScheme.secondaryContainer
@@ -319,7 +312,7 @@ private fun FavoriteRoomChip(
                 color = MaterialTheme.colorScheme.onSurface,
             )
         },
-        secondaryLabel = if (subtitle.isNotBlank()) {
+        secondaryLabel = if (!subtitle.isNullOrBlank()) {
             {
                 Text(
                     text = subtitle,
@@ -329,9 +322,18 @@ private fun FavoriteRoomChip(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        } else null,
+        } else {
+            null
+        },
     )
 }
+
+internal fun cleanConversationPreview(preview: String?): String? = preview
+    ?.trim()
+    ?.removePrefix("Sending:")
+    ?.removePrefix("Sending…")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
 
 data class SavedScalingListPosition(
     val index: Int = 0,

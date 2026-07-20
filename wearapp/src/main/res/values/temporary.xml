@@ -25,6 +25,10 @@
         <item quantity="other">%1$d replies</item>
     </plurals>
     <string name="timeline_voice_message">Voice message</string>
+    <string name="timeline_pinned">Pinned</string>
+    <string name="reaction_details_title">Reactions</string>
+    <string name="reaction_details_empty">No reaction details available</string>
+    <string name="reaction_details_unknown">Unknown member</string>
     <string name="play_voice_message">Play voice message</string>
     <string name="timeline_image">Image</string>
     <string name="screen_media_preview_unavailable">Image unavailable</string>

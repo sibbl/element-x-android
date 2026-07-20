@@ -32,6 +32,7 @@ fun MessageDetailScreen(
     activity: WearMainActivity,
     onOpenThread: (String) -> Unit,
     onOpenImage: (String) -> Unit = {},
+    onShowReactionDetails: () -> Unit = {},
     onReplySent: (sourceEventId: String, sourceWasLastMessage: Boolean) -> Unit = { _, _ -> },
     onError: (String) -> Unit = {},
 ) {
@@ -137,6 +138,7 @@ fun MessageDetailScreen(
                 }
             }
         },
+        onShowReactionDetails = onShowReactionDetails,
         onResolveVoicePlaybackUri = { voiceItem ->
             bridge.requestPlaybackUri(
                 roomId = roomId,

@@ -64,6 +64,7 @@ import io.element.android.wearapp.ui.favorites.FavoritesScreen
 import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import io.element.android.wearapp.ui.room.ImageViewerScreen
 import io.element.android.wearapp.ui.room.MessageDetailScreen
+import io.element.android.wearapp.ui.room.ReactionDetailsScreen
 import io.element.android.wearapp.ui.room.RoomScreen
 import io.element.android.wearapp.ui.thread.ThreadScreen
 import io.element.android.wearapp.ui.theme.WearAppTheme
@@ -308,6 +309,11 @@ class WearMainActivity : ComponentActivity() {
                                             launchSingleTop = true
                                         }
                                     },
+                                    onReactionsSelected = { eventId ->
+                                        nav.navigate(reactionDetailsRoute(roomId = roomId, eventId = eventId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
                                     scrollRequestId = roomScrollRequest?.requestId,
                                     scrollToEventId = roomScrollRequest?.targetEventId,
                                     forceScrollToBottom = roomScrollRequest?.forceScrollToBottom == true,
@@ -343,6 +349,11 @@ class WearMainActivity : ComponentActivity() {
                                             launchSingleTop = true
                                         }
                                     },
+                                    onShowReactionDetails = {
+                                        nav.navigate(reactionDetailsRoute(roomId = roomId, eventId = eventId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
                                     onReplySent = { sourceEventId, sourceWasLastMessage ->
                                         if (threadRootEventId == null) {
                                             pendingRoomScrollRequest = PendingRoomScrollRequest(
@@ -366,6 +377,15 @@ class WearMainActivity : ComponentActivity() {
                                 val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
                                 val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
                                 ImageViewerScreen(
+                                    bridge = bridge,
+                                    roomId = roomId,
+                                    eventId = eventId,
+                                )
+                            }
+                            composable("reactions?roomId={roomId}&eventId={eventId}") { entry ->
+                                val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
+                                val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                                ReactionDetailsScreen(
                                     bridge = bridge,
                                     roomId = roomId,
                                     eventId = eventId,
@@ -515,6 +535,9 @@ class WearMainActivity : ComponentActivity() {
 
 private const val FAVORITES_PAGE_KEY = "favorites"
 private const val RECENTS_PAGE_KEY = "recents"
+
+private fun reactionDetailsRoute(roomId: String, eventId: String): String =
+    "reactions?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}"
 
 @Composable
 private fun WearMainActivity.rememberWearTextToSpeechProvider(): () -> WearTextToSpeech {

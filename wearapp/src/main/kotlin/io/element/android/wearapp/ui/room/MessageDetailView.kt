@@ -77,6 +77,7 @@ internal fun MessageDetailView(
     onOpenImage: (() -> Unit)? = null,
     onOpenOrStartThread: () -> Unit,
     onSendReaction: (reactionKey: String) -> Unit,
+    onShowReactionDetails: () -> Unit = {},
     onResolveVoicePlaybackUri: (suspend (WatchTimelineItem) -> Uri)? = null,
     onVoicePlaybackError: (Throwable) -> Unit = {},
     scrollState: ScrollState = rememberScrollState(),
@@ -162,7 +163,7 @@ internal fun MessageDetailView(
                         .padding(horizontal = 8.dp),
                 )
                 if (item.reactions.isNotEmpty()) {
-                    ReactionsRow(item = item)
+                    ReactionsRow(item = item, onClick = onShowReactionDetails)
                 }
                 if (item.hasTextForTts()) {
                     val isReadingAloud = readAloudPlaybackState == WearTextToSpeech.PlaybackState.LOADING ||
