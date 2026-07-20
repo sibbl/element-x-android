@@ -39,6 +39,13 @@ class TimelineItemViewTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun `voice duration is formatted for timeline previews`() {
+        assertThat(formatDurationLabel(0L)).isEqualTo("0:00")
+        assertThat(formatDurationLabel(12_500L)).isEqualTo("0:12")
+        assertThat(formatDurationLabel(125_000L)).isEqualTo("2:05")
+    }
+
+    @Test
     fun `timeline image row shows unavailable placeholder after preview timeout when bytes are missing`() {
         val unavailableText = rule.activity.getString(R.string.screen_media_preview_unavailable)
         rule.mainClock.autoAdvance = false

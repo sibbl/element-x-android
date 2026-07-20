@@ -18,6 +18,14 @@ class FavoritesPreviewTest {
     }
 
     @Test
+    fun `conversation preview removes markdown formatting`() {
+        assertThat(cleanConversationPreview("**Important** [details](https://example.org)"))
+            .isEqualTo("Important details")
+        assertThat(cleanConversationPreview("@first_last:example.org"))
+            .isEqualTo("@first_last:example.org")
+    }
+
+    @Test
     fun `empty conversation preview stays hidden`() {
         assertThat(cleanConversationPreview(null)).isNull()
         assertThat(cleanConversationPreview("Sending: ")).isNull()

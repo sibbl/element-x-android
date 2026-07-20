@@ -46,6 +46,7 @@ import io.element.android.watchbridge.contract.WatchFavoriteRoom
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.ui.common.toWearPlainTextFromMarkdown
 import io.element.android.wearapp.ui.common.AvatarBadge
 import io.element.android.wearapp.ui.common.PressableWearChip
 import io.element.android.wearapp.ui.common.watchCommandErrorMessage
@@ -333,6 +334,7 @@ internal fun cleanConversationPreview(preview: String?): String? = preview
     ?.removePrefix("Sending:")
     ?.removePrefix("Sending…")
     ?.trim()
+    ?.toWearPlainTextFromMarkdown()
     ?.takeIf { it.isNotEmpty() }
 
 data class SavedScalingListPosition(

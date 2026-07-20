@@ -32,6 +32,41 @@ class RoomViewTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun `pinned message count opens pinned overview`() {
+        val pinnedItem = WatchTimelineItem(
+            eventId = "\$pinned:server",
+            roomId = "!room:server",
+            senderId = "@alice:server",
+            senderDisplayName = "Alice",
+            timestampMs = 1L,
+            kind = WatchTimelineItemKind.TEXT,
+            bodyText = "Pinned content",
+            isPinned = true,
+        )
+
+        rule.setContent {
+            WearAppTheme {
+                RoomView(
+                    state = RoomViewState(
+                        timelineKey = "!room:server",
+                        displayName = "Pinned room",
+                        items = listOf(pinnedItem),
+                        isLoading = false,
+                    ),
+                    onMessageSelected = {},
+                    onOpenThread = null,
+                    onReply = {},
+                    onVoice = null,
+                )
+            }
+        }
+
+        rule.onNodeWithText("1 pinned message").performClick()
+        rule.onNodeWithText("Pinned messages").assertExists()
+        rule.onNodeWithText("Pinned content").assertExists()
+    }
+
+    @Test
     fun `force scroll request opens the latest timeline items`() {
         lateinit var listState: ScalingLazyListState
         var handledScrollRequestId: Long? = null

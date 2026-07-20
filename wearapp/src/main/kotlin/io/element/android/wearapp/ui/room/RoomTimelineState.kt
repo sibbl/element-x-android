@@ -32,6 +32,7 @@ import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.bridge.WearBridgeClient
+import io.element.android.wearapp.ui.common.toWearPlainTextFromMarkdown
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 
@@ -116,9 +117,7 @@ internal fun WatchTimelineItem.richDisplayText(): AnnotatedString {
         ?: AnnotatedString(bodyText?.normalizeRawTimelineText()?.takeIf { it.isNotBlank() } ?: "[${kind.name.lowercase()}]")
 }
 
-private fun String.normalizeRawTimelineText(): String =
-    replace("\r\n", "\n")
-        .replace('\r', '\n')
+private fun String.normalizeRawTimelineText(): String = toWearPlainTextFromMarkdown()
 
 private fun String.toPlainTimelineText(): String {
     return HtmlCompat.fromHtml(this, HtmlCompat.FROM_HTML_MODE_COMPACT)

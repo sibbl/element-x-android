@@ -31,6 +31,7 @@ import io.element.android.libraries.matrix.api.room.CreateTimelineParams
 import io.element.android.libraries.matrix.api.room.CurrentUserMembership
 import io.element.android.libraries.matrix.api.room.JoinedRoom
 import io.element.android.libraries.matrix.api.room.RoomInfo
+import io.element.android.libraries.matrix.api.room.RoomMember
 import io.element.android.libraries.matrix.api.room.roomMembers
 import io.element.android.libraries.matrix.api.roomlist.LatestEventValue
 import io.element.android.libraries.matrix.api.roomlist.RoomList
@@ -118,6 +119,7 @@ private const val WATCH_AVATAR_SIZE_PX = 64L
 private const val WATCH_MEDIA_PREVIEW_SIZE_PX = 384L
 private const val MAX_WATCH_PLAYBACK_BYTES = 64 * 1024
 private const val MAX_FAVORITE_PREVIEW_TEXT_LENGTH = 180
+private const val MAX_WATCH_REACTION_MEMBERS = 1_000
 private val FAVORITE_PREVIEW_WHITESPACE_REGEX = "\\s+".toRegex()
 private const val WATCH_RUNTIME_PREFS = "element_x_watchbridge_runtime"
 private const val KEY_LAST_SESSION_ID = "last_session_id"
@@ -447,6 +449,9 @@ private class MatrixRoomListWatchPort(
         val room = joinedRoom(roomId) ?: return@flow
         room.subscribeToSync()
         val timeline = room.liveTimeline
+        val initiallyResolvedReactionSenderNames = room.getMembers(limit = MAX_WATCH_REACTION_MEMBERS)
+            .getOrDefault(emptyList())
+            .toWatchReactionSenderNames()
         coroutineScope {
             // Backward pagination can be slow for encrypted / media-heavy rooms; do it alongside
             // the live projection so the watch gets the current slice without waiting for it.
@@ -458,8 +463,8 @@ private class MatrixRoomListWatchPort(
                 emitAll(
                     timeline.timelineItems.map { items ->
                         val roomInfo = room.info()
-                        val reactionSenderNames = room.membersStateFlow.value.roomMembers().orEmpty()
-                            .associate { member -> member.userId.value to member.displayName.orEmpty().ifBlank { member.userId.value } }
+                        val reactionSenderNames = initiallyResolvedReactionSenderNames +
+                            room.membersStateFlow.value.roomMembers().orEmpty().toWatchReactionSenderNames()
                         val projection = items.toWatchTimelineProjection(
                             roomId = roomId,
                             limit = limit,
@@ -488,6 +493,9 @@ private class MatrixRoomListWatchPort(
     override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>> = flow {
         val room = joinedRoom(roomId) ?: return@flow
         val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrNull() ?: return@flow
+        val initiallyResolvedReactionSenderNames = room.getMembers(limit = MAX_WATCH_REACTION_MEMBERS)
+            .getOrDefault(emptyList())
+            .toWatchReactionSenderNames()
         try {
             coroutineScope {
                 val paginationJob = launch {
@@ -497,7 +505,14 @@ private class MatrixRoomListWatchPort(
                 try {
                     emitAll(
                         timeline.timelineItems.map { items ->
-                            val projection = items.toWatchThreadProjection(roomId, threadRootEventId, limit)
+                            val reactionSenderNames = initiallyResolvedReactionSenderNames +
+                                room.membersStateFlow.value.roomMembers().orEmpty().toWatchReactionSenderNames()
+                            val projection = items.toWatchThreadProjection(
+                                roomId = roomId,
+                                threadRootEventId = threadRootEventId,
+                                limit = limit,
+                                reactionSenderNames = reactionSenderNames,
+                            )
                             mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
                             projection.items
                         }
@@ -831,13 +846,14 @@ internal fun List<MatrixTimelineItem>.toWatchThreadProjection(
     roomId: String,
     threadRootEventId: String,
     limit: Int,
+    reactionSenderNames: Map<String, String> = emptyMap(),
 ): ThreadProjection {
     val projectedItems = mutableListOf<WatchThreadItem>()
     val mediaSources = mutableMapOf<String, MediaPreviewSourceRef>()
 
     forEach { item ->
         val event = (item as? MatrixTimelineItem.Event)?.event ?: return@forEach
-        val projected = event.toWatchThreadItem(roomId, threadRootEventId) ?: return@forEach
+        val projected = event.toWatchThreadItem(roomId, threadRootEventId, reactionSenderNames) ?: return@forEach
         projectedItems += projected
         event.content.mediaPreviewSourceRef()?.let { mediaSources[projected.eventId] = it }
     }
@@ -856,6 +872,7 @@ internal fun List<MatrixTimelineItem>.toWatchThreadProjection(
 private fun EventTimelineItem.toWatchThreadItem(
     roomId: String,
     threadRootEventId: String,
+    reactionSenderNames: Map<String, String>,
 ): WatchThreadItem? {
     val eventId = eventId?.value ?: return null
     return WatchThreadItem(
@@ -869,7 +886,7 @@ private fun EventTimelineItem.toWatchThreadItem(
         bodyText = content.previewText(),
         formattedText = (content as? MessageContent)?.type?.formattedBody(),
         isOwn = isOwn,
-        reactions = watchReactions(),
+        reactions = watchReactions(reactionSenderNames),
         voiceMessageMeta = content.voiceMeta(),
         mediaPreview = content.mediaPreview(),
     )
@@ -1027,6 +1044,9 @@ internal fun normalizeWatchMediaPreviewBytes(
         output.toByteArray()
     }
 }
+
+private fun List<RoomMember>.toWatchReactionSenderNames(): Map<String, String> =
+    associate { member -> member.userId.value to member.disambiguatedDisplayName }
 
 private fun EventTimelineItem.watchReactions(
     senderNames: Map<String, String> = emptyMap(),

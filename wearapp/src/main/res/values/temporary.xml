@@ -77,4 +77,11 @@
     <string name="watch_error_reaction_failed">Couldn’t send reaction</string>
     <string name="watch_error_voice_send_failed">Couldn’t send voice message</string>
     <string name="watch_error_voice_playback_failed">Couldn’t play voice message</string>
+    <string name="screen_pinned_messages_title">Pinned messages</string>
+    <string name="screen_pinned_messages_empty">No pinned messages in the synced timeline</string>
+    <string name="action_close">Close</string>
+    <plurals name="pinned_messages_count">
+        <item quantity="one">%1$d pinned message</item>
+        <item quantity="other">%1$d pinned messages</item>
+    </plurals>
 </resources>

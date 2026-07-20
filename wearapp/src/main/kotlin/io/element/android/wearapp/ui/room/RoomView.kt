@@ -7,11 +7,15 @@
 
 package io.element.android.wearapp.ui.room
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -28,7 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -78,6 +85,9 @@ internal fun RoomView(
     onRequestMediaPreview: ((String, String) -> Unit)? = null,
 ) {
     val lazyListState = listState ?: rememberScalingLazyListState()
+    val pinnedItems = remember(state.items) { state.items.filter(WatchTimelineItem::isPinned) }
+    var showPinnedOverview by remember(state.timelineKey) { mutableStateOf(false) }
+    var topEdgeDragDistance by remember(state.timelineKey) { mutableStateOf(0f) }
     val totalItemCount = lazyListState.layoutInfo.totalItemsCount
     val lastEventId = state.items.lastOrNull()?.eventId
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
@@ -208,16 +218,31 @@ internal fun RoomView(
                 state = lazyListState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 8.dp)
+                    .then(if (showPinnedOverview) Modifier.clearAndSetSemantics { } else Modifier),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 item {
                     ListHeader {
-                        Text(
-                            text = state.displayName,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = state.displayName,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (pinnedItems.isNotEmpty()) {
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.pinned_messages_count,
+                                        pinnedItems.size,
+                                        pinnedItems.size,
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { showPinnedOverview = true },
+                                )
+                            }
+                        }
                     }
                 }
                 if (state.items.isEmpty() && state.isLoading) {
@@ -278,8 +303,46 @@ internal fun RoomView(
                 }
             }
 
-            // Scroll-to-bottom button
-            if (!isAtBottom && state.items.size > 3) {
+            if (showPinnedOverview) {
+                PinnedMessagesOverview(
+                    items = pinnedItems,
+                    onClose = { showPinnedOverview = false },
+                    onMessageSelected = { eventId ->
+                        showPinnedOverview = false
+                        saveCurrentPosition()
+                        onMessageSelected(eventId)
+                    },
+                    onReactionsSelected = onReactionsSelected,
+                    onOpenThread = onOpenThread,
+                )
+            }
+
+            if (pinnedItems.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .pointerInput(showPinnedOverview, pinnedItems.size) {
+                            detectVerticalDragGestures(
+                                onDragStart = { topEdgeDragDistance = 0f },
+                                onVerticalDrag = { _, dragAmount -> topEdgeDragDistance += dragAmount },
+                                onDragEnd = {
+                                    if (!showPinnedOverview && topEdgeDragDistance > PINNED_SWIPE_THRESHOLD_PX) {
+                                        showPinnedOverview = true
+                                    } else if (showPinnedOverview && topEdgeDragDistance < -PINNED_SWIPE_THRESHOLD_PX) {
+                                        showPinnedOverview = false
+                                    }
+                                    topEdgeDragDistance = 0f
+                                },
+                                onDragCancel = { topEdgeDragDistance = 0f },
+                            )
+                        },
+                )
+            }
+
+            // Scroll-to-bottom button remains dedicated to returning to the newest message.
+            if (!showPinnedOverview && !isAtBottom && state.items.size > 3) {
                 FilledTonalIconButton(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -302,14 +365,67 @@ internal fun RoomView(
                 }
             }
         }
-        ComposerBar(
-            onReply = onReply,
-            onVoice = onVoice,
-            onReact = onReact,
-            contextLabel = state.composerContextLabel,
-        )
+        if (!showPinnedOverview) {
+            ComposerBar(
+                onReply = onReply,
+                onVoice = onVoice,
+                onReact = onReact,
+                contextLabel = state.composerContextLabel,
+            )
+        }
     }
 }
+
+@Composable
+private fun PinnedMessagesOverview(
+    items: List<WatchTimelineItem>,
+    onClose: () -> Unit,
+    onMessageSelected: (String) -> Unit,
+    onReactionsSelected: ((String) -> Unit)?,
+    onOpenThread: ((String) -> Unit)?,
+) {
+    ScalingLazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        item {
+            ListHeader {
+                Text(
+                    text = stringResource(R.string.screen_pinned_messages_title),
+                    modifier = Modifier.clickable(onClick = onClose),
+                )
+            }
+        }
+        if (items.isEmpty()) {
+            item { Text(stringResource(R.string.screen_pinned_messages_empty)) }
+        } else {
+            itemsIndexed(items, key = { _, item -> "pinned-${item.eventId}" }) { _, item ->
+                TimelineMessageRow(
+                    item = item,
+                    onClick = { onMessageSelected(item.eventId) },
+                    onReactionsClick = onReactionsSelected?.let { callback -> { callback(item.eventId) } },
+                    onOpenThread = onOpenThread,
+                    showSender = true,
+                )
+            }
+        }
+        item {
+            Text(
+                text = stringResource(R.string.action_close),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClose)
+                    .padding(12.dp),
+            )
+        }
+    }
+}
+
+private const val PINNED_SWIPE_THRESHOLD_PX = 48f
 
 /** Stable snapshot used to drive [RoomView]. */
 internal data class RoomViewState(

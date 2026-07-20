@@ -50,6 +50,27 @@ class RoomTimelineStateTest {
     }
 
     @Test
+    fun `plain body text removes common markdown markers`() {
+        val item = aTextTimelineItem(
+            bodyText = "**Bold** and _italic_ with [Element](https://element.io) and `code`",
+            formattedText = null,
+        )
+
+        assertThat(item.displayText()).isEqualTo("Bold and italic with Element and code")
+        assertThat(item.richDisplayText().text).isEqualTo("Bold and italic with Element and code")
+    }
+
+    @Test
+    fun `plain body text keeps matrix ids and ordinary underscores`() {
+        val item = aTextTimelineItem(
+            bodyText = "@first_last:example.org value_with_underscores",
+            formattedText = null,
+        )
+
+        assertThat(item.displayText()).isEqualTo("@first_last:example.org value_with_underscores")
+    }
+
+    @Test
     fun `display text preserves block line breaks from formatted html`() {
         val item = aTextTimelineItem(
             formattedText = "<p>Intro</p><ul><li>First bullet</li><li>Second bullet</li></ul><blockquote>Quote<br>continued</blockquote>",
