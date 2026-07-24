@@ -39,7 +39,7 @@ class WearLocalNotificationFactoryTest {
     private val factory = WearLocalNotificationFactory(context)
 
     @Test
-    fun `thread notification exposes mark as read voice thread and reply actions in requested order`() {
+    fun `thread notification opens thread on tap without redundant thread action`() {
         val model = WatchMessageNotification(
             notificationKey = "message:@alice:server:!room:server|\$root:server",
             roomId = "!room:server",
@@ -63,14 +63,13 @@ class WearLocalNotificationFactoryTest {
         val contentIntent = shadowOf(notification.contentIntent).savedIntent
         val deepLink = parseWearCompanionDeepLink(contentIntent.data)
         assertThat(deepLink?.roomId).isEqualTo("!room:server")
-        assertThat(deepLink?.eventId).isEqualTo("\$event:server")
+        assertThat(deepLink?.eventId).isNull()
         assertThat(deepLink?.threadRootEventId).isEqualTo("\$root:server")
 
         val actions = notification.actions.orEmpty()
         assertThat(actions.map { it.title.toString() }).containsExactly(
             context.getString(R.string.screen_wear_notification_mark_as_read),
             context.getString(R.string.screen_voice_recorder_title),
-            context.getString(R.string.screen_message_detail_open_thread),
             context.getString(R.string.composer_reply),
         ).inOrder()
         val markAsReadIntent = shadowOf(actions[0].actionIntent as PendingIntent).savedIntent
@@ -83,12 +82,7 @@ class WearLocalNotificationFactoryTest {
         assertThat(voiceIntent.getStringExtra("threadRootEventId")).isEqualTo("\$root:server")
         assertThat(voiceIntent.getStringExtra(EXTRA_RETURN_TO_EVENT_ID)).isEqualTo("\$event:server")
 
-        val threadIntent = shadowOf(actions[2].actionIntent as PendingIntent).savedIntent
-        val threadDeepLink = parseWearCompanionDeepLink(threadIntent.data)
-        assertThat(threadDeepLink?.roomId).isEqualTo("!room:server")
-        assertThat(threadDeepLink?.threadRootEventId).isEqualTo("\$root:server")
-
-        assertThat(actions[3].remoteInputs.orEmpty().single().resultKey).isEqualTo(WearNotificationActionReceiver.RESULT_KEY_REPLY_TEXT)
+        assertThat(actions[2].remoteInputs.orEmpty().single().resultKey).isEqualTo(WearNotificationActionReceiver.RESULT_KEY_REPLY_TEXT)
 
         val dismissIntent = shadowOf(notification.deleteIntent).savedIntent
         assertThat(dismissIntent.action).isEqualTo(WearNotificationActionReceiver.ACTION_DISMISS)
@@ -113,6 +107,10 @@ class WearLocalNotificationFactoryTest {
             .startsWith("Team Wear")
         assertThat(notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
             .isEqualTo("Bob: Hello there")
+
+        val contentDeepLink = parseWearCompanionDeepLink(shadowOf(notification.contentIntent).savedIntent.data)
+        assertThat(contentDeepLink?.eventId).isNull()
+        assertThat(contentDeepLink?.threadRootEventId).isEqualTo("\$event:server")
 
         val threadIntent = shadowOf(notification.actions.orEmpty()[2].actionIntent as PendingIntent).savedIntent
         val threadDeepLink = parseWearCompanionDeepLink(threadIntent.data)
@@ -225,7 +223,7 @@ class WearLocalNotificationFactoryTest {
 
         val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = null)
 
-        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v16_group_default")
+        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v21_group_default")
     }
 
     @Test
@@ -289,13 +287,35 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(groupNotification.channelId)
-            .isEqualTo("wear_companion_messages_v16_group_triple")
+            .isEqualTo("wear_companion_messages_v21_group_triple")
         assertThat(dmNotification.channelId)
-            .isEqualTo("wear_companion_messages_v16_dm_pulse")
+            .isEqualTo("wear_companion_messages_v21_dm_pulse")
         assertThat(favoriteGroupNotification.channelId)
-            .isEqualTo("wear_companion_messages_v16_favorite_group_escalating")
+            .isEqualTo("wear_companion_messages_v21_favorite_group_escalating")
         assertThat(favoriteDmNotification.channelId)
-            .isEqualTo("wear_companion_messages_v16_favorite_dm_long")
+            .isEqualTo("wear_companion_messages_v21_favorite_dm_long")
+    }
+
+    @Test
+    fun `quiet thread reply uses room custom vibration from notification settings snapshot`() {
+        val notification = createFactory().build(
+            model(
+                roomId = "!group:server",
+                roomKind = WatchRoomKind.GROUP,
+            ).copy(
+                threadRootEventId = "\$thread:server",
+                isNoisy = false,
+                vibrationSettingsSnapshot = WatchNotificationVibrationSettings(
+                    groups = WatchNotificationVibrationPattern.CUSTOM,
+                    groupsCustomPattern = "100,200",
+                ),
+            ),
+            generatedAtMs = 100L,
+            expiresAtMs = null,
+        )
+
+        assertThat(notification.channelId)
+            .isEqualTo("wear_companion_messages_v21_group_custom_fd0a5f89")
     }
 
     @Test
@@ -316,7 +336,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v16_group_triple")
+            .isEqualTo("wear_companion_messages_v21_group_triple")
         assertThat(notification.flags and Notification.FLAG_ONLY_ALERT_ONCE).isEqualTo(0)
         assertThat(notification.group).isNotEqualTo("silent")
         assertThat(notification.groupAlertBehavior).isNotEqualTo(Notification.GROUP_ALERT_SUMMARY)
@@ -343,7 +363,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v16_notification_override_escalating")
+            .isEqualTo("wear_companion_messages_v21_notification_override_escalating")
     }
 
     @Test
@@ -371,32 +391,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v16_room_${"!dm:server".stableShortHash()}_escalating")
-    }
-
-    @Test
-    fun `saved custom category vibration uses the configured waveform`() {
-        val vibration = createFactory(
-            settings = WatchCompanionSettings(
-                notificationVibrations = WatchNotificationVibrationSettings(
-                    groups = WatchNotificationVibrationPattern.CUSTOM,
-                    groupsCustomPattern = "120 60 240",
-                ),
-            ),
-        ).selectedVibration(
-            model(
-                roomId = "!group:server",
-                roomKind = WatchRoomKind.GROUP,
-            ),
-        )
-
-        assertThat(vibration).isEqualTo(
-            WearResolvedNotificationVibration(
-                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                customTimingsMs = listOf(0L, 120L, 60L, 240L),
-                source = WearNotificationVibrationSource.Groups,
-            ),
-        )
+            .isEqualTo("wear_companion_messages_v21_room_${"!dm:server".stableShortHash()}_escalating")
     }
 
     @Test
@@ -422,8 +417,7 @@ class WearLocalNotificationFactoryTest {
                 roomKind = WatchRoomKind.GROUP,
             ).copy(
                 vibrationSettingsSnapshot = WatchNotificationVibrationSettings(
-                    favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
-                    favoriteGroupsCustomPattern = "100 50 400",
+                    favoriteGroups = WatchNotificationVibrationPattern.TRIPLE,
                 ),
             ),
             generatedAtMs = 100L,
@@ -434,8 +428,7 @@ class WearLocalNotificationFactoryTest {
             .isEqualTo(
                 wearLocalNotificationChannelId(
                     WearResolvedNotificationVibration(
-                        pattern = WatchNotificationVibrationPattern.CUSTOM,
-                        customTimingsMs = listOf(0L, 100L, 50L, 400L),
+                        pattern = WatchNotificationVibrationPattern.TRIPLE,
                         source = WearNotificationVibrationSource.FavoriteGroups,
                     ),
                 ),
@@ -443,75 +436,25 @@ class WearLocalNotificationFactoryTest {
     }
 
     @Test
-    fun `invalid custom category vibration falls back to the default channel`() {
-        val notification = createFactory(
-            settings = WatchCompanionSettings(
-                notificationVibrations = WatchNotificationVibrationSettings(
-                    groups = WatchNotificationVibrationPattern.CUSTOM,
-                    groupsCustomPattern = "oops nope",
-                ),
-            ),
-        ).build(
-            model(
-                roomId = "!group:server",
-                roomKind = WatchRoomKind.GROUP,
-            ),
-            generatedAtMs = 100L,
-            expiresAtMs = null,
-        )
-
-        assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v16_group_default")
-    }
-
-    @Test
-    fun `invalid custom room vibration falls back to the default channel`() {
-        val notification = createFactory(
-            settings = WatchCompanionSettings(
-                notificationVibrations = WatchNotificationVibrationSettings(
-                    groups = WatchNotificationVibrationPattern.TRIPLE,
-                    conversationOverrides = listOf(
-                        WatchConversationVibrationOverride(
-                            roomId = "!room:server",
-                            pattern = WatchNotificationVibrationPattern.CUSTOM,
-                            customPattern = "oops nope",
-                        ),
-                    ),
-                ),
-            ),
-        ).build(
-            model(roomId = "!room:server"),
-            generatedAtMs = 100L,
-            expiresAtMs = null,
-        )
-
-        assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v16_room_${"!room:server".stableShortHash()}_default")
-    }
-
-    @Test
-    fun `explicit custom vibration override uses the notification custom pattern`() {
+    fun `explicit triple vibration override is selected`() {
         val vibration = createFactory().selectedVibration(
             model(roomId = "!room:server").copy(
-                vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
-                customVibrationPattern = "120 60 240",
+                vibrationPatternOverride = WatchNotificationVibrationPattern.TRIPLE,
             ),
         )
 
         assertThat(vibration).isEqualTo(
             WearResolvedNotificationVibration(
-                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                customTimingsMs = listOf(0L, 120L, 60L, 240L),
+                pattern = WatchNotificationVibrationPattern.TRIPLE,
                 source = WearNotificationVibrationSource.NotificationOverride,
             ),
         )
     }
 
     @Test
-    fun `explicit custom vibration notification uses the alerting custom channel`() {
+    fun `explicit triple vibration notification uses correct channel`() {
         val model = model(roomId = "!room:server").copy(
-            vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
-            customVibrationPattern = "120 60 240",
+            vibrationPatternOverride = WatchNotificationVibrationPattern.TRIPLE,
         )
 
         val notification = createFactory().build(
@@ -520,7 +463,7 @@ class WearLocalNotificationFactoryTest {
             expiresAtMs = null,
         )
 
-        assertThat(notification.channelId).startsWith("wear_companion_messages_v16_notification_override_custom_")
+        assertThat(notification.channelId).startsWith("wear_companion_messages_v21_notification_override_triple")
     }
 
     @Test

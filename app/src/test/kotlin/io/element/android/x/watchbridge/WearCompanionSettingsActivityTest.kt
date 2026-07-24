@@ -76,39 +76,6 @@ class WearCompanionSettingsActivityTest {
     }
 
     @Test
-    fun `custom category vibration helper stores pattern and waveform`() {
-        val updatedSettings = WatchCompanionSettings().withNotificationVibration(
-            category = WearCompanionVibrationCategory.GROUPS,
-            pattern = WatchNotificationVibrationPattern.CUSTOM,
-            customPattern = "120 60 240",
-        )
-
-        assertThat(updatedSettings.notificationVibrations.groups)
-            .isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
-        assertThat(updatedSettings.notificationVibrations.groupsCustomPattern)
-            .isEqualTo("120 60 240")
-    }
-
-    @Test
-    fun `switching category away from custom clears the stored waveform`() {
-        val initialSettings = WatchCompanionSettings(
-            notificationVibrations = WatchNotificationVibrationSettings(
-                groups = WatchNotificationVibrationPattern.CUSTOM,
-                groupsCustomPattern = "120 60 240",
-            ),
-        )
-
-        val updatedSettings = initialSettings.withNotificationVibration(
-            category = WearCompanionVibrationCategory.GROUPS,
-            pattern = WatchNotificationVibrationPattern.DOUBLE,
-        )
-
-        assertThat(updatedSettings.notificationVibrations.groups)
-            .isEqualTo(WatchNotificationVibrationPattern.DOUBLE)
-        assertThat(updatedSettings.notificationVibrations.groupsCustomPattern).isEmpty()
-    }
-
-    @Test
     fun `message long press action can be updated`() {
         val updatedSettings = WatchCompanionSettings().copy(
             longPressMessageAction = WatchLongPressMessageAction.REPLY_VOICE,
@@ -151,16 +118,14 @@ class WearCompanionSettingsActivityTest {
 
         val updatedSettings = initialSettings.withConversationNotificationVibration(
             roomId = roomId,
-            pattern = WatchNotificationVibrationPattern.CUSTOM,
-            customPattern = "120 60 240",
+            pattern = WatchNotificationVibrationPattern.TRIPLE,
         )
 
         assertThat(updatedSettings.notificationVibrations.conversationOverrides)
             .containsExactly(
                 WatchConversationVibrationOverride(
                     roomId = roomId,
-                    pattern = WatchNotificationVibrationPattern.CUSTOM,
-                    customPattern = "120 60 240",
+                    pattern = WatchNotificationVibrationPattern.TRIPLE,
                 ),
             )
     }
@@ -186,6 +151,29 @@ class WearCompanionSettingsActivityTest {
 
         assertThat(updatedSettings.notificationVibrations.conversationOverrides)
             .containsExactly(WatchConversationVibrationOverride(roomId = roomId))
+    }
+
+    @Test
+    fun `conversation test button sends the configured custom pattern`() {
+        val room = aRoom(roomId = "!room:server", displayName = "Team Wear", kind = WatchRoomKind.GROUP)
+        var tested: Triple<WatchFavoriteRoom, WatchNotificationVibrationPattern, String>? = null
+        setWearContent(
+            initialSettings = WatchCompanionSettings(
+                notificationVibrations = WatchNotificationVibrationSettings(
+                    conversationOverrides = listOf(
+                        WatchConversationVibrationOverride(room.roomId, WatchNotificationVibrationPattern.CUSTOM, "0,120,80,240"),
+                    ),
+                ),
+            ),
+            availableRooms = listOf(room),
+            onSendConversationPatternTest = { testedRoom, pattern, custom -> tested = Triple(testedRoom, pattern, custom) },
+        )
+
+        composeRule.onNodeWithTag(wearCompanionConversationTestTag(room.roomId)).performScrollTo().performClick()
+
+        composeRule.runOnIdle {
+            assertThat(tested).isEqualTo(Triple(room, WatchNotificationVibrationPattern.CUSTOM, "0,120,80,240"))
+        }
     }
 
     @Test
@@ -222,7 +210,7 @@ class WearCompanionSettingsActivityTest {
         availableRooms: List<WatchFavoriteRoom> = emptyList(),
         onSettingsChanged: (WatchCompanionSettings) -> Unit = {},
         onSendTestNotification: (WearCompanionVibrationCategory) -> Unit = {},
-        onSendConversationPatternTest: (WatchFavoriteRoom, String) -> Unit = { _, _ -> },
+        onSendConversationPatternTest: (WatchFavoriteRoom, WatchNotificationVibrationPattern, String) -> Unit = { _, _, _ -> },
     ) {
         composeRule.runOnUiThread {
             Robolectric.buildActivity(ComponentActivity::class.java)
@@ -326,13 +314,13 @@ class WearCompanionSettingsActivityTest {
             escalatingLabel = "Escalating",
             escalatingDescription = "Short buzzes that ramp up in strength",
             customLabel = "Custom",
-            customDescription = "Create a custom vibration pattern.",
+            customDescription = "Custom vibration pattern (e.g., \"100, 100, 200\")",
             customPatternDialogTitle = "Custom vibration pattern",
-            customPatternFieldLabel = "Pattern timings",
-            customPatternDescription = "Enter vibration and pause lengths in milliseconds, for example: 120 60 240 60 360",
-            customPatternError = "Use only positive millisecond values separated by spaces, commas, or semicolons.",
-            customPatternTestLabel = "Send test notification",
-            customPatternTestDescription = "Try this pattern on your watch before saving.",
+            customPatternFieldLabel = "Pattern",
+            customPatternDescription = "Enter timing in ms (e.g., \"100, 100, 200\" for dot-dot-dash)",
+            customPatternError = "Invalid pattern. Use comma-separated numbers.",
+            customPatternTestLabel = "Test vibration",
+            customPatternTestDescription = "Try the pattern on your watch",
         )
     }
 

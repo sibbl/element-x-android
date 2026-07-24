@@ -265,6 +265,7 @@ private fun RoomListPage(
                     room = room,
                     avatarBytes = avatarImages[room.roomId],
                     onClick = { onRoomSelected(room.roomId) },
+                    onSwipeLeft = if (isFavoritePage) onRoomSelected.let { callback -> { callback(room.roomId) } } else null,
                     onLongPress = onLongPressRoom?.let { callback -> { callback(room) } },
                 )
             }
@@ -278,6 +279,7 @@ private fun FavoriteRoomChip(
     room: WatchFavoriteRoom,
     avatarBytes: ByteArray?,
     onClick: () -> Unit,
+    onSwipeLeft: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
     val subtitle = if (room.lastPreviewKind == WatchTimelineItemKind.VOICE) {
@@ -293,6 +295,7 @@ private fun FavoriteRoomChip(
     PressableWearChip(
         onTap = onClick,
         onLongPress = onLongPress,
+        onSwipeLeft = onSwipeLeft,
         backgroundColor = chipColor,
         modifier = Modifier
             .fillMaxWidth(),

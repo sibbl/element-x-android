@@ -40,6 +40,8 @@ data class WatchRoomSummary(
     val canSendMessages: Boolean,
     val timelineVersion: Long,
     val lastSyncTsMs: Long,
+    val topic: String? = null,
+    val isFavorite: Boolean = false,
 )
 
 /** Kind of a timeline item projected to the watch. */

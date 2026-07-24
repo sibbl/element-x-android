@@ -48,7 +48,14 @@ internal class WearCompanionTestNotificationSender(
     ) {
         val generatedAtMs = clock()
         val selectedPattern = settings.notificationVibrationFor(category)
-        val selectedCustomPattern = settings.notificationCustomPatternFor(category)
+        val selectedCustomPattern = if (selectedPattern == WatchNotificationVibrationPattern.CUSTOM) {
+            when (category) {
+                WearCompanionVibrationCategory.GROUPS -> settings.notificationVibrations.groupsCustomPattern
+                WearCompanionVibrationCategory.DMS -> settings.notificationVibrations.dmsCustomPattern
+                WearCompanionVibrationCategory.FAVORITE_GROUPS -> settings.notificationVibrations.favoriteGroupsCustomPattern
+                WearCompanionVibrationCategory.FAVORITE_DMS -> settings.notificationVibrations.favoriteDmsCustomPattern
+            }
+        } else null
         val sample = sampleProvider(category)
         publishSampleNotification(
             pathSuffix = category.storageKey(),
@@ -60,9 +67,8 @@ internal class WearCompanionTestNotificationSender(
                 roomDisplayName = sample.roomDisplayName,
                 roomKind = category.roomKind(),
                 vibrationPatternOverride = selectedPattern,
-                customVibrationPattern = selectedCustomPattern.takeIf {
-                    selectedPattern == WatchNotificationVibrationPattern.CUSTOM
-                },
+                customVibrationPattern = selectedCustomPattern,
+                vibrationSettingsSnapshot = settings.notificationVibrations,
             ),
         )
     }
@@ -73,39 +79,62 @@ internal class WearCompanionTestNotificationSender(
     ) {
         val generatedAtMs = clock()
         val sample = sampleProvider(category)
+        val vibrationSettings = io.element.android.watchbridge.contract.WatchNotificationVibrationSettings(
+            groups = if (category == WearCompanionVibrationCategory.GROUPS) WatchNotificationVibrationPattern.CUSTOM else WatchNotificationVibrationPattern.DEFAULT,
+            groupsCustomPattern = if (category == WearCompanionVibrationCategory.GROUPS) customPattern else "",
+            dms = if (category == WearCompanionVibrationCategory.DMS) WatchNotificationVibrationPattern.CUSTOM else WatchNotificationVibrationPattern.DEFAULT,
+            dmsCustomPattern = if (category == WearCompanionVibrationCategory.DMS) customPattern else "",
+            favoriteGroups = if (category == WearCompanionVibrationCategory.FAVORITE_GROUPS) WatchNotificationVibrationPattern.CUSTOM else WatchNotificationVibrationPattern.DEFAULT,
+            favoriteGroupsCustomPattern = if (category == WearCompanionVibrationCategory.FAVORITE_GROUPS) customPattern else "",
+            favoriteDms = if (category == WearCompanionVibrationCategory.FAVORITE_DMS) WatchNotificationVibrationPattern.CUSTOM else WatchNotificationVibrationPattern.DEFAULT,
+            favoriteDmsCustomPattern = if (category == WearCompanionVibrationCategory.FAVORITE_DMS) customPattern else "",
+        )
         publishSampleNotification(
-            pathSuffix = "category-custom:${category.storageKey()}",
+            pathSuffix = "${category.storageKey()}_custom_test",
             notification = sample.toNotification(
                 generatedAtMs = generatedAtMs,
-                notificationKeySuffix = "${category.storageKey()}-custom",
-                roomId = "!$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX-${category.storageKey()}:local",
-                eventId = "\$$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX-${category.storageKey()}-$generatedAtMs:local",
+                notificationKeySuffix = "${category.storageKey()}_custom_test",
+                roomId = "!$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX-${category.storageKey()}_custom:local",
+                eventId = "\$$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX-${category.storageKey()}_custom_test-$generatedAtMs:local",
                 roomDisplayName = sample.roomDisplayName,
                 roomKind = category.roomKind(),
                 vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
                 customVibrationPattern = customPattern,
+                vibrationSettingsSnapshot = vibrationSettings,
             ),
         )
     }
 
     suspend fun sendConversationPatternTest(
         room: WatchFavoriteRoom,
-        customPattern: String,
+        pattern: WatchNotificationVibrationPattern,
+        customPattern: String = "",
     ) {
         val generatedAtMs = clock()
         val category = room.toSampleCategory()
         val sample = sampleProvider(category)
+        val vibrationSettings = io.element.android.watchbridge.contract.WatchNotificationVibrationSettings(
+            groups = WatchNotificationVibrationPattern.DEFAULT,
+            conversationOverrides = listOf(
+                io.element.android.watchbridge.contract.WatchConversationVibrationOverride(
+                    roomId = room.roomId,
+                    pattern = pattern,
+                    customPattern = customPattern,
+                ),
+            ),
+        )
         publishSampleNotification(
-            pathSuffix = "conversation:${room.roomId}",
+            pathSuffix = "room_${room.roomId}_test",
             notification = sample.toNotification(
                 generatedAtMs = generatedAtMs,
-                notificationKeySuffix = room.roomId,
+                notificationKeySuffix = "room_${room.roomId}_test",
                 roomId = room.roomId,
-                eventId = "\$$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX-${category.storageKey()}-$generatedAtMs:${room.roomId}",
+                eventId = "\$$WEAR_COMPANION_TEST_NOTIFICATION_PATH_PREFIX-room-${room.roomId}-$generatedAtMs:local",
                 roomDisplayName = room.displayName,
                 roomKind = room.kind,
-                vibrationPatternOverride = WatchNotificationVibrationPattern.CUSTOM,
-                customVibrationPattern = customPattern,
+                vibrationPatternOverride = pattern,
+                customVibrationPattern = customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM },
+                vibrationSettingsSnapshot = vibrationSettings,
             ),
         )
     }
@@ -156,6 +185,7 @@ private fun WearCompanionTestNotificationSample.toNotification(
     roomKind: WatchRoomKind,
     vibrationPatternOverride: WatchNotificationVibrationPattern,
     customVibrationPattern: String? = null,
+    vibrationSettingsSnapshot: io.element.android.watchbridge.contract.WatchNotificationVibrationSettings? = null,
 ): WatchMessageNotification {
     val previewMessages = previewMessages.ifEmpty { listOf(bodyText) }
     return WatchMessageNotification(
@@ -178,6 +208,7 @@ private fun WearCompanionTestNotificationSample.toNotification(
         isNoisy = true,
         vibrationPatternOverride = vibrationPatternOverride,
         customVibrationPattern = customVibrationPattern,
+        vibrationSettingsSnapshot = vibrationSettingsSnapshot,
     )
 }
 

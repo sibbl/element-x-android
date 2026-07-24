@@ -22,7 +22,6 @@ import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchNotificationMessagePreview
 import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchRoomKind
-import io.element.android.watchbridge.contract.parseCustomWatchNotificationVibrationPattern
 import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
 import io.element.android.wearapp.ui.buildWearLaunchIntent
@@ -31,8 +30,8 @@ import io.element.android.wearapp.ui.voice.VoiceRecorderActivity
 
 internal data class WearResolvedNotificationVibration(
     val pattern: WatchNotificationVibrationPattern,
-    val customTimingsMs: List<Long> = emptyList(),
     val source: WearNotificationVibrationSource = WearNotificationVibrationSource.Generic,
+    val customPattern: String = "",
 )
 
 internal sealed interface WearNotificationVibrationSource {
@@ -90,8 +89,8 @@ internal class WearLocalNotificationFactory(
         notification.vibrationPatternOverride?.let {
             return resolveConfiguredVibration(
                 pattern = it,
-                customPatternSpec = notification.customVibrationPattern.orEmpty(),
                 source = WearNotificationVibrationSource.NotificationOverride,
+                customPattern = notification.customVibrationPattern.orEmpty()
             )
         }
         vibrationSettings.conversationOverrides
@@ -100,8 +99,8 @@ internal class WearLocalNotificationFactory(
                 roomOverride.pattern?.let { pattern ->
                     return resolveConfiguredVibration(
                         pattern = pattern,
-                        customPatternSpec = roomOverride.customPattern,
                         source = WearNotificationVibrationSource.Conversation(roomOverride.roomId),
+                        customPattern = roomOverride.customPattern,
                     )
                 }
             }
@@ -115,7 +114,7 @@ internal class WearLocalNotificationFactory(
             roomKind == WatchRoomKind.DM -> patterns.dms
             else -> patterns.groups
         }
-        val customPatternSpec = when {
+        val customPattern = when {
             isFavorite && roomKind == WatchRoomKind.DM -> patterns.favoriteDmsCustomPattern
             isFavorite && roomKind == WatchRoomKind.GROUP -> patterns.favoriteGroupsCustomPattern
             roomKind == WatchRoomKind.DM -> patterns.dmsCustomPattern
@@ -129,8 +128,8 @@ internal class WearLocalNotificationFactory(
         }
         return resolveConfiguredVibration(
             pattern = pattern,
-            customPatternSpec = customPatternSpec,
             source = source,
+            customPattern = customPattern,
         )
     }
 
@@ -165,7 +164,11 @@ internal class WearLocalNotificationFactory(
             .setDeleteIntent(dismissIntent(notification.notificationKey, generatedAtMs))
             .addAction(markAsReadAction(notification, generatedAtMs))
             .addAction(voiceAction(notification, title))
-            .addAction(threadAction(notification))
+            .apply {
+                // Tapping a notification is already the direct way into an existing thread.
+                // Keep the explicit start-thread action only for non-thread messages.
+                if (notification.threadRootEventId == null) addAction(threadAction(notification))
+            }
             .addAction(replyAction(notification, generatedAtMs))
             .apply {
                 largeIcon(notification)?.let(::setLargeIcon)
@@ -181,30 +184,14 @@ internal class WearLocalNotificationFactory(
 
     private fun resolveConfiguredVibration(
         pattern: WatchNotificationVibrationPattern,
-        customPatternSpec: String,
         source: WearNotificationVibrationSource,
+        customPattern: String = "",
     ): WearResolvedNotificationVibration {
-        if (pattern != WatchNotificationVibrationPattern.CUSTOM) {
-            return WearResolvedNotificationVibration(
-                pattern = pattern,
-                source = source,
-            )
-        }
-        val customTimings = parseCustomWatchNotificationVibrationPattern(customPatternSpec)
-            ?.toList()
-            .orEmpty()
-        return if (customTimings.isEmpty()) {
-            WearResolvedNotificationVibration(
-                pattern = WatchNotificationVibrationPattern.DEFAULT,
-                source = source,
-            )
-        } else {
-            WearResolvedNotificationVibration(
-                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                customTimingsMs = customTimings,
-                source = source,
-            )
-        }
+        return WearResolvedNotificationVibration(
+            pattern = pattern,
+            source = source,
+            customPattern = customPattern,
+        )
     }
 
     private fun notificationTitle(notification: WatchMessageNotification): String {
@@ -331,8 +318,8 @@ internal class WearLocalNotificationFactory(
         val intent = buildWearLaunchIntent(
             context = context,
             roomId = notification.roomId,
-            eventId = notification.eventId,
-            threadRootEventId = notification.threadRootEventId,
+            eventId = null,
+            threadRootEventId = notification.threadRootEventId ?: notification.eventId,
         )
         return PendingIntent.getActivity(
             context,

@@ -7,19 +7,26 @@
 
 package io.element.android.wearapp.ui.room
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,10 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -47,9 +54,11 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
+import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.wearapp.R
 import io.element.android.wearapp.bridge.mediaPreviewCacheKey
+import io.element.android.wearapp.ui.common.AvatarBadge
 import io.element.android.wearapp.ui.common.ComposerBar
 import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
 import kotlinx.coroutines.flow.StateFlow
@@ -66,6 +75,7 @@ import java.util.Locale
  * Pure rendering surface for a room timeline. Used by [RoomScreen] (live) and the thread screen
  * (after mapping `WatchThreadItem` -> `WatchTimelineItem`).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun RoomView(
     state: RoomViewState,
@@ -83,11 +93,12 @@ internal fun RoomView(
     onListPositionChange: ((SavedScalingListPosition) -> Unit)? = null,
     mediaPreviewFlowProvider: ((String, String) -> StateFlow<ByteArray?>)? = null,
     onRequestMediaPreview: ((String, String) -> Unit)? = null,
+    avatarBytes: ByteArray? = null,
+    onPageChange: (Int) -> Unit = {},
+    enableConversationDetails: Boolean = false,
 ) {
     val lazyListState = listState ?: rememberScalingLazyListState()
     val pinnedItems = remember(state.items) { state.items.filter(WatchTimelineItem::isPinned) }
-    var showPinnedOverview by remember(state.timelineKey) { mutableStateOf(false) }
-    var topEdgeDragDistance by remember(state.timelineKey) { mutableStateOf(0f) }
     val totalItemCount = lazyListState.layoutInfo.totalItemsCount
     val lastEventId = state.items.lastOrNull()?.eventId
     var shouldStickToBottom by remember(state.timelineKey) { mutableStateOf(true) }
@@ -212,137 +223,64 @@ internal fun RoomView(
         }
     }
 
+    val pageCount = if (enableConversationDetails) 2 else 1
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { pageCount })
+    BackHandler(enabled = enableConversationDetails && pagerState.currentPage == 1) {
+        scope.launch { pagerState.animateScrollToPage(0) }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect(onPageChange)
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f)) {
-            ScalingLazyColumn(
-                state = lazyListState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp)
-                    .then(if (showPinnedOverview) Modifier.clearAndSetSemantics { } else Modifier),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                item {
-                    ListHeader {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = state.displayName,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (pinnedItems.isNotEmpty()) {
-                                Text(
-                                    text = pluralStringResource(
-                                        R.plurals.pinned_messages_count,
-                                        pinnedItems.size,
-                                        pinnedItems.size,
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.clickable { showPinnedOverview = true },
-                                )
-                            }
-                        }
-                    }
-                }
-                if (state.items.isEmpty() && state.isLoading) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.screen_room_loading_messages),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                        )
-                    }
-                } else if (state.items.isEmpty()) {
-                    item {
-                        Text(
-                            text = state.emptyText ?: stringResource(R.string.screen_room_empty_messages),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-                        )
-                    }
-                }
-                itemsIndexed(state.items, key = { _, it -> it.eventId }) { index, entry ->
-                    val prevItem = state.items.getOrNull(index - 1)
-                    val showDayDivider = prevItem == null || !isSameDay(prevItem.timestampMs, entry.timestampMs)
-                    val showSender = prevItem == null || prevItem.senderId != entry.senderId || showDayDivider
-                    val mediaPreviewBytes = mediaPreviewFlowProvider?.let { provider ->
-                        provider(entry.roomId, entry.eventId).collectAsState().value
-                    } ?: state.mediaPreviewImages[mediaPreviewCacheKey(entry.roomId, entry.eventId)]
-
-                    if (showDayDivider && index > 0) {
-                        DayDivider(timestampMs = entry.timestampMs)
-                    }
-
-                    val openThread = onOpenThread?.let { callback ->
-                        { rootEventId: String ->
-                            saveCurrentPosition()
-                            callback(rootEventId)
-                        }
-                    }
-
-                    TimelineMessageRow(
-                        item = entry,
-                        mediaPreviewBytes = mediaPreviewBytes,
-                        showSender = showSender,
-                        onRequestMediaPreview = onRequestMediaPreview?.let { requestPreview ->
-                            if (entry.eventId in visibleMediaPreviewEventIds) {
-                                { requestPreview(entry.roomId, entry.eventId) }
-                            } else {
-                                null
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                when (page) {
+                    0 -> TimelinePage(
+                        state = state,
+                        lazyListState = lazyListState,
+                        pinnedItems = pinnedItems,
+                        isAtBottom = isAtBottom,
+                        visibleMediaPreviewEventIds = visibleMediaPreviewEventIds,
+                        totalItemCount = totalItemCount,
+                        shouldStickToBottom = shouldStickToBottom,
+                        followLatestAfterBottomRequest = followLatestAfterBottomRequest,
+                        lastAutoScrolledEventId = lastAutoScrolledEventId,
+                        hasRestoredSavedPosition = hasRestoredSavedPosition,
+                        lastEventId = lastEventId,
+                        mediaPreviewFlowProvider = mediaPreviewFlowProvider,
+                        onRequestMediaPreview = onRequestMediaPreview,
+                        onMessageSelected = onMessageSelected,
+                        onReactionsSelected = onReactionsSelected,
+                        onOpenThread = onOpenThread,
+                        onLongPressMessage = onLongPressMessage,
+                        saveCurrentPosition = { saveCurrentPosition() },
+                        scope = scope,
+                    )
+                    1 -> ConversationDetailsPage(
+                        summary = state.summary,
+                        avatarBytes = avatarBytes,
+                        pinnedItems = pinnedItems,
+                        onPinnedMessageSelected = { eventId ->
+                            scope.launch {
+                                pagerState.animateScrollToPage(0)
+                                timelineListIndexForEvent(state.items, eventId)?.let { lazyListState.scrollToItem(it) }
+                                shouldStickToBottom = false
+                                followLatestAfterBottomRequest = false
                             }
                         },
-                        onClick = {
-                            saveCurrentPosition()
-                            onMessageSelected(entry.eventId)
-                        },
-                        onReactionsClick = onReactionsSelected?.let { callback -> { callback(entry.eventId) } },
-                        onOpenThread = openThread,
-                        onLongPress = onLongPressMessage?.let { callback -> { callback(entry) } },
                     )
                 }
             }
 
-            if (showPinnedOverview) {
-                PinnedMessagesOverview(
-                    items = pinnedItems,
-                    onClose = { showPinnedOverview = false },
-                    onMessageSelected = { eventId ->
-                        showPinnedOverview = false
-                        saveCurrentPosition()
-                        onMessageSelected(eventId)
-                    },
-                    onReactionsSelected = onReactionsSelected,
-                    onOpenThread = onOpenThread,
-                )
-            }
-
-            if (pinnedItems.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .height(28.dp)
-                        .pointerInput(showPinnedOverview, pinnedItems.size) {
-                            detectVerticalDragGestures(
-                                onDragStart = { topEdgeDragDistance = 0f },
-                                onVerticalDrag = { _, dragAmount -> topEdgeDragDistance += dragAmount },
-                                onDragEnd = {
-                                    if (!showPinnedOverview && topEdgeDragDistance > PINNED_SWIPE_THRESHOLD_PX) {
-                                        showPinnedOverview = true
-                                    } else if (showPinnedOverview && topEdgeDragDistance < -PINNED_SWIPE_THRESHOLD_PX) {
-                                        showPinnedOverview = false
-                                    }
-                                    topEdgeDragDistance = 0f
-                                },
-                                onDragCancel = { topEdgeDragDistance = 0f },
-                            )
-                        },
-                )
-            }
-
             // Scroll-to-bottom button remains dedicated to returning to the newest message.
-            if (!showPinnedOverview && !isAtBottom && state.items.size > 3) {
+            if (pagerState.currentPage == 0 && !isAtBottom && state.items.size > 3) {
                 FilledTonalIconButton(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -364,62 +302,22 @@ internal fun RoomView(
                     )
                 }
             }
+
+            // Pager dots indicator
+            if (enableConversationDetails) PagerDotsIndicator(
+                currentPage = pagerState.currentPage,
+                pageCount = pageCount,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 6.dp),
+            )
         }
-        if (!showPinnedOverview) {
+        if (pagerState.currentPage == 0) {
             ComposerBar(
                 onReply = onReply,
                 onVoice = onVoice,
                 onReact = onReact,
                 contextLabel = state.composerContextLabel,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PinnedMessagesOverview(
-    items: List<WatchTimelineItem>,
-    onClose: () -> Unit,
-    onMessageSelected: (String) -> Unit,
-    onReactionsSelected: ((String) -> Unit)?,
-    onOpenThread: ((String) -> Unit)?,
-) {
-    ScalingLazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        item {
-            ListHeader {
-                Text(
-                    text = stringResource(R.string.screen_pinned_messages_title),
-                    modifier = Modifier.clickable(onClick = onClose),
-                )
-            }
-        }
-        if (items.isEmpty()) {
-            item { Text(stringResource(R.string.screen_pinned_messages_empty)) }
-        } else {
-            itemsIndexed(items, key = { _, item -> "pinned-${item.eventId}" }) { _, item ->
-                TimelineMessageRow(
-                    item = item,
-                    onClick = { onMessageSelected(item.eventId) },
-                    onReactionsClick = onReactionsSelected?.let { callback -> { callback(item.eventId) } },
-                    onOpenThread = onOpenThread,
-                    showSender = true,
-                )
-            }
-        }
-        item {
-            Text(
-                text = stringResource(R.string.action_close),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onClose)
-                    .padding(12.dp),
             )
         }
     }
@@ -439,6 +337,7 @@ internal data class RoomViewState(
     val scrollToEventId: String? = null,
     val forceScrollToBottom: Boolean = false,
     val mediaPreviewImages: Map<String, ByteArray> = emptyMap(),
+    val summary: WatchRoomSummary? = null,
 )
 
 @Composable
@@ -509,4 +408,272 @@ private fun timelineListIndexForEvent(items: List<WatchTimelineItem>, eventId: S
         displayIndex += 1
     }
     return null
+}
+
+@Composable
+private fun PagerDotsIndicator(
+    currentPage: Int,
+    pageCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pageCount) { page ->
+            val active = page == currentPage
+            Box(
+                modifier = Modifier
+                    .size(if (active) 8.dp else 6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (active) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f)
+                        },
+                    ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimelinePage(
+    state: RoomViewState,
+    lazyListState: ScalingLazyListState,
+    pinnedItems: List<WatchTimelineItem>,
+    isAtBottom: Boolean,
+    visibleMediaPreviewEventIds: Set<String>,
+    totalItemCount: Int,
+    shouldStickToBottom: Boolean,
+    followLatestAfterBottomRequest: Boolean,
+    lastAutoScrolledEventId: String?,
+    hasRestoredSavedPosition: Boolean,
+    lastEventId: String?,
+    mediaPreviewFlowProvider: ((String, String) -> StateFlow<ByteArray?>)?,
+    onRequestMediaPreview: ((String, String) -> Unit)?,
+    onMessageSelected: (String) -> Unit,
+    onReactionsSelected: ((String) -> Unit)?,
+    onOpenThread: ((String) -> Unit)?,
+    onLongPressMessage: ((WatchTimelineItem) -> Unit)?,
+    saveCurrentPosition: () -> Unit,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    ScalingLazyColumn(
+        state = lazyListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        item {
+            ListHeader {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = state.displayName,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (pinnedItems.isNotEmpty()) {
+                        Text(
+                            text = pluralStringResource(
+                                R.plurals.pinned_messages_count,
+                                pinnedItems.size,
+                                pinnedItems.size,
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        if (state.items.isEmpty() && state.isLoading) {
+            item {
+                Text(
+                    text = stringResource(R.string.screen_room_loading_messages),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                )
+            }
+        } else if (state.items.isEmpty()) {
+            item {
+                Text(
+                    text = state.emptyText ?: stringResource(R.string.screen_room_empty_messages),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                )
+            }
+        }
+        itemsIndexed(state.items, key = { _, it -> it.eventId }) { index, entry ->
+            val prevItem = state.items.getOrNull(index - 1)
+            val showDayDivider = prevItem == null || !isSameDay(prevItem.timestampMs, entry.timestampMs)
+            val showSender = prevItem == null || prevItem.senderId != entry.senderId || showDayDivider
+            val mediaPreviewBytes = mediaPreviewFlowProvider?.let { provider ->
+                provider(entry.roomId, entry.eventId).collectAsState().value
+            } ?: state.mediaPreviewImages[mediaPreviewCacheKey(entry.roomId, entry.eventId)]
+
+            if (showDayDivider && index > 0) {
+                DayDivider(timestampMs = entry.timestampMs)
+            }
+
+            val openThread = onOpenThread?.let { callback ->
+                { rootEventId: String ->
+                    saveCurrentPosition()
+                    callback(rootEventId)
+                }
+            }
+
+            TimelineMessageRow(
+                item = entry,
+                mediaPreviewBytes = mediaPreviewBytes,
+                showSender = showSender,
+                onRequestMediaPreview = onRequestMediaPreview?.let { requestPreview ->
+                    if (entry.eventId in visibleMediaPreviewEventIds) {
+                        { requestPreview(entry.roomId, entry.eventId) }
+                    } else {
+                        null
+                    }
+                },
+                onClick = {
+                    saveCurrentPosition()
+                    onMessageSelected(entry.eventId)
+                },
+                onReactionsClick = onReactionsSelected?.let { callback -> { callback(entry.eventId) } },
+                onOpenThread = openThread,
+                onLongPress = onLongPressMessage?.let { callback -> { callback(entry) } },
+                onSwipeLeft = null, // Remove swipe-left to open message detail
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationDetailsPage(
+    summary: WatchRoomSummary?,
+    avatarBytes: ByteArray?,
+    pinnedItems: List<WatchTimelineItem>,
+    onPinnedMessageSelected: (String) -> Unit,
+) {
+    val topic = summary?.topic
+    ScalingLazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        item {
+            ListHeader {
+                Text(
+                    text = stringResource(R.string.screen_conversation_details),
+                )
+            }
+        }
+
+        // Avatar and name section
+        if (summary != null) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AvatarBadge(
+                        displayName = summary.displayName,
+                        avatarUrl = summary.avatarUri,
+                        avatarBytes = avatarBytes,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Text(
+                        text = summary.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+
+                    // Favorite status
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = if (summary.isFavorite) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = if (summary.isFavorite) {
+                                stringResource(R.string.screen_conversation_details_favorite)
+                            } else {
+                                stringResource(R.string.screen_conversation_details_not_favorite)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (summary.isFavorite) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+
+                    // Topic
+                    if (!topic.isNullOrBlank()) {
+                        Text(
+                            text = topic.orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.screen_conversation_details_topic_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            }
+
+            // Pinned messages section
+            item {
+                ListHeader {
+                    Text(
+                        text = stringResource(R.string.screen_conversation_details_pinned_messages),
+                    )
+                }
+            }
+
+            if (pinnedItems.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.screen_conversation_details_pinned_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+            } else {
+                itemsIndexed(pinnedItems, key = { _, item -> "details-pinned-${item.eventId}" }) { _, item ->
+                    TimelineMessageRow(
+                        item = item,
+                        onClick = { onPinnedMessageSelected(item.eventId) },
+                        showSender = true,
+                        onOpenThread = null,
+                    )
+                }
+            }
+        }
+    }
 }

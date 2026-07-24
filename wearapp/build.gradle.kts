@@ -72,6 +72,7 @@ dependencies {
     implementation("androidx.wear.compose:compose-navigation:1.5.0")
     implementation("androidx.wear:wear:1.3.0")
     implementation("androidx.wear:wear-phone-interactions:1.0.1")
+    implementation("androidx.fragment:fragment:1.5.4")
 
     implementation(libs.androidx.corektx)
     implementation(libs.androidx.compose.material.icons)

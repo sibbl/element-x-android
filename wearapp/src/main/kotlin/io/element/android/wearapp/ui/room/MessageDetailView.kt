@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
-private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "🎉", "🙏", "👀")
+internal val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "🎉", "🙏", "👀")
 
 /**
  * Detail surface for a single message. Body is rendered with a slightly smaller font; the action

@@ -34,6 +34,8 @@ import io.element.android.libraries.push.impl.notifications.DefaultNotificationB
 import io.element.android.libraries.push.impl.notifications.NotificationActionIds
 import io.element.android.libraries.push.impl.notifications.RoomEventGroupInfo
 import io.element.android.libraries.push.impl.notifications.channels.DefaultNotificationChannels
+import io.element.android.libraries.push.impl.notifications.channels.NOISY_NOTIFICATION_CHANNEL_ID_BASE
+import io.element.android.libraries.push.impl.notifications.shortcut.createShortcutId
 import io.element.android.libraries.push.impl.notifications.channels.NotificationChannels
 import io.element.android.libraries.push.impl.notifications.factories.action.AcceptInvitationActionFactory
 import io.element.android.libraries.push.impl.notifications.factories.action.MarkAsReadActionFactory
@@ -377,7 +379,7 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
     }
 
     @Test
-    fun `test createMessagesListNotification should bing and thread`() = runTest {
+    fun `thread reply uses room conversation shortcut and noisy channel even when event is quiet`() = runTest {
         val sut = createNotificationCreator(
             enterpriseService = FakeEnterpriseService(
                 getNoisyNotificationChannelIdResult = { null },
@@ -390,7 +392,7 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
                 roomId = A_ROOM_ID,
                 roomDisplayName = "roomDisplayName",
                 hasSmartReplyError = false,
-                shouldBing = true,
+                shouldBing = false,
                 customSound = null,
                 isUpdated = false,
             ),
@@ -403,6 +405,9 @@ class DefaultNotificationCreatorTest : RobolectricTest() {
             events = listOf(aNotifiableMessageEvent()),
         )
         result.commonAssertions()
+        assertThat(result.channelId).startsWith(NOISY_NOTIFICATION_CHANNEL_ID_BASE)
+        assertThat(result.shortcutId).isEqualTo(createShortcutId(A_SESSION_ID, A_ROOM_ID))
+        assertThat(result.priority).isEqualTo(NotificationCompat.PRIORITY_DEFAULT)
         result.wearAssertions(
             expectedDismissalId = "messages:${A_SESSION_ID.value}:${NotificationCreator.messageTag(A_ROOM_ID, A_THREAD_ID)}",
             expectedContentAction = 0,

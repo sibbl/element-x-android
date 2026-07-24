@@ -115,11 +115,15 @@ internal class WatchNotificationBridgePublisherDelegate(
     }
 
     override suspend fun onMessagesClearedForRoom(sessionId: SessionId, roomId: RoomId) {
-        deleteNotificationKeys(listOf(ConversationKey(sessionId, roomId, threadId = null).notificationKey))
+        deleteNotificationKeys(listOf(ConversationKey(sessionId, roomId).notificationKey))
     }
 
     override suspend fun onMessagesClearedForThread(sessionId: SessionId, roomId: RoomId, threadId: ThreadId) {
-        deleteNotificationKeys(listOf(ConversationKey(sessionId, roomId, threadId).notificationKey))
+        deleteNotificationKeys(
+            keysMatching { active ->
+                active.sessionId == sessionId && active.roomId == roomId && active.threadId == threadId
+            },
+        )
     }
 
     override suspend fun onAllMessagesCleared(sessionId: SessionId) {
@@ -167,7 +171,6 @@ internal class WatchNotificationBridgePublisherDelegate(
         val displayName = roomName?.takeIf { it.isNotBlank() }
             ?: senderDisambiguatedDisplayName.orEmpty()
         val settings = settingsProvider()
-        val vibrationOverride = conversationVibrationOverride(settings)
         return RenderedNotification(
             notification = WatchMessageNotification(
                 notificationKey = key.notificationKey,
@@ -185,8 +188,6 @@ internal class WatchNotificationBridgePublisherDelegate(
                     .mapNotNull { event -> event.toPreviewMessage() },
                 isNoisy = noisy,
                 imagePreviewBytes = imagePreviewLoader(this),
-                vibrationPatternOverride = vibrationOverride?.pattern,
-                customVibrationPattern = vibrationOverride?.customPattern,
                 vibrationSettingsSnapshot = settings.notificationVibrations,
             ),
             activeNotification = ActiveNotification(
@@ -197,18 +198,6 @@ internal class WatchNotificationBridgePublisherDelegate(
                 eventIds = groupedEvents.mapTo(mutableSetOf()) { it.eventId.value },
             ),
         )
-    }
-
-    private fun NotifiableMessageEvent.conversationVibrationOverride(settings: WatchCompanionSettings): NotificationVibrationOverride? {
-        settings.notificationVibrations.conversationOverrides.firstOrNull { it.roomId == roomId.value }?.let { override ->
-            override.pattern?.let { pattern ->
-                return NotificationVibrationOverride(
-                    pattern = pattern,
-                    customPattern = override.customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM },
-                )
-            }
-        }
-        return null
     }
 
     private fun NotifiableMessageEvent.watchNotificationBodyText(): String? {
@@ -233,15 +222,15 @@ internal class WatchNotificationBridgePublisherDelegate(
 private data class ConversationKey(
     val sessionId: SessionId,
     val roomId: RoomId,
-    val threadId: ThreadId?,
 ) {
-    val notificationKey: String = "message:${sessionId.value}:${NotificationCreator.messageTag(roomId, threadId)}"
+    // A thread is part of its room conversation. Keeping one room-level key ensures thread
+    // replies use the room classification and room vibration override on Wear OS.
+    val notificationKey: String = "message:${sessionId.value}:${NotificationCreator.messageTag(roomId, threadId = null)}"
 
     companion object {
         fun from(event: NotifiableMessageEvent): ConversationKey = ConversationKey(
             sessionId = event.sessionId,
             roomId = event.roomId,
-            threadId = event.threadId,
         )
     }
 }
@@ -257,11 +246,6 @@ private data class ActiveNotification(
 private data class RenderedNotification(
     val notification: WatchMessageNotification,
     val activeNotification: ActiveNotification,
-)
-
-private data class NotificationVibrationOverride(
-    val pattern: WatchNotificationVibrationPattern,
-    val customPattern: String?,
 )
 
 private fun WatchSyncEnvelope.withoutImagePreviewIfOversized(): WatchSyncEnvelope {

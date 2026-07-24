@@ -175,7 +175,7 @@ class WatchNotificationBridgePublisherTest {
     }
 
     @Test
-    fun `room-specific vibration override is embedded in published notifications`() = runTest {
+    fun `thread notification keeps room-specific vibration override in settings snapshot`() = runTest {
         val transport = RecordingTransport()
         val publisher = WatchNotificationBridgePublisherDelegate(
             transport = transport,
@@ -186,8 +186,7 @@ class WatchNotificationBridgePublisherTest {
                         conversationOverrides = listOf(
                             WatchConversationVibrationOverride(
                                 roomId = "!room:server",
-                                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                                customPattern = "120 60 240",
+                                pattern = WatchNotificationVibrationPattern.TRIPLE,
                             ),
                         ),
                     ),
@@ -198,18 +197,26 @@ class WatchNotificationBridgePublisherTest {
 
         publisher.onMessageNotificationsRendered(
             listOf(
-                aNotifiableMessageEvent(eventId = "\$dm:server", timestamp = 2L, body = "Hello Alice"),
+                aNotifiableMessageEvent(
+                    eventId = "\$dm:server",
+                    timestamp = 2L,
+                    body = "Hello Alice",
+                    threadId = ThreadId("\$thread:server"),
+                ),
             ),
         )
 
         val payload = transport.published.single().second.payload as WatchSync.MessageNotification
-        assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
-        assertThat(payload.notification.customVibrationPattern).isEqualTo("120 60 240")
+        assertThat(transport.published.single().first).isEqualTo(
+            WatchDataPaths.notification("message:@alice:server:!room:server"),
+        )
+        assertThat(payload.notification.roomId).isEqualTo("!room:server")
+        assertThat(payload.notification.threadRootEventId).isEqualTo("\$thread:server")
+        assertThat(payload.notification.vibrationPatternOverride).isNull()
         assertThat(payload.notification.vibrationSettingsSnapshot?.conversationOverrides).containsExactly(
             WatchConversationVibrationOverride(
                 roomId = "!room:server",
-                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                customPattern = "120 60 240",
+                pattern = WatchNotificationVibrationPattern.TRIPLE,
             ),
         )
     }
@@ -224,8 +231,7 @@ class WatchNotificationBridgePublisherTest {
                 WatchCompanionSettings(
                     notificationVibrations = WatchNotificationVibrationSettings(
                         groups = WatchNotificationVibrationPattern.TRIPLE,
-                        favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
-                        favoriteGroupsCustomPattern = "100 50 400",
+                        favoriteGroups = WatchNotificationVibrationPattern.PULSE,
                     ),
                 )
             },
@@ -242,8 +248,7 @@ class WatchNotificationBridgePublisherTest {
         assertThat(payload.notification.vibrationSettingsSnapshot).isEqualTo(
             WatchNotificationVibrationSettings(
                 groups = WatchNotificationVibrationPattern.TRIPLE,
-                favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
-                favoriteGroupsCustomPattern = "100 50 400",
+                favoriteGroups = WatchNotificationVibrationPattern.PULSE,
             ),
         )
     }
@@ -275,7 +280,7 @@ class WatchNotificationBridgePublisherTest {
         )
 
         assertThat(transport.deleted).containsExactly(
-            WatchDataPaths.notification("message:@alice:server:!room:server|\$thread:server"),
+            WatchDataPaths.notification("message:@alice:server:!room:server"),
         )
     }
 

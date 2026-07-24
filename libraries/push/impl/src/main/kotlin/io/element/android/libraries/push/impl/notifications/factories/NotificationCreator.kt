@@ -171,12 +171,16 @@ class DefaultNotificationCreator(
             )
         }
         val containsMissedCall = events.any { it.type == EventType.RTC_NOTIFICATION }
+        // Thread replies belong to the room conversation. Route them through the room's
+        // alerting channel even when the homeserver marks the individual thread event quiet;
+        // otherwise Android creates a separate silent conversation category for the thread.
+        val shouldAlertAsRoomConversation = roomInfo.shouldBing || threadId != null
         val channelId = if (containsMissedCall) {
             notificationChannels.getChannelForIncomingCall(false)
         } else {
             notificationChannels.getChannelIdForMessage(
                 sessionId = roomInfo.sessionId,
-                noisy = roomInfo.shouldBing,
+                noisy = shouldAlertAsRoomConversation,
             )
         }
         // A category allows groups of notifications to be ranked and filtered – per user or system settings.
@@ -188,8 +192,9 @@ class DefaultNotificationCreator(
         } else {
             NotificationCompat.CATEGORY_MESSAGE
         }
-        val builder = if (existingNotification != null) {
-            NotificationCompat.Builder(context, existingNotification)
+        val canReuseExistingNotification = existingNotification?.channelId == channelId
+        val builder = if (canReuseExistingNotification) {
+            NotificationCompat.Builder(context, checkNotNull(existingNotification))
                 // Clear existing actions
                 .clearActions()
         } else {
@@ -198,11 +203,9 @@ class DefaultNotificationCreator(
                 // Must match those created in the ShortcutInfoCompat.Builder()
                 // for the notification to appear as a "Conversation":
                 // https://developer.android.com/develop/ui/views/notifications/conversations
-                .apply {
-                    if (threadId == null) {
-                        setShortcutId(createShortcutId(roomInfo.sessionId, roomInfo.roomId))
-                    }
-                }
+                // A thread is a view into the same room conversation, not a separate
+                // Android conversation. Reuse the room shortcut so its priority settings apply.
+                .setShortcutId(createShortcutId(roomInfo.sessionId, roomInfo.roomId))
                 .setGroupSummary(false)
                 // In order to avoid notification making sound twice (due to the summary notification)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
@@ -264,7 +267,7 @@ class DefaultNotificationCreator(
                 // Sets priority for 25 and below. For 26 and above, 'priority' is deprecated for
                 // 'importance' which is set in the NotificationChannel. The integers representing
                 // 'priority' are different from 'importance', so make sure you don't mix them.
-                if (roomInfo.shouldBing) {
+                if (shouldAlertAsRoomConversation) {
                     priority = NotificationCompat.PRIORITY_DEFAULT
                     setLights(notificationAccountParams.color, 500, 500)
                 } else {

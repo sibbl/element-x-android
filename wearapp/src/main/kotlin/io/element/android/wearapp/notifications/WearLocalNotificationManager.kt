@@ -12,6 +12,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import io.element.android.watchbridge.contract.WatchMessageNotification
@@ -27,6 +34,12 @@ internal class WearLocalNotificationManager(
     private val notificationManagerCompat: NotificationManagerCompat = NotificationManagerCompat.from(context),
     private val notificationsAllowedProvider: () -> Boolean = {
         defaultCanNotify(context, notificationManagerCompat)
+    },
+    private val explicitVibrationPlayer: (LongArray) -> Unit = { pattern ->
+        playExplicitNotificationVibration(context, pattern)
+    },
+    private val explicitVibrationScheduler: ((() -> Unit) -> Unit) = { action ->
+        Handler(Looper.getMainLooper()).postDelayed(action, EXPLICIT_VIBRATION_DELAY_MS)
     },
 ) {
     fun show(
@@ -56,6 +69,10 @@ internal class WearLocalNotificationManager(
             wearLocalNotificationId(notification.notificationKey),
             factory.build(notification, generatedAtMs, expiresAtMs, resolvedVibration, channelId),
         )
+        if (resolvedVibration.pattern.usesExplicitVibration()) {
+            val pattern = resolvedVibration.platformVibrationPattern()
+            explicitVibrationScheduler { explicitVibrationPlayer(pattern) }
+        }
     }
 
     fun dismiss(notificationKey: String) {
@@ -67,50 +84,97 @@ internal class WearLocalNotificationManager(
         requestedChannelId: String,
     ): String {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return requestedChannelId
-        val desiredChannel = buildWearLocalNotificationChannel(
-            context = context,
-            vibration = resolvedVibration,
-            channelId = requestedChannelId,
-        )
+        val desiredChannel = buildWearLocalNotificationChannel(context, resolvedVibration, requestedChannelId)
+        val expectedConfigurations = context.getSharedPreferences(CHANNEL_CONFIG_PREFERENCES, Context.MODE_PRIVATE)
+        val desiredConfiguration = desiredChannel.configFingerprint()
         val existingChannel = manager.getNotificationChannel(requestedChannelId)
-        if (existingChannel != null &&
-            requestedChannelId.startsWith(CHANNEL_PREFIX) &&
-            !existingChannel.matchesDesiredNotificationChannel(desiredChannel)
-        ) {
-            val repairedChannelId = "${requestedChannelId}_repair_${desiredChannel.configHash()}"
-            Timber.i("Using repaired watch notification channel id=%s staleId=%s", repairedChannelId, requestedChannelId)
-            manager.createNotificationChannel(
-                buildWearLocalNotificationChannel(
-                    context = context,
-                    vibration = resolvedVibration,
-                    channelId = repairedChannelId,
-                ),
-            )
-            return repairedChannelId
+        if (existingChannel == null) {
+            manager.createNotificationChannel(desiredChannel)
+            expectedConfigurations.edit().putString(requestedChannelId, desiredConfiguration).apply()
+            return requestedChannelId
         }
-        manager.createNotificationChannel(desiredChannel)
-        return requestedChannelId
+        if (existingChannel.matchesAlertConfiguration(desiredChannel)) {
+            expectedConfigurations.edit().putString(requestedChannelId, desiredConfiguration).apply()
+            return requestedChannelId
+        }
+
+        // Android freezes vibration/sound/importance after a channel is first created. A channel
+        // left behind by an older app build therefore cannot be repaired in place. Only migrate
+        // channels whose app-created configuration is unknown/stale; once we have recorded the
+        // desired configuration, a later difference is a user choice and must be preserved.
+        if (expectedConfigurations.getString(requestedChannelId, null) == desiredConfiguration) {
+            return requestedChannelId
+        }
+        val replacementChannelId = "${requestedChannelId}_cfg_${desiredConfiguration.stableShortHash()}"
+        if (manager.getNotificationChannel(replacementChannelId) == null) {
+            manager.createNotificationChannel(
+                buildWearLocalNotificationChannel(context, resolvedVibration, replacementChannelId),
+            )
+        }
+        expectedConfigurations.edit().putString(replacementChannelId, desiredConfiguration).apply()
+        Timber.i("Migrated stale watch notification channel old=%s new=%s", requestedChannelId, replacementChannelId)
+        return replacementChannelId
     }
 
     companion object {
-        // Versioned so previously created channels do not keep overriding upgraded alert behavior.
-        // v16 routes around stale generated channels when their immutable vibration config no longer matches.
-        internal const val CHANNEL_PREFIX = "wear_companion_messages_v16_"
+        // Pixel Watch normalizes channel waveforms to its standard haptic. Custom patterns use
+        // a silent channel plus delayed direct playback as assistance haptics. Pixel Watch blocks
+        // app-owned notification-usage vibrations via AppOps, while normal watch haptics are allowed.
+        internal const val CHANNEL_PREFIX = "wear_companion_messages_v21_"
         internal const val CHANNEL_ID = "${CHANNEL_PREFIX}generic_default"
+        private const val CHANNEL_CONFIG_PREFERENCES = "wear_notification_channel_configs"
+        private const val EXPLICIT_VIBRATION_DELAY_MS = 350L
     }
 }
 
-private fun NotificationChannel.matchesDesiredNotificationChannel(desiredChannel: NotificationChannel): Boolean {
-    return importance == desiredChannel.importance &&
-        shouldVibrate() == desiredChannel.shouldVibrate() &&
-        vibrationPattern?.toList() == desiredChannel.vibrationPattern?.toList() &&
-        sound == desiredChannel.sound
+private fun NotificationChannel.matchesAlertConfiguration(desired: NotificationChannel): Boolean =
+    importance == desired.importance &&
+        shouldVibrate() == desired.shouldVibrate() &&
+        vibrationPattern?.toList() == desired.vibrationPattern?.toList() &&
+        sound == desired.sound
+
+private fun NotificationChannel.configFingerprint(): String {
+    val vibration = vibrationPattern?.joinToString(separator = ",") ?: if (shouldVibrate()) "system" else "off"
+    return "$importance|$vibration|${sound ?: "none"}"
 }
 
-private fun NotificationChannel.configHash(): String {
-    val patternPart = vibrationPattern?.joinToString(separator = ",") ?: "system"
-    val soundPart = sound?.toString() ?: "none"
-    return "$importance|${shouldVibrate()}|$patternPart|$soundPart".stableShortHash()
+private fun WatchNotificationVibrationPattern.usesExplicitVibration(): Boolean =
+    this != WatchNotificationVibrationPattern.DEFAULT && this != WatchNotificationVibrationPattern.SILENT
+
+private fun parseCustomVibrationPattern(spec: String?): LongArray? {
+    val normalized = spec
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val tokens = normalized.split(Regex("[\\s,;]+")).filter { it.isNotBlank() }
+    if (tokens.isEmpty() || tokens.size > 16) return null
+
+    val timings = LongArray(tokens.size + 1)
+    timings[0] = 0L
+    var totalDurationMs = 0L
+    tokens.forEachIndexed { index, token ->
+        val durationMs = token.toLongOrNull()
+            ?.takeIf { it in 1L..5000L }
+            ?: return null
+        totalDurationMs += durationMs
+        if (totalDurationMs > 20_000L) return null
+        timings[index + 1] = durationMs
+    }
+    return timings
+}
+
+private fun playExplicitNotificationVibration(context: Context, pattern: LongArray) {
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Vibrator::class.java)
+    } ?: return
+    if (!vibrator.hasVibrator()) return
+    val attributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+        .build()
+    vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1), attributes)
 }
 
 private fun defaultCanNotify(
@@ -123,7 +187,7 @@ private fun defaultCanNotify(
 
 internal fun buildWearLocalNotificationChannels(context: Context): List<NotificationChannel> =
     WatchNotificationVibrationPattern.entries
-        .filterNot { it == WatchNotificationVibrationPattern.CUSTOM }
+        .filterNot { it == WatchNotificationVibrationPattern.DEFAULT }
         .map { pattern ->
             buildWearLocalNotificationChannel(context, pattern)
         }
@@ -150,10 +214,7 @@ internal fun buildWearLocalNotificationChannel(
     when (vibration.pattern) {
         WatchNotificationVibrationPattern.SILENT -> enableVibration(false)
         WatchNotificationVibrationPattern.DEFAULT -> enableVibration(true)
-        else -> {
-            enableVibration(true)
-            setVibrationPattern(vibration.platformVibrationPattern())
-        }
+        else -> enableVibration(false)
     }
 }
 
@@ -165,12 +226,7 @@ internal fun wearLocalNotificationChannelId(vibration: WearResolvedNotificationV
     WatchNotificationVibrationPattern.TRIPLE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_triple"
     WatchNotificationVibrationPattern.PULSE -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_pulse"
     WatchNotificationVibrationPattern.ESCALATING -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_escalating"
-    WatchNotificationVibrationPattern.CUSTOM -> buildString {
-        append(WearLocalNotificationManager.CHANNEL_PREFIX)
-        append(vibration.source.idPart)
-        append("_custom_")
-        append(vibration.customTimingsMs.stableShortHash())
-    }
+    WatchNotificationVibrationPattern.CUSTOM -> "${WearLocalNotificationManager.CHANNEL_PREFIX}${vibration.source.idPart}_custom_${vibration.customPattern.stableShortHash()}"
 }
 
 internal fun wearLocalNotificationChannelId(pattern: WatchNotificationVibrationPattern): String = when (pattern) {
@@ -204,7 +260,7 @@ internal fun WearResolvedNotificationVibration.platformVibrationPattern(): LongA
     WatchNotificationVibrationPattern.TRIPLE -> longArrayOf(0L, 70L, 70L, 100L, 70L, 130L)
     WatchNotificationVibrationPattern.PULSE -> longArrayOf(0L, 120L, 110L, 120L, 110L, 120L, 110L, 120L)
     WatchNotificationVibrationPattern.ESCALATING -> longArrayOf(0L, 60L, 70L, 110L, 70L, 220L)
-    WatchNotificationVibrationPattern.CUSTOM -> customTimingsMs.toLongArray()
+    WatchNotificationVibrationPattern.CUSTOM -> parseCustomVibrationPattern(customPattern) ?: longArrayOf(0L, 100L)
     WatchNotificationVibrationPattern.SILENT,
     WatchNotificationVibrationPattern.DEFAULT -> error("No explicit vibration pattern for $pattern")
 }

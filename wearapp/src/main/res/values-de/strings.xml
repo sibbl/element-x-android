@@ -101,4 +101,11 @@
         <item quantity="one">%1$d angepinnte Nachricht</item>
         <item quantity="other">%1$d angepinnte Nachrichten</item>
     </plurals>
+    <string name="reaction_details_additional">Weitere Reaktion</string>
+    <string name="screen_conversation_details">Unterhaltungsdetails</string>
+    <string name="screen_conversation_details_favorite">Favorit</string>
+    <string name="screen_conversation_details_not_favorite">Kein Favorit</string>
+    <string name="screen_conversation_details_topic_empty">Kein Thema</string>
+    <string name="screen_conversation_details_pinned_messages">Angepinnte Nachrichten</string>
+    <string name="screen_conversation_details_pinned_empty">Keine angepinnten Nachrichten im synchronisierten Verlauf</string>
 </resources>

@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import io.element.android.appconfig.WearCompanionConfig
 import io.element.android.appconfig.WearCompanionDeepLink
+import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchTileConversationAction
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -87,6 +88,34 @@ class WearMainActivityDeepLinkTest {
         )
 
         assertThat(routes).containsExactly(
+            "room?roomId=!room%3Aserver",
+            "thread?roomId=!room%3Aserver&rootId=%24root%3Aserver",
+            "message?roomId=!room%3Aserver&eventId=%24event%3Aserver&threadRootId=%24root%3Aserver",
+        ).inOrder()
+    }
+
+    @Test
+    fun `in-app notification is only eligible on conversation and thread screens`() {
+        assertThat(isConversationOrThreadRoute("room?roomId=room")).isTrue()
+        assertThat(isConversationOrThreadRoute("thread?roomId=room&rootId=root")).isTrue()
+        assertThat(isConversationOrThreadRoute("favorites")).isFalse()
+        assertThat(isConversationOrThreadRoute("message?roomId=room&eventId=event")).isFalse()
+        assertThat(isConversationOrThreadRoute(null)).isFalse()
+    }
+
+    @Test
+    fun `in-app thread notification targets exact message with canonical back stack`() {
+        val notification = WatchMessageNotification(
+            notificationKey = "notification",
+            roomId = "!room:server",
+            eventId = "\$event:server",
+            threadRootEventId = "\$root:server",
+            timestampMs = 123L,
+        )
+
+        val deepLink = notification.toDeepLink()
+
+        assertThat(wearDeepLinkBackStackRoutes(deepLink)).containsExactly(
             "room?roomId=!room%3Aserver",
             "thread?roomId=!room%3Aserver&rootId=%24root%3Aserver",
             "message?roomId=!room%3Aserver&eventId=%24event%3Aserver&threadRootId=%24root%3Aserver",
@@ -182,4 +211,26 @@ class WearMainActivityDeepLinkTest {
 
         assertThat(gate.tryStart()).isTrue()
     }
+    @Test
+    fun `fresh notification is eligible for in-app banner`() {
+        val now = 10_000_000L
+        assertThat(shouldShowInAppNotification(notificationAt(now - 1_000L), now)).isTrue()
+    }
+
+    @Test
+    fun `stale notification is ignored by in-app banner`() {
+        val now = 10_000_000L
+        assertThat(shouldShowInAppNotification(notificationAt(now - 180_000L), now)).isFalse()
+    }
+
+    private fun notificationAt(timestampMs: Long) = WatchMessageNotification(
+        notificationKey = "notification",
+        roomId = "room",
+        eventId = "event",
+        roomDisplayName = "Room",
+        senderDisplayName = "Sender",
+        bodyText = "Body",
+        timestampMs = timestampMs,
+    )
+
 }

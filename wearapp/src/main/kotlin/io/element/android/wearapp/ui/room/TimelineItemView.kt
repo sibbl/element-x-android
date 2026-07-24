@@ -76,6 +76,7 @@ internal fun TimelineMessageRow(
     onReactionsClick: (() -> Unit)? = null,
     showSender: Boolean = true,
     onLongPress: (() -> Unit)? = null,
+    onSwipeLeft: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val bubbleColor = if (item.isOwn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer
@@ -94,6 +95,7 @@ internal fun TimelineMessageRow(
         PressableWearChip(
             onTap = onClick,
             onLongPress = onLongPress,
+            onSwipeLeft = onSwipeLeft,
             backgroundColor = bubbleColor,
             modifier = Modifier
                 .fillMaxWidth(),
@@ -637,7 +639,7 @@ internal fun ThreadIndicatorChip(
 private fun voiceLine(item: WatchTimelineItem): String {
     val duration = item.voiceMessageMeta?.let { formatDurationLabel(it.durationMs) }
     val label = stringResource(R.string.timeline_voice_message)
-    return if (duration != null) "🎙  $label · $duration" else "🎙  $label"
+    return if (duration != null) "$label · $duration" else label
 }
 
 internal fun formatDurationLabel(millis: Long): String {

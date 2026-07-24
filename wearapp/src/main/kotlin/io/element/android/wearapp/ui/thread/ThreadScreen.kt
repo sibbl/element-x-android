@@ -45,6 +45,7 @@ fun ThreadScreen(
     threadRootEventId: String,
     activity: WearMainActivity,
     onMessageSelected: (String) -> Unit = {},
+    onReactionsSelected: (String) -> Unit = {},
     scrollRequestId: Long? = null,
     forceScrollToBottom: Boolean = false,
     onScrollRequestHandled: (Long) -> Unit = {},
@@ -116,6 +117,7 @@ fun ThreadScreen(
             forceScrollToBottom = forceScrollToBottom || initialBottomScrollRequestId != null,
         ),
         onMessageSelected = onMessageSelected,
+        onReactionsSelected = onReactionsSelected,
         // No nested-thread navigation inside a thread.
         onOpenThread = null,
         onScrollRequestHandled = { requestId ->

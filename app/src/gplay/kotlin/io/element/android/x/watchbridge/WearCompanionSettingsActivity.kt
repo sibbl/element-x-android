@@ -11,10 +11,13 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
@@ -25,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -64,8 +68,6 @@ internal const val WEAR_COMPANION_CONVERSATION_ACTION_OPTION_TAG_PREFIX = "wear-
 internal const val WEAR_COMPANION_RECENT_TILE_ACTION_SELECTOR_TAG = "wear-companion-recent-tile-action-selector"
 internal const val WEAR_COMPANION_FAVORITE_TILE_ACTION_SELECTOR_TAG = "wear-companion-favorite-tile-action-selector"
 internal const val WEAR_COMPANION_TILE_ACTION_OPTION_TAG_PREFIX = "wear-companion-tile-action-option"
-internal const val WEAR_COMPANION_CUSTOM_PATTERN_INPUT_TAG = "wear-companion-custom-pattern-input"
-internal const val WEAR_COMPANION_CUSTOM_PATTERN_TEST_TAG = "wear-companion-custom-pattern-test"
 internal const val WEAR_COMPANION_DIALOG_CANCEL_TAG = "wear-companion-dialog-cancel"
 internal const val WEAR_COMPANION_DIALOG_SAVE_TAG = "wear-companion-dialog-save"
 internal const val WEAR_COMPANION_CONVERSATION_VIBRATION_SELECTOR_TAG_PREFIX = "wear-companion-conversation-vibration-selector"
@@ -74,6 +76,9 @@ internal const val WEAR_COMPANION_ADD_CONVERSATION_BUTTON_TAG = "wear-companion-
 internal const val WEAR_COMPANION_ADD_CONVERSATION_SEARCH_TAG = "wear-companion-add-conversation-search"
 internal const val WEAR_COMPANION_ADD_CONVERSATION_OPTION_TAG_PREFIX = "wear-companion-add-conversation-option"
 internal const val WEAR_COMPANION_CONVERSATION_REMOVE_TAG_PREFIX = "wear-companion-conversation-remove"
+internal const val WEAR_COMPANION_CONVERSATION_TEST_TAG_PREFIX = "wear-companion-conversation-test"
+internal const val WEAR_COMPANION_CUSTOM_PATTERN_INPUT_TAG = "wear-companion-custom-pattern-input"
+internal const val WEAR_COMPANION_CUSTOM_PATTERN_TEST_TAG = "wear-companion-custom-pattern-test"
 
 internal enum class WearCompanionVibrationCategory {
     GROUPS,
@@ -131,6 +136,10 @@ internal fun wearCompanionAddConversationOptionTag(roomId: String): String {
 
 internal fun wearCompanionConversationRemoveTag(roomId: String): String {
     return "$WEAR_COMPANION_CONVERSATION_REMOVE_TAG_PREFIX:${roomId.asTagComponent()}"
+}
+
+internal fun wearCompanionConversationTestTag(roomId: String): String {
+    return "$WEAR_COMPANION_CONVERSATION_TEST_TAG_PREFIX:${roomId.asTagComponent()}"
 }
 
 private fun String.asTagComponent(): String = Uri.encode(this)
@@ -271,10 +280,11 @@ class WearCompanionSettingsActivity : ComponentActivity() {
                             )
                         }
                     },
-                    onSendConversationPatternTest = { room, customPattern ->
+                    onSendConversationPatternTest = { room, pattern, customPattern ->
                         lifecycleScope.launch {
                             notificationTester.sendConversationPatternTest(
                                 room = room,
+                                pattern = pattern,
                                 customPattern = customPattern,
                             )
                         }
@@ -292,8 +302,6 @@ internal fun WearCompanionSettingsScreen(
     availableRooms: List<WatchFavoriteRoom> = emptyList(),
     onUpdateSettings: (WatchCompanionSettings) -> Unit,
     onSendTestNotification: (WearCompanionVibrationCategory) -> Unit,
-    onSendCategoryPatternTest: (WearCompanionVibrationCategory, String) -> Unit = { _, _ -> },
-    onSendConversationPatternTest: (WatchFavoriteRoom, String) -> Unit = { _, _ -> },
     onBack: () -> Unit,
     usePreferencePage: Boolean = true,
     usePlatformDialogs: Boolean = true,
@@ -303,6 +311,8 @@ internal fun WearCompanionSettingsScreen(
     notificationStrings: WearCompanionNotificationSectionStrings? = null,
     vibrationStrings: WearCompanionVibrationSectionStrings? = null,
     tileActionStrings: WearCompanionTileActionSectionStrings? = null,
+    onSendCategoryPatternTest: (WearCompanionVibrationCategory, String) -> Unit = { _, _ -> },
+    onSendConversationPatternTest: (WatchFavoriteRoom, WatchNotificationVibrationPattern, String) -> Unit = { _, _, _ -> },
 ) {
     val resolvedScreenTitle = screenTitle ?: stringResource(R.string.screen_wear_companion_title)
     val resolvedCommonStrings = commonStrings ?: rememberWearCompanionCommonStrings()
@@ -423,18 +433,31 @@ internal fun WearCompanionSettingsScreen(
                         onClick = {
                             dialog = WearCompanionSettingsDialog.ConversationVibration(conversation.roomId)
                         },
-                    )
-                    PreferenceDivider()
-                    ListItem(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag(wearCompanionConversationRemoveTag(conversation.roomId)),
-                        headlineContent = { Text(resolvedVibrationStrings.conversationRemoveLabel) },
-                        supportingContent = { Text(resolvedVibrationStrings.conversationRemoveDescription) },
-                        style = ListItemStyle.Destructive,
-                        onClick = {
-                            onUpdateSettings(settings.withoutConversationNotificationVibration(conversation.roomId))
-                        },
+                        actions = listOf(
+                            WearCompanionRowAction(
+                                label = "Test",
+                                tag = wearCompanionConversationTestTag(conversation.roomId),
+                                onClick = {
+                                    knownRoomsById[conversation.roomId]?.let { room ->
+                                        val pattern = conversation.override.pattern ?: settings.notificationVibrationFor(room.toVibrationCategory())
+                                        val customPattern = if (conversation.override.pattern == WatchNotificationVibrationPattern.CUSTOM) {
+                                            conversation.override.customPattern
+                                        } else if (conversation.override.pattern == null && pattern == WatchNotificationVibrationPattern.CUSTOM) {
+                                            settings.notificationCustomPatternFor(room.toVibrationCategory())
+                                        } else ""
+                                        onSendConversationPatternTest(room, pattern, customPattern)
+                                    }
+                                },
+                            ),
+                            WearCompanionRowAction(
+                                label = resolvedVibrationStrings.conversationRemoveLabel,
+                                tag = wearCompanionConversationRemoveTag(conversation.roomId),
+                                critical = true,
+                                onClick = {
+                                    onUpdateSettings(settings.withoutConversationNotificationVibration(conversation.roomId))
+                                },
+                            ),
+                        ),
                     )
                     if (index < managedConversations.lastIndex) {
                         PreferenceDivider()
@@ -610,19 +633,6 @@ internal fun WearCompanionSettingsScreen(
                     },
                 )
             }
-            WearCompanionSettingsDialog.AddConversation -> {
-                WearCompanionAddConversationDialog(
-                    rooms = addableRooms,
-                    commonStrings = resolvedCommonStrings,
-                    usePlatformDialog = usePlatformDialogs,
-                    strings = resolvedVibrationStrings,
-                    onDismissRequest = { dialog = null },
-                    onSubmit = { room ->
-                        onUpdateSettings(settings.withConversationSelection(room.roomId))
-                        dialog = null
-                    },
-                )
-            }
             is WearCompanionSettingsDialog.CustomConversationPattern -> {
                 val room = knownRoomsById[currentDialog.roomId]
                 WearCompanionCustomPatternDialog(
@@ -645,8 +655,21 @@ internal fun WearCompanionSettingsScreen(
                     },
                     onSendTest = { customPattern ->
                         room?.let { knownRoom ->
-                            onSendConversationPatternTest(knownRoom, customPattern)
+                            onSendConversationPatternTest(knownRoom, WatchNotificationVibrationPattern.CUSTOM, customPattern)
                         }
+                    },
+                )
+            }
+            WearCompanionSettingsDialog.AddConversation -> {
+                WearCompanionAddConversationDialog(
+                    rooms = addableRooms,
+                    commonStrings = resolvedCommonStrings,
+                    usePlatformDialog = usePlatformDialogs,
+                    strings = resolvedVibrationStrings,
+                    onDismissRequest = { dialog = null },
+                    onSubmit = { room ->
+                        onUpdateSettings(settings.withConversationSelection(room.roomId))
+                        dialog = null
                     },
                 )
             }
@@ -676,12 +699,20 @@ internal fun WearCompanionSettingsScreen(
     }
 }
 
+private data class WearCompanionRowAction(
+    val label: String,
+    val tag: String,
+    val critical: Boolean = false,
+    val onClick: () -> Unit,
+)
+
 @Composable
 private fun WearCompanionSelectionRow(
     title: String,
     selectedOption: WearCompanionSelectorOption<*>,
     selectorTag: String,
     onClick: () -> Unit,
+    actions: List<WearCompanionRowAction> = emptyList(),
 ) {
     ListItem(
         modifier = Modifier
@@ -691,7 +722,25 @@ private fun WearCompanionSelectionRow(
         supportingContent = selectedOption.description?.let { description ->
             { Text(description) }
         },
-        trailingContent = ListItemContent.Text(selectedOption.label),
+        trailingContent = if (actions.isEmpty()) {
+            ListItemContent.Text(selectedOption.label)
+        } else {
+            ListItemContent.Custom {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(selectedOption.label)
+                    actions.forEach { action ->
+                        Text(
+                            text = action.label,
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .testTag(action.tag)
+                                .clickable(onClick = action.onClick),
+                            color = if (action.critical) ElementTheme.colors.textCriticalPrimary else ElementTheme.colors.textActionPrimary,
+                        )
+                    }
+                }
+            }
+        },
         onClick = onClick,
     )
 }
@@ -924,6 +973,382 @@ private fun WearCompanionAddConversationDialog(
 }
 
 @Composable
+private fun rememberWearCompanionLongPressSectionStrings(): WearCompanionLongPressSectionStrings {
+    return WearCompanionLongPressSectionStrings(
+        sectionTitle = stringResource(R.string.screen_wear_companion_long_press_section_title),
+        messagesLabel = stringResource(R.string.screen_wear_companion_long_press_messages_title),
+        conversationsLabel = stringResource(R.string.screen_wear_companion_long_press_conversations_title),
+    )
+}
+
+@Composable
+private fun rememberWearCompanionCommonStrings(): WearCompanionCommonStrings {
+    return WearCompanionCommonStrings(
+        saveLabel = stringResource(CommonStrings.action_save),
+        cancelLabel = stringResource(CommonStrings.action_cancel),
+        searchLabel = stringResource(CommonStrings.action_search),
+    )
+}
+
+@Composable
+private fun rememberWearCompanionNotificationSectionStrings(): WearCompanionNotificationSectionStrings {
+    return WearCompanionNotificationSectionStrings(
+        sectionTitle = stringResource(R.string.screen_wear_companion_notifications_section),
+        actionDescriptionFormat = stringResource(R.string.screen_wear_companion_send_test_notification_description),
+    )
+}
+
+@Composable
+private fun rememberWearCompanionVibrationSectionStrings(): WearCompanionVibrationSectionStrings {
+    return WearCompanionVibrationSectionStrings(
+        sectionTitle = stringResource(R.string.screen_wear_companion_vibration_section_title),
+        conversationOverridesSectionTitle = stringResource(R.string.screen_wear_companion_conversation_vibration_section_title),
+        conversationOverridesEmpty = stringResource(R.string.screen_wear_companion_conversation_vibration_empty),
+        conversationPickerNoRooms = stringResource(R.string.screen_wear_companion_conversation_picker_no_rooms),
+        conversationPickerEmpty = stringResource(R.string.screen_wear_companion_conversation_picker_empty),
+        conversationPickerAllAdded = stringResource(R.string.screen_wear_companion_conversation_picker_all_added),
+        conversationPickerTitle = stringResource(R.string.screen_wear_companion_conversation_picker_title),
+        addConversationLabel = stringResource(R.string.screen_wear_companion_add_conversation_title),
+        addConversationDescription = stringResource(R.string.screen_wear_companion_add_conversation_description),
+        conversationRemoveLabel = stringResource(R.string.screen_wear_companion_conversation_remove_title),
+        conversationRemoveDescription = stringResource(R.string.screen_wear_companion_conversation_remove_description),
+        inheritLabel = stringResource(R.string.screen_wear_companion_conversation_vibration_inherit),
+        inheritDescription = stringResource(R.string.screen_wear_companion_conversation_vibration_inherit_description),
+        groupsLabel = stringResource(R.string.screen_wear_companion_vibration_groups),
+        dmsLabel = stringResource(R.string.screen_wear_companion_vibration_dms),
+        favoriteGroupsLabel = stringResource(R.string.screen_wear_companion_vibration_favorite_groups),
+        favoriteDmsLabel = stringResource(R.string.screen_wear_companion_vibration_favorite_dms),
+        silentLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_silent),
+        silentDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_silent_description),
+        defaultLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_default),
+        defaultDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_default_description),
+        doubleLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_double),
+        doubleDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_double_description),
+        longLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_long),
+        longDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_long_description),
+        tripleLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_triple),
+        tripleDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_triple_description),
+        pulseLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_pulse),
+        pulseDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_pulse_description),
+        escalatingLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_escalating),
+        escalatingDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_escalating_description),
+        customLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_custom),
+        customDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_custom_description),
+        customPatternDialogTitle = stringResource(R.string.screen_wear_companion_custom_pattern_dialog_title),
+        customPatternFieldLabel = stringResource(R.string.screen_wear_companion_custom_pattern_field_label),
+        customPatternDescription = stringResource(R.string.screen_wear_companion_custom_pattern_description),
+        customPatternError = stringResource(R.string.screen_wear_companion_custom_pattern_error),
+        customPatternTestLabel = stringResource(R.string.screen_wear_companion_custom_pattern_test),
+        customPatternTestDescription = stringResource(R.string.screen_wear_companion_custom_pattern_test_description),
+    )
+}
+
+@Composable
+private fun rememberWearCompanionTileActionSectionStrings(): WearCompanionTileActionSectionStrings {
+    return WearCompanionTileActionSectionStrings(
+        sectionTitle = stringResource(R.string.screen_wear_companion_tile_action_section_title),
+        recentTileLabel = stringResource(R.string.screen_wear_companion_tile_action_recent_title),
+        favoriteTileLabel = stringResource(R.string.screen_wear_companion_tile_action_favorite_title),
+        openConversationLabel = stringResource(R.string.screen_wear_companion_tile_action_open_conversation),
+        readLatestLabel = stringResource(R.string.screen_wear_companion_tile_action_read_latest),
+        quickReplyEmojiLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_emoji),
+        quickReplyTextLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_text),
+        quickReplyVoiceLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_voice),
+        openLatestLabel = stringResource(R.string.screen_wear_companion_tile_action_open_latest),
+    )
+}
+
+private fun WatchLongPressMessageAction.displayLabel(): String = when (this) {
+    WatchLongPressMessageAction.READ_ALOUD -> "Read aloud / Play"
+    WatchLongPressMessageAction.CREATE_THREAD -> "Create thread"
+    WatchLongPressMessageAction.REPLY_EMOJI -> "Reply with emoji"
+    WatchLongPressMessageAction.REPLY_TEXT -> "Reply with text"
+    WatchLongPressMessageAction.REPLY_VOICE -> "Reply with voice message"
+}
+
+private fun WatchLongPressConversationAction.displayLabel(): String = when (this) {
+    WatchLongPressConversationAction.READ_LATEST -> "Read latest message"
+    WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> "Quick reply with emoji"
+    WatchLongPressConversationAction.QUICK_REPLY_TEXT -> "Quick reply with text"
+    WatchLongPressConversationAction.QUICK_REPLY_VOICE -> "Quick reply with voice message"
+    WatchLongPressConversationAction.OPEN_LATEST -> "Open latest message"
+}
+
+private val tileConversationActionOptions = listOf(
+    WatchTileConversationAction.OPEN_CONVERSATION,
+    WatchTileConversationAction.READ_LATEST,
+    WatchTileConversationAction.QUICK_REPLY_EMOJI,
+    WatchTileConversationAction.QUICK_REPLY_TEXT,
+    WatchTileConversationAction.QUICK_REPLY_VOICE,
+    WatchTileConversationAction.OPEN_LATEST,
+)
+
+@Suppress("DEPRECATION")
+private fun WatchTileConversationAction.displayLabel(strings: WearCompanionTileActionSectionStrings): String = when (this) {
+    WatchTileConversationAction.OPEN_CONVERSATION -> strings.openConversationLabel
+    WatchTileConversationAction.READ_LATEST -> strings.readLatestLabel
+    WatchTileConversationAction.QUICK_REPLY_EMOJI -> strings.quickReplyEmojiLabel
+    WatchTileConversationAction.QUICK_REPLY_TEXT -> strings.quickReplyTextLabel
+    WatchTileConversationAction.QUICK_REPLY_VOICE -> strings.quickReplyVoiceLabel
+    WatchTileConversationAction.OPEN_LATEST -> strings.openLatestLabel
+    WatchTileConversationAction.DIRECT_REPLY -> strings.quickReplyTextLabel
+    WatchTileConversationAction.VOICE_RECORDING -> strings.quickReplyVoiceLabel
+}
+
+@Suppress("DEPRECATION")
+private fun WatchTileConversationAction.normalizedTileAction(): WatchTileConversationAction = when (this) {
+    WatchTileConversationAction.DIRECT_REPLY -> WatchTileConversationAction.QUICK_REPLY_TEXT
+    WatchTileConversationAction.VOICE_RECORDING -> WatchTileConversationAction.QUICK_REPLY_VOICE
+    else -> this
+}
+
+
+private fun WatchFavoriteRoom.toVibrationCategory(): WearCompanionVibrationCategory = when {
+    isFavorite && kind == io.element.android.watchbridge.contract.WatchRoomKind.DM -> WearCompanionVibrationCategory.FAVORITE_DMS
+    isFavorite -> WearCompanionVibrationCategory.FAVORITE_GROUPS
+    kind == io.element.android.watchbridge.contract.WatchRoomKind.DM -> WearCompanionVibrationCategory.DMS
+    else -> WearCompanionVibrationCategory.GROUPS
+}
+
+private fun WearCompanionVibrationCategory.displayLabel(strings: WearCompanionVibrationSectionStrings): String = when (this) {
+    WearCompanionVibrationCategory.GROUPS -> strings.groupsLabel
+    WearCompanionVibrationCategory.DMS -> strings.dmsLabel
+    WearCompanionVibrationCategory.FAVORITE_GROUPS -> strings.favoriteGroupsLabel
+    WearCompanionVibrationCategory.FAVORITE_DMS -> strings.favoriteDmsLabel
+}
+
+private fun WatchNotificationVibrationPattern.displayLabel(strings: WearCompanionVibrationSectionStrings): String = when (this) {
+    WatchNotificationVibrationPattern.SILENT -> strings.silentLabel
+    WatchNotificationVibrationPattern.DEFAULT -> strings.defaultLabel
+    WatchNotificationVibrationPattern.DOUBLE -> strings.doubleLabel
+    WatchNotificationVibrationPattern.LONG -> strings.longLabel
+    WatchNotificationVibrationPattern.TRIPLE -> strings.tripleLabel
+    WatchNotificationVibrationPattern.PULSE -> strings.pulseLabel
+    WatchNotificationVibrationPattern.ESCALATING -> strings.escalatingLabel
+    WatchNotificationVibrationPattern.CUSTOM -> strings.customLabel
+}
+
+private fun WatchNotificationVibrationPattern.displayDescription(strings: WearCompanionVibrationSectionStrings): String = when (this) {
+    WatchNotificationVibrationPattern.SILENT -> strings.silentDescription
+    WatchNotificationVibrationPattern.DEFAULT -> strings.defaultDescription
+    WatchNotificationVibrationPattern.DOUBLE -> strings.doubleDescription
+    WatchNotificationVibrationPattern.LONG -> strings.longDescription
+    WatchNotificationVibrationPattern.TRIPLE -> strings.tripleDescription
+    WatchNotificationVibrationPattern.PULSE -> strings.pulseDescription
+    WatchNotificationVibrationPattern.ESCALATING -> strings.escalatingDescription
+    WatchNotificationVibrationPattern.CUSTOM -> strings.customDescription
+}
+
+private fun WatchLongPressMessageAction.toSelectorOption(): WearCompanionSelectorOption<WatchLongPressMessageAction> {
+    return WearCompanionSelectorOption(
+        value = this,
+        label = displayLabel(),
+        tag = wearCompanionMessageActionOptionTag(this),
+    )
+}
+
+private fun WatchLongPressConversationAction.toSelectorOption(): WearCompanionSelectorOption<WatchLongPressConversationAction> {
+    return WearCompanionSelectorOption(
+        value = this,
+        label = displayLabel(),
+        tag = wearCompanionConversationActionOptionTag(this),
+    )
+}
+
+private fun WatchTileConversationAction.toSelectorOption(
+    kind: WearCompanionTileKind,
+    strings: WearCompanionTileActionSectionStrings,
+): WearCompanionSelectorOption<WatchTileConversationAction> {
+    return WearCompanionSelectorOption(
+        value = this,
+        label = displayLabel(strings),
+        tag = wearCompanionTileActionOptionTag(kind, this),
+    )
+}
+
+private fun WatchNotificationVibrationPattern.toSelectorOption(
+    category: WearCompanionVibrationCategory,
+    strings: WearCompanionVibrationSectionStrings,
+): WearCompanionSelectorOption<WatchNotificationVibrationPattern> {
+    return WearCompanionSelectorOption(
+        value = this,
+        label = displayLabel(strings),
+        description = displayDescription(strings),
+        tag = wearCompanionVibrationOptionTag(category, this),
+    )
+}
+
+private fun WatchCompanionSettings.notificationVibrationOptionFor(
+    category: WearCompanionVibrationCategory,
+    strings: WearCompanionVibrationSectionStrings,
+): WearCompanionSelectorOption<WatchNotificationVibrationPattern> {
+    val pattern = notificationVibrationFor(category)
+    return WearCompanionSelectorOption(
+        value = pattern,
+        label = pattern.displayLabel(strings),
+        description = pattern.displayDescription(strings),
+        tag = wearCompanionVibrationOptionTag(category, pattern),
+    )
+}
+
+private fun WatchCompanionSettings.conversationVibrationOptionFor(
+    roomId: String,
+    strings: WearCompanionVibrationSectionStrings,
+): WearCompanionSelectorOption<WatchNotificationVibrationPattern?> {
+    val override = notificationVibrations.conversationOverrideFor(roomId)
+    val pattern = override?.pattern
+    return if (pattern == null) {
+        WearCompanionSelectorOption(
+            value = null,
+            label = strings.inheritLabel,
+            description = strings.inheritDescription,
+            tag = wearCompanionConversationVibrationOptionTag(roomId, null),
+        )
+    } else {
+        WearCompanionSelectorOption(
+            value = pattern,
+            label = pattern.displayLabel(strings),
+            description = override.displayDescription(strings),
+            tag = wearCompanionConversationVibrationOptionTag(roomId, pattern),
+        )
+    }
+}
+
+private fun conversationVibrationOptions(
+    roomId: String,
+    strings: WearCompanionVibrationSectionStrings,
+): List<WearCompanionSelectorOption<WatchNotificationVibrationPattern?>> {
+    val inheritOption = WearCompanionSelectorOption<WatchNotificationVibrationPattern?>(
+        value = null,
+        label = strings.inheritLabel,
+        description = strings.inheritDescription,
+        tag = wearCompanionConversationVibrationOptionTag(roomId, null),
+    )
+    return buildList {
+        add(inheritOption)
+        addAll(
+            WatchNotificationVibrationPattern.entries.map { pattern ->
+                WearCompanionSelectorOption(
+                    value = pattern,
+                    label = pattern.displayLabel(strings),
+                    description = pattern.displayDescription(strings),
+                    tag = wearCompanionConversationVibrationOptionTag(roomId, pattern),
+                )
+            },
+        )
+    }
+}
+
+private fun categorySelectableVibrationPatterns(): List<WatchNotificationVibrationPattern> {
+    return WatchNotificationVibrationPattern.entries
+}
+
+internal fun WatchCompanionSettings.notificationVibrationFor(
+    category: WearCompanionVibrationCategory,
+): WatchNotificationVibrationPattern {
+    return when (category) {
+        WearCompanionVibrationCategory.GROUPS -> notificationVibrations.groups
+        WearCompanionVibrationCategory.DMS -> notificationVibrations.dms
+        WearCompanionVibrationCategory.FAVORITE_GROUPS -> notificationVibrations.favoriteGroups
+        WearCompanionVibrationCategory.FAVORITE_DMS -> notificationVibrations.favoriteDms
+    }
+}
+
+internal fun WatchCompanionSettings.notificationCustomPatternFor(
+    category: WearCompanionVibrationCategory,
+): String {
+    return when (category) {
+        WearCompanionVibrationCategory.GROUPS -> notificationVibrations.groupsCustomPattern
+        WearCompanionVibrationCategory.DMS -> notificationVibrations.dmsCustomPattern
+        WearCompanionVibrationCategory.FAVORITE_GROUPS -> notificationVibrations.favoriteGroupsCustomPattern
+        WearCompanionVibrationCategory.FAVORITE_DMS -> notificationVibrations.favoriteDmsCustomPattern
+    }
+}
+
+internal fun WatchCompanionSettings.withNotificationVibration(
+    category: WearCompanionVibrationCategory,
+    pattern: WatchNotificationVibrationPattern,
+    customPattern: String = "",
+): WatchCompanionSettings {
+    return copy(
+        notificationVibrations = notificationVibrations.withPattern(category, pattern, customPattern),
+    )
+}
+
+internal fun WatchCompanionSettings.withConversationSelection(roomId: String): WatchCompanionSettings {
+    if (notificationVibrations.conversationOverrideFor(roomId) != null) return this
+    return copy(
+        notificationVibrations = notificationVibrations.copy(
+            conversationOverrides = notificationVibrations.conversationOverrides + WatchConversationVibrationOverride(
+                roomId = roomId,
+            ),
+        ),
+    )
+}
+
+internal fun WatchCompanionSettings.withConversationNotificationVibration(
+    roomId: String,
+    pattern: WatchNotificationVibrationPattern?,
+    customPattern: String = "",
+): WatchCompanionSettings {
+    val updatedOverride = WatchConversationVibrationOverride(
+        roomId = roomId,
+        pattern = pattern,
+        customPattern = customPattern,
+    )
+    val remainingOverrides = notificationVibrations.conversationOverrides.filterNot { it.roomId == roomId }
+    return copy(
+        notificationVibrations = notificationVibrations.copy(
+            conversationOverrides = remainingOverrides + updatedOverride,
+        ),
+    )
+}
+
+internal fun WatchCompanionSettings.withoutConversationNotificationVibration(roomId: String): WatchCompanionSettings {
+    return copy(
+        notificationVibrations = notificationVibrations.copy(
+            conversationOverrides = notificationVibrations.conversationOverrides.filterNot { it.roomId == roomId },
+        ),
+    )
+}
+
+private fun WatchNotificationVibrationSettings.withPattern(
+    category: WearCompanionVibrationCategory,
+    pattern: WatchNotificationVibrationPattern,
+    customPattern: String = "",
+): WatchNotificationVibrationSettings {
+    return when (category) {
+        WearCompanionVibrationCategory.GROUPS -> copy(groups = pattern, groupsCustomPattern = customPattern)
+        WearCompanionVibrationCategory.DMS -> copy(dms = pattern, dmsCustomPattern = customPattern)
+        WearCompanionVibrationCategory.FAVORITE_GROUPS -> copy(favoriteGroups = pattern, favoriteGroupsCustomPattern = customPattern)
+        WearCompanionVibrationCategory.FAVORITE_DMS -> copy(favoriteDms = pattern, favoriteDmsCustomPattern = customPattern)
+    }
+}
+
+private fun WatchNotificationVibrationSettings.conversationOverrideFor(
+    roomId: String,
+): WatchConversationVibrationOverride? {
+    return conversationOverrides.firstOrNull { it.roomId == roomId }
+}
+
+private fun WatchConversationVibrationOverride.displayDescription(
+    strings: WearCompanionVibrationSectionStrings,
+): String {
+    val selectedPattern = pattern ?: return strings.inheritDescription
+    return selectedPattern.displayDescription(strings)
+}
+
+private fun WatchFavoriteRoom.matchesSearch(query: String): Boolean {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isBlank()) return true
+    return displayNameOrRoomId().contains(normalizedQuery, ignoreCase = true)
+}
+
+private fun WatchFavoriteRoom.displayNameOrRoomId(): String {
+    return displayName.takeIf { it.isNotBlank() } ?: roomId
+}
+
+@Composable
 private fun WearCompanionCustomPatternDialog(
     roomTitle: String,
     commonStrings: WearCompanionCommonStrings,
@@ -1032,402 +1457,13 @@ private fun WearCompanionCustomPatternDialog(
     }
 }
 
-@Composable
-private fun rememberWearCompanionLongPressSectionStrings(): WearCompanionLongPressSectionStrings {
-    return WearCompanionLongPressSectionStrings(
-        sectionTitle = stringResource(R.string.screen_wear_companion_long_press_section_title),
-        messagesLabel = stringResource(R.string.screen_wear_companion_long_press_messages_title),
-        conversationsLabel = stringResource(R.string.screen_wear_companion_long_press_conversations_title),
-    )
-}
-
-@Composable
-private fun rememberWearCompanionCommonStrings(): WearCompanionCommonStrings {
-    return WearCompanionCommonStrings(
-        saveLabel = stringResource(CommonStrings.action_save),
-        cancelLabel = stringResource(CommonStrings.action_cancel),
-        searchLabel = stringResource(CommonStrings.action_search),
-    )
-}
-
-@Composable
-private fun rememberWearCompanionNotificationSectionStrings(): WearCompanionNotificationSectionStrings {
-    return WearCompanionNotificationSectionStrings(
-        sectionTitle = stringResource(R.string.screen_wear_companion_notifications_section),
-        actionDescriptionFormat = stringResource(R.string.screen_wear_companion_send_test_notification_description),
-    )
-}
-
-@Composable
-private fun rememberWearCompanionVibrationSectionStrings(): WearCompanionVibrationSectionStrings {
-    return WearCompanionVibrationSectionStrings(
-        sectionTitle = stringResource(R.string.screen_wear_companion_vibration_section_title),
-        conversationOverridesSectionTitle = stringResource(R.string.screen_wear_companion_conversation_vibration_section_title),
-        conversationOverridesEmpty = stringResource(R.string.screen_wear_companion_conversation_vibration_empty),
-        conversationPickerNoRooms = stringResource(R.string.screen_wear_companion_conversation_picker_no_rooms),
-        conversationPickerEmpty = stringResource(R.string.screen_wear_companion_conversation_picker_empty),
-        conversationPickerAllAdded = stringResource(R.string.screen_wear_companion_conversation_picker_all_added),
-        conversationPickerTitle = stringResource(R.string.screen_wear_companion_conversation_picker_title),
-        addConversationLabel = stringResource(R.string.screen_wear_companion_add_conversation_title),
-        addConversationDescription = stringResource(R.string.screen_wear_companion_add_conversation_description),
-        conversationRemoveLabel = stringResource(R.string.screen_wear_companion_conversation_remove_title),
-        conversationRemoveDescription = stringResource(R.string.screen_wear_companion_conversation_remove_description),
-        inheritLabel = stringResource(R.string.screen_wear_companion_conversation_vibration_inherit),
-        inheritDescription = stringResource(R.string.screen_wear_companion_conversation_vibration_inherit_description),
-        groupsLabel = stringResource(R.string.screen_wear_companion_vibration_groups),
-        dmsLabel = stringResource(R.string.screen_wear_companion_vibration_dms),
-        favoriteGroupsLabel = stringResource(R.string.screen_wear_companion_vibration_favorite_groups),
-        favoriteDmsLabel = stringResource(R.string.screen_wear_companion_vibration_favorite_dms),
-        silentLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_silent),
-        silentDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_silent_description),
-        defaultLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_default),
-        defaultDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_default_description),
-        doubleLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_double),
-        doubleDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_double_description),
-        longLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_long),
-        longDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_long_description),
-        tripleLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_triple),
-        tripleDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_triple_description),
-        pulseLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_pulse),
-        pulseDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_pulse_description),
-        escalatingLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_escalating),
-        escalatingDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_escalating_description),
-        customLabel = stringResource(R.string.screen_wear_companion_vibration_pattern_custom),
-        customDescription = stringResource(R.string.screen_wear_companion_vibration_pattern_custom_description),
-        customPatternDialogTitle = stringResource(R.string.screen_wear_companion_custom_pattern_dialog_title),
-        customPatternFieldLabel = stringResource(R.string.screen_wear_companion_custom_pattern_field_label),
-        customPatternDescription = stringResource(R.string.screen_wear_companion_custom_pattern_description),
-        customPatternError = stringResource(R.string.screen_wear_companion_custom_pattern_error),
-        customPatternTestLabel = stringResource(R.string.screen_wear_companion_custom_pattern_test_title),
-        customPatternTestDescription = stringResource(R.string.screen_wear_companion_custom_pattern_test_description),
-    )
-}
-
-@Composable
-private fun rememberWearCompanionTileActionSectionStrings(): WearCompanionTileActionSectionStrings {
-    return WearCompanionTileActionSectionStrings(
-        sectionTitle = stringResource(R.string.screen_wear_companion_tile_action_section_title),
-        recentTileLabel = stringResource(R.string.screen_wear_companion_tile_action_recent_title),
-        favoriteTileLabel = stringResource(R.string.screen_wear_companion_tile_action_favorite_title),
-        openConversationLabel = stringResource(R.string.screen_wear_companion_tile_action_open_conversation),
-        readLatestLabel = stringResource(R.string.screen_wear_companion_tile_action_read_latest),
-        quickReplyEmojiLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_emoji),
-        quickReplyTextLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_text),
-        quickReplyVoiceLabel = stringResource(R.string.screen_wear_companion_tile_action_quick_reply_voice),
-        openLatestLabel = stringResource(R.string.screen_wear_companion_tile_action_open_latest),
-    )
-}
-
-private fun WatchLongPressMessageAction.displayLabel(): String = when (this) {
-    WatchLongPressMessageAction.READ_ALOUD -> "Read aloud / Play"
-    WatchLongPressMessageAction.CREATE_THREAD -> "Create thread"
-    WatchLongPressMessageAction.REPLY_EMOJI -> "Reply with emoji"
-    WatchLongPressMessageAction.REPLY_TEXT -> "Reply with text"
-    WatchLongPressMessageAction.REPLY_VOICE -> "Reply with voice message"
-}
-
-private fun WatchLongPressConversationAction.displayLabel(): String = when (this) {
-    WatchLongPressConversationAction.READ_LATEST -> "Read latest message"
-    WatchLongPressConversationAction.QUICK_REPLY_EMOJI -> "Quick reply with emoji"
-    WatchLongPressConversationAction.QUICK_REPLY_TEXT -> "Quick reply with text"
-    WatchLongPressConversationAction.QUICK_REPLY_VOICE -> "Quick reply with voice message"
-    WatchLongPressConversationAction.OPEN_LATEST -> "Open latest message"
-}
-
-private val tileConversationActionOptions = listOf(
-    WatchTileConversationAction.OPEN_CONVERSATION,
-    WatchTileConversationAction.READ_LATEST,
-    WatchTileConversationAction.QUICK_REPLY_EMOJI,
-    WatchTileConversationAction.QUICK_REPLY_TEXT,
-    WatchTileConversationAction.QUICK_REPLY_VOICE,
-    WatchTileConversationAction.OPEN_LATEST,
-)
-
-@Suppress("DEPRECATION")
-private fun WatchTileConversationAction.displayLabel(strings: WearCompanionTileActionSectionStrings): String = when (this) {
-    WatchTileConversationAction.OPEN_CONVERSATION -> strings.openConversationLabel
-    WatchTileConversationAction.READ_LATEST -> strings.readLatestLabel
-    WatchTileConversationAction.QUICK_REPLY_EMOJI -> strings.quickReplyEmojiLabel
-    WatchTileConversationAction.QUICK_REPLY_TEXT -> strings.quickReplyTextLabel
-    WatchTileConversationAction.QUICK_REPLY_VOICE -> strings.quickReplyVoiceLabel
-    WatchTileConversationAction.OPEN_LATEST -> strings.openLatestLabel
-    WatchTileConversationAction.DIRECT_REPLY -> strings.quickReplyTextLabel
-    WatchTileConversationAction.VOICE_RECORDING -> strings.quickReplyVoiceLabel
-}
-
-@Suppress("DEPRECATION")
-private fun WatchTileConversationAction.normalizedTileAction(): WatchTileConversationAction = when (this) {
-    WatchTileConversationAction.DIRECT_REPLY -> WatchTileConversationAction.QUICK_REPLY_TEXT
-    WatchTileConversationAction.VOICE_RECORDING -> WatchTileConversationAction.QUICK_REPLY_VOICE
-    else -> this
-}
-
-private fun WearCompanionVibrationCategory.displayLabel(strings: WearCompanionVibrationSectionStrings): String = when (this) {
-    WearCompanionVibrationCategory.GROUPS -> strings.groupsLabel
-    WearCompanionVibrationCategory.DMS -> strings.dmsLabel
-    WearCompanionVibrationCategory.FAVORITE_GROUPS -> strings.favoriteGroupsLabel
-    WearCompanionVibrationCategory.FAVORITE_DMS -> strings.favoriteDmsLabel
-}
-
-private fun WatchNotificationVibrationPattern.displayLabel(strings: WearCompanionVibrationSectionStrings): String = when (this) {
-    WatchNotificationVibrationPattern.SILENT -> strings.silentLabel
-    WatchNotificationVibrationPattern.DEFAULT -> strings.defaultLabel
-    WatchNotificationVibrationPattern.DOUBLE -> strings.doubleLabel
-    WatchNotificationVibrationPattern.LONG -> strings.longLabel
-    WatchNotificationVibrationPattern.TRIPLE -> strings.tripleLabel
-    WatchNotificationVibrationPattern.PULSE -> strings.pulseLabel
-    WatchNotificationVibrationPattern.ESCALATING -> strings.escalatingLabel
-    WatchNotificationVibrationPattern.CUSTOM -> strings.customLabel
-}
-
-private fun WatchNotificationVibrationPattern.displayDescription(strings: WearCompanionVibrationSectionStrings): String = when (this) {
-    WatchNotificationVibrationPattern.SILENT -> strings.silentDescription
-    WatchNotificationVibrationPattern.DEFAULT -> strings.defaultDescription
-    WatchNotificationVibrationPattern.DOUBLE -> strings.doubleDescription
-    WatchNotificationVibrationPattern.LONG -> strings.longDescription
-    WatchNotificationVibrationPattern.TRIPLE -> strings.tripleDescription
-    WatchNotificationVibrationPattern.PULSE -> strings.pulseDescription
-    WatchNotificationVibrationPattern.ESCALATING -> strings.escalatingDescription
-    WatchNotificationVibrationPattern.CUSTOM -> strings.customDescription
-}
-
-private fun WatchLongPressMessageAction.toSelectorOption(): WearCompanionSelectorOption<WatchLongPressMessageAction> {
-    return WearCompanionSelectorOption(
-        value = this,
-        label = displayLabel(),
-        tag = wearCompanionMessageActionOptionTag(this),
-    )
-}
-
-private fun WatchLongPressConversationAction.toSelectorOption(): WearCompanionSelectorOption<WatchLongPressConversationAction> {
-    return WearCompanionSelectorOption(
-        value = this,
-        label = displayLabel(),
-        tag = wearCompanionConversationActionOptionTag(this),
-    )
-}
-
-private fun WatchTileConversationAction.toSelectorOption(
-    kind: WearCompanionTileKind,
-    strings: WearCompanionTileActionSectionStrings,
-): WearCompanionSelectorOption<WatchTileConversationAction> {
-    return WearCompanionSelectorOption(
-        value = this,
-        label = displayLabel(strings),
-        tag = wearCompanionTileActionOptionTag(kind, this),
-    )
-}
-
-private fun WatchNotificationVibrationPattern.toSelectorOption(
-    category: WearCompanionVibrationCategory,
-    strings: WearCompanionVibrationSectionStrings,
-): WearCompanionSelectorOption<WatchNotificationVibrationPattern> {
-    return WearCompanionSelectorOption(
-        value = this,
-        label = displayLabel(strings),
-        description = displayDescription(strings),
-        tag = wearCompanionVibrationOptionTag(category, this),
-    )
-}
-
-private fun WatchCompanionSettings.notificationVibrationOptionFor(
-    category: WearCompanionVibrationCategory,
-    strings: WearCompanionVibrationSectionStrings,
-): WearCompanionSelectorOption<WatchNotificationVibrationPattern> {
-    val pattern = notificationVibrationFor(category)
-    return WearCompanionSelectorOption(
-        value = pattern,
-        label = pattern.displayLabel(strings),
-        description = when (pattern) {
-            WatchNotificationVibrationPattern.CUSTOM -> customPatternDisplayDescription(
-                customPattern = notificationCustomPatternFor(category),
-                strings = strings,
-            )
-            else -> pattern.displayDescription(strings)
-        },
-        tag = wearCompanionVibrationOptionTag(category, pattern),
-    )
-}
-
-private fun WatchCompanionSettings.conversationVibrationOptionFor(
-    roomId: String,
-    strings: WearCompanionVibrationSectionStrings,
-): WearCompanionSelectorOption<WatchNotificationVibrationPattern?> {
-    val override = notificationVibrations.conversationOverrideFor(roomId)
-    val pattern = override?.pattern
-    return if (pattern == null) {
-        WearCompanionSelectorOption(
-            value = null,
-            label = strings.inheritLabel,
-            description = strings.inheritDescription,
-            tag = wearCompanionConversationVibrationOptionTag(roomId, null),
-        )
-    } else {
-        WearCompanionSelectorOption(
-            value = pattern,
-            label = pattern.displayLabel(strings),
-            description = override.displayDescription(strings),
-            tag = wearCompanionConversationVibrationOptionTag(roomId, pattern),
-        )
-    }
-}
-
-private fun conversationVibrationOptions(
-    roomId: String,
-    strings: WearCompanionVibrationSectionStrings,
-): List<WearCompanionSelectorOption<WatchNotificationVibrationPattern?>> {
-    val inheritOption = WearCompanionSelectorOption<WatchNotificationVibrationPattern?>(
-        value = null,
-        label = strings.inheritLabel,
-        description = strings.inheritDescription,
-        tag = wearCompanionConversationVibrationOptionTag(roomId, null),
-    )
-    return buildList {
-        add(inheritOption)
-        addAll(
-            WatchNotificationVibrationPattern.entries.map { pattern ->
-                WearCompanionSelectorOption(
-                    value = pattern,
-                    label = pattern.displayLabel(strings),
-                    description = pattern.displayDescription(strings),
-                    tag = wearCompanionConversationVibrationOptionTag(roomId, pattern),
-                )
-            },
-        )
-    }
-}
-
-private fun categorySelectableVibrationPatterns(): List<WatchNotificationVibrationPattern> {
-    return WatchNotificationVibrationPattern.entries
-}
-
-internal fun WatchCompanionSettings.notificationVibrationFor(
-    category: WearCompanionVibrationCategory,
-): WatchNotificationVibrationPattern {
-    return when (category) {
-        WearCompanionVibrationCategory.GROUPS -> notificationVibrations.groups
-        WearCompanionVibrationCategory.DMS -> notificationVibrations.dms
-        WearCompanionVibrationCategory.FAVORITE_GROUPS -> notificationVibrations.favoriteGroups
-        WearCompanionVibrationCategory.FAVORITE_DMS -> notificationVibrations.favoriteDms
-    }
-}
-
-internal fun WatchCompanionSettings.notificationCustomPatternFor(
-    category: WearCompanionVibrationCategory,
-): String {
-    return when (category) {
-        WearCompanionVibrationCategory.GROUPS -> notificationVibrations.groupsCustomPattern
-        WearCompanionVibrationCategory.DMS -> notificationVibrations.dmsCustomPattern
-        WearCompanionVibrationCategory.FAVORITE_GROUPS -> notificationVibrations.favoriteGroupsCustomPattern
-        WearCompanionVibrationCategory.FAVORITE_DMS -> notificationVibrations.favoriteDmsCustomPattern
-    }
-}
-
-internal fun WatchCompanionSettings.withNotificationVibration(
-    category: WearCompanionVibrationCategory,
-    pattern: WatchNotificationVibrationPattern,
-    customPattern: String = "",
-): WatchCompanionSettings {
-    return copy(
-        notificationVibrations = notificationVibrations.withPattern(category, pattern, customPattern),
-    )
-}
-
-internal fun WatchCompanionSettings.withConversationSelection(roomId: String): WatchCompanionSettings {
-    if (notificationVibrations.conversationOverrideFor(roomId) != null) return this
-    return copy(
-        notificationVibrations = notificationVibrations.copy(
-            conversationOverrides = notificationVibrations.conversationOverrides + WatchConversationVibrationOverride(
-                roomId = roomId,
-            ),
-        ),
-    )
-}
-
-internal fun WatchCompanionSettings.withConversationNotificationVibration(
-    roomId: String,
-    pattern: WatchNotificationVibrationPattern?,
-    customPattern: String = "",
-): WatchCompanionSettings {
-    val updatedOverride = WatchConversationVibrationOverride(
-        roomId = roomId,
-        pattern = pattern,
-        customPattern = if (pattern == WatchNotificationVibrationPattern.CUSTOM) customPattern else "",
-    )
-    val remainingOverrides = notificationVibrations.conversationOverrides.filterNot { it.roomId == roomId }
-    return copy(
-        notificationVibrations = notificationVibrations.copy(
-            conversationOverrides = remainingOverrides + updatedOverride,
-        ),
-    )
-}
-
-internal fun WatchCompanionSettings.withoutConversationNotificationVibration(roomId: String): WatchCompanionSettings {
-    return copy(
-        notificationVibrations = notificationVibrations.copy(
-            conversationOverrides = notificationVibrations.conversationOverrides.filterNot { it.roomId == roomId },
-        ),
-    )
-}
-
-private fun WatchNotificationVibrationSettings.withPattern(
-    category: WearCompanionVibrationCategory,
-    pattern: WatchNotificationVibrationPattern,
-    customPattern: String = "",
-): WatchNotificationVibrationSettings {
-    return when (category) {
-        WearCompanionVibrationCategory.GROUPS -> copy(
-            groups = pattern,
-            groupsCustomPattern = customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM }.orEmpty(),
-        )
-        WearCompanionVibrationCategory.DMS -> copy(
-            dms = pattern,
-            dmsCustomPattern = customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM }.orEmpty(),
-        )
-        WearCompanionVibrationCategory.FAVORITE_GROUPS -> copy(
-            favoriteGroups = pattern,
-            favoriteGroupsCustomPattern = customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM }.orEmpty(),
-        )
-        WearCompanionVibrationCategory.FAVORITE_DMS -> copy(
-            favoriteDms = pattern,
-            favoriteDmsCustomPattern = customPattern.takeIf { pattern == WatchNotificationVibrationPattern.CUSTOM }.orEmpty(),
-        )
-    }
-}
-
-private fun WatchNotificationVibrationSettings.conversationOverrideFor(
-    roomId: String,
-): WatchConversationVibrationOverride? {
-    return conversationOverrides.firstOrNull { it.roomId == roomId }
-}
-
-private fun WatchConversationVibrationOverride.displayDescription(
-    strings: WearCompanionVibrationSectionStrings,
-): String {
-    val selectedPattern = pattern ?: return strings.inheritDescription
-    return when (selectedPattern) {
-        WatchNotificationVibrationPattern.CUSTOM -> customPatternDisplayDescription(customPattern, strings)
-        else -> selectedPattern.displayDescription(strings)
-    }
-}
-
 private fun customPatternDisplayDescription(
     customPattern: String,
     strings: WearCompanionVibrationSectionStrings,
 ): String {
-    return when {
-        customPattern.isBlank() -> strings.customDescription
-        parseCustomWatchNotificationVibrationPattern(customPattern) == null -> strings.customPatternError
-        else -> customPattern
+    return if (customPattern.isBlank()) {
+        strings.customDescription
+    } else {
+        "$strings.customDescription: $customPattern"
     }
-}
-
-private fun WatchFavoriteRoom.matchesSearch(query: String): Boolean {
-    val normalizedQuery = query.trim()
-    if (normalizedQuery.isBlank()) return true
-    return displayNameOrRoomId().contains(normalizedQuery, ignoreCase = true)
-}
-
-private fun WatchFavoriteRoom.displayNameOrRoomId(): String {
-    return displayName.takeIf { it.isNotBlank() } ?: roomId
 }

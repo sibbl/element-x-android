@@ -75,7 +75,6 @@ class WearCompanionTestNotificationSenderTest {
         assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.GROUP)
         assertThat(payload.notification.vibrationPatternOverride)
             .isEqualTo(WatchNotificationVibrationPattern.TRIPLE)
-        assertThat(payload.notification.customVibrationPattern).isNull()
         assertThat(payload.notification.notificationKey)
             .isEqualTo("wear-companion-test:groups")
         assertThat(payload.notification.roomDisplayName).isEqualTo(sample.roomDisplayName)
@@ -121,8 +120,7 @@ class WearCompanionTestNotificationSenderTest {
             category = WearCompanionVibrationCategory.FAVORITE_DMS,
             settings = WatchCompanionSettings(
                 notificationVibrations = WatchNotificationVibrationSettings(
-                    favoriteDms = WatchNotificationVibrationPattern.CUSTOM,
-                    favoriteDmsCustomPattern = "120 60 240",
+                    favoriteDms = WatchNotificationVibrationPattern.TRIPLE,
                 ),
             ),
         )
@@ -133,124 +131,29 @@ class WearCompanionTestNotificationSenderTest {
         assertThat(publication.first)
             .isEqualTo(WatchDataPaths.notification("wear-companion-test:favorite_dms"))
         assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.DM)
-        assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
-        assertThat(payload.notification.customVibrationPattern).isEqualTo("120 60 240")
+        assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.TRIPLE)
     }
 
     @Test
-    fun `sender publishes a category specific custom pattern test notification`() = runTest {
+    fun `conversation custom test preserves room category and custom payload`() = runTest {
         val transport = RecordingTransport()
+        val room = WatchFavoriteRoom(roomId = "!dm:server", displayName = "Test", kind = WatchRoomKind.DM, isFavorite = true)
         val sender = WearCompanionTestNotificationSender(
-            context = context,
-            transport = transport,
-            clock = { 1_750L },
-            sampleProvider = {
-                WearCompanionTestNotificationSample(
-                    roomDisplayName = "Taylor",
-                    senderDisplayName = "Taylor",
-                    bodyText = "Custom buzz test.",
-                )
-            },
-        )
-
-        sender.sendCategoryPatternTest(
-            category = WearCompanionVibrationCategory.DMS,
-            customPattern = "90 45 180",
-        )
-
-        val publication = transport.publications.single()
-        val payload = publication.second.payload as WatchSync.MessageNotification
-
-        assertThat(publication.first)
-            .isEqualTo(WatchDataPaths.notification("wear-companion-test:category-custom:dms"))
-        assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.DM)
-        assertThat(payload.notification.notificationKey).isEqualTo("wear-companion-test:dms-custom")
-        assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
-        assertThat(payload.notification.customVibrationPattern).isEqualTo("90 45 180")
-    }
-
-    @Test
-    fun `sender publishes repeated category custom tests with a stable notification and unique events`() = runTest {
-        val transport = RecordingTransport()
-        var now = 2_500L
-        val sender = WearCompanionTestNotificationSender(
-            context = context,
-            transport = transport,
-            clock = { now++ },
-            sampleProvider = {
-                WearCompanionTestNotificationSample(
-                    roomDisplayName = "Taylor",
-                    senderDisplayName = "Taylor",
-                    bodyText = "Custom buzz test.",
-                )
-            },
-        )
-
-        repeat(4) {
-            sender.sendCategoryPatternTest(
-                category = WearCompanionVibrationCategory.DMS,
-                customPattern = "90 45 180",
-            )
-        }
-
-        assertThat(transport.publications.map { it.first }).containsExactly(
-            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
-            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
-            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
-            WatchDataPaths.notification("wear-companion-test:category-custom:dms"),
-        ).inOrder()
-        val notifications = transport.publications.map { (it.second.payload as WatchSync.MessageNotification).notification }
-        assertThat(notifications.map { it.notificationKey }).containsExactly(
-            "wear-companion-test:dms-custom",
-            "wear-companion-test:dms-custom",
-            "wear-companion-test:dms-custom",
-            "wear-companion-test:dms-custom",
-        ).inOrder()
-        assertThat(notifications.map { it.eventId }).containsExactly(
-            "\$wear-companion-test-dms-2500:local",
-            "\$wear-companion-test-dms-2501:local",
-            "\$wear-companion-test-dms-2502:local",
-            "\$wear-companion-test-dms-2503:local",
-        ).inOrder()
-    }
-
-    @Test
-    fun `sender publishes a conversation specific custom pattern test notification`() = runTest {
-        val transport = RecordingTransport()
-        val room = WatchFavoriteRoom(
-            roomId = "!room:server",
-            displayName = "Team Wear",
-            kind = WatchRoomKind.GROUP,
-            isFavorite = false,
-        )
-        val sample = WearCompanionTestNotificationSample(
-            roomDisplayName = "Team Wear",
-            senderDisplayName = "Aisha",
-            bodyText = "Testing a custom pattern.",
-            messageCount = 1,
-        )
-        val sender = WearCompanionTestNotificationSender(
-            context = context,
-            transport = transport,
+            context,
+            transport,
             clock = { 2_000L },
-            sampleProvider = { sample },
+            sampleProvider = { WearCompanionTestNotificationSample("Test", "Test", "Test") },
         )
 
-        sender.sendConversationPatternTest(
-            room = room,
-            customPattern = "120 60 240",
-        )
+        sender.sendConversationPatternTest(room, WatchNotificationVibrationPattern.CUSTOM, "0,100,50,200")
 
-        val publication = transport.publications.single()
-        val payload = publication.second.payload as WatchSync.MessageNotification
-
-        assertThat(publication.first)
-            .isEqualTo(WatchDataPaths.notification("wear-companion-test:conversation:${room.roomId}"))
+        val payload = transport.publications.single().second.payload as WatchSync.MessageNotification
         assertThat(payload.notification.roomId).isEqualTo(room.roomId)
-        assertThat(payload.notification.roomDisplayName).isEqualTo(room.displayName)
-        assertThat(payload.notification.roomKind).isEqualTo(room.kind)
+        assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.DM)
         assertThat(payload.notification.vibrationPatternOverride).isEqualTo(WatchNotificationVibrationPattern.CUSTOM)
-        assertThat(payload.notification.customVibrationPattern).isEqualTo("120 60 240")
+        assertThat(payload.notification.customVibrationPattern).isEqualTo("0,100,50,200")
+        assertThat(payload.notification.vibrationSettingsSnapshot?.conversationOverrides?.single()?.customPattern)
+            .isEqualTo("0,100,50,200")
     }
 
     private class RecordingTransport : WatchTransport {

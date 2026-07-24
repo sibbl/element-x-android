@@ -84,4 +84,11 @@
         <item quantity="one">%1$d pinned message</item>
         <item quantity="other">%1$d pinned messages</item>
     </plurals>
+    <string name="reaction_details_additional">Add another reaction</string>
+    <string name="screen_conversation_details">Conversation details</string>
+    <string name="screen_conversation_details_favorite">Favorite</string>
+    <string name="screen_conversation_details_not_favorite">Not favorite</string>
+    <string name="screen_conversation_details_topic_empty">No topic</string>
+    <string name="screen_conversation_details_pinned_messages">Pinned messages</string>
+    <string name="screen_conversation_details_pinned_empty">No pinned messages in the synced timeline</string>
 </resources>

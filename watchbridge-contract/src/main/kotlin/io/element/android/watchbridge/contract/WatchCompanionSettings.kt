@@ -7,7 +7,40 @@
 
 package io.element.android.watchbridge.contract
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+
+/** String serializer that preserves all known patterns and safely falls back for unknown future values. */
+@Serializable(with = WatchNotificationVibrationPatternSerializer::class)
+enum class WatchNotificationVibrationPattern {
+    SILENT,
+    DEFAULT,
+    DOUBLE,
+    LONG,
+    TRIPLE,
+    PULSE,
+    ESCALATING,
+    CUSTOM,
+}
+
+object WatchNotificationVibrationPatternSerializer : KSerializer<WatchNotificationVibrationPattern> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("WatchNotificationVibrationPattern", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: WatchNotificationVibrationPattern) {
+        encoder.encodeString(value.name)
+    }
+
+    override fun deserialize(decoder: Decoder): WatchNotificationVibrationPattern {
+        val string = decoder.decodeString()
+        return WatchNotificationVibrationPattern.entries.firstOrNull { it.name == string }
+            ?: WatchNotificationVibrationPattern.DEFAULT
+    }
+}
 
 /** Actions available for long-press on messages in the watch timeline. */
 @Serializable
@@ -46,19 +79,6 @@ enum class WatchTileConversationAction {
     /** Kept so watches can still decode settings written by older phone builds. */
     @Deprecated("Use QUICK_REPLY_VOICE")
     VOICE_RECORDING,
-}
-
-/** Built-in vibration profiles available for watch-local notifications. */
-@Serializable
-enum class WatchNotificationVibrationPattern {
-    SILENT,
-    DEFAULT,
-    DOUBLE,
-    LONG,
-    TRIPLE,
-    PULSE,
-    ESCALATING,
-    CUSTOM,
 }
 
 /** Room-specific vibration override that wins over the category default. */

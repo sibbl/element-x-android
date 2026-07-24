@@ -206,11 +206,9 @@ class WatchBridgeSerializationTest {
                     ),
                     isNoisy = true,
                     vibrationPatternOverride = WatchNotificationVibrationPattern.ESCALATING,
-                    customVibrationPattern = "120 60 240",
                     vibrationSettingsSnapshot = WatchNotificationVibrationSettings(
                         groups = WatchNotificationVibrationPattern.TRIPLE,
-                        favoriteGroups = WatchNotificationVibrationPattern.CUSTOM,
-                        favoriteGroupsCustomPattern = "100 50 400",
+                        favoriteGroups = WatchNotificationVibrationPattern.PULSE,
                         conversationOverrides = listOf(
                             WatchConversationVibrationOverride(
                                 roomId = "!room:server",
@@ -264,19 +262,14 @@ class WatchBridgeSerializationTest {
                     recentConversationsTileAction = WatchTileConversationAction.QUICK_REPLY_TEXT,
                     favoriteConversationsTileAction = WatchTileConversationAction.QUICK_REPLY_VOICE,
                     notificationVibrations = WatchNotificationVibrationSettings(
-                        groups = WatchNotificationVibrationPattern.CUSTOM,
-                        groupsCustomPattern = "120 60 240",
+                        groups = WatchNotificationVibrationPattern.TRIPLE,
                         dms = WatchNotificationVibrationPattern.PULSE,
-                        dmsCustomPattern = "",
                         favoriteGroups = WatchNotificationVibrationPattern.ESCALATING,
-                        favoriteGroupsCustomPattern = "",
-                        favoriteDms = WatchNotificationVibrationPattern.CUSTOM,
-                        favoriteDmsCustomPattern = "90 45 180",
+                        favoriteDms = WatchNotificationVibrationPattern.LONG,
                         conversationOverrides = listOf(
                             WatchConversationVibrationOverride(
                                 roomId = "!fav:server",
-                                pattern = WatchNotificationVibrationPattern.CUSTOM,
-                                customPattern = "120 60 240",
+                                pattern = WatchNotificationVibrationPattern.DOUBLE,
                             ),
                             WatchConversationVibrationOverride(
                                 roomId = "!inherit:server",
@@ -294,23 +287,20 @@ class WatchBridgeSerializationTest {
     }
 
     @Test
-    fun `custom vibration parser accepts a valid waveform string`() {
-        val parsed = parseCustomWatchNotificationVibrationPattern("120 60 240 80")
-
-        assertThat(parsed?.toList()).containsExactly(0L, 120L, 60L, 240L, 80L).inOrder()
-    }
-
-    @Test
-    fun `custom vibration parser rejects invalid values`() {
-        assertThat(parseCustomWatchNotificationVibrationPattern("120 nope 240")).isNull()
-        assertThat(parseCustomWatchNotificationVibrationPattern("0 120 240")).isNull()
-        assertThat(parseCustomWatchNotificationVibrationPattern(" ")).isNull()
-    }
-
-    @Test
     fun `byte roundtrip preserves content`() {
         val env = WatchSyncEnvelope(generatedAtMs = 1L, payload = WatchSync.FullRefresh)
         val decoded = ser.decodeEnvelopeFromBytes(ser.encodeEnvelopeToBytes(env))
         assertThat(decoded.payload).isInstanceOf(WatchSync.FullRefresh::class.java)
     }
+
+    @Test
+    fun `removed Morse vibration values deserialize as default`() {
+        val decoded = kotlinx.serialization.json.Json.decodeFromString(
+            WatchNotificationVibrationPattern.serializer(),
+            "\"MORSE_S\"",
+        )
+
+        assertThat(decoded).isEqualTo(WatchNotificationVibrationPattern.DEFAULT)
+    }
+
 }

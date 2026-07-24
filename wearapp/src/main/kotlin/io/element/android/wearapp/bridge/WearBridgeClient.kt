@@ -200,6 +200,9 @@ class WearBridgeClient(private val context: Context) {
     private val _syncEvents = MutableSharedFlow<WatchPayload>(extraBufferCapacity = 64)
     val syncEvents = _syncEvents.asSharedFlow()
 
+    private val _messageNotifications = MutableSharedFlow<WatchMessageNotification>(extraBufferCapacity = 16)
+    val messageNotifications = _messageNotifications.asSharedFlow()
+
     private val _acks = MutableSharedFlow<WatchAck>(extraBufferCapacity = 64)
     val acks = _acks.asSharedFlow()
 
@@ -920,6 +923,7 @@ class WearBridgeClient(private val context: Context) {
                 scope.launch { _syncEvents.emit(p) }
             }
             is WatchSync.MessageNotification -> {
+                if (persist) _messageNotifications.tryEmit(p.notification)
                 p.notification.imagePreviewBytes?.let { imageBytes ->
                     updateMediaPreviewState(
                         key = mediaPreviewCacheKey(p.notification.roomId, p.notification.eventId),

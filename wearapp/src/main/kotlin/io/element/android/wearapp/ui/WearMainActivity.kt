@@ -21,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -44,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material3.AppScaffold
@@ -55,6 +57,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import io.element.android.appconfig.WearCompanionDeepLink
 import io.element.android.watchbridge.contract.WatchLongPressConversationAction
+import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchSendSource
 import io.element.android.wearapp.R
 import io.element.android.wearapp.WearApp
@@ -84,6 +87,7 @@ class WearMainActivity : ComponentActivity() {
     private var pendingRoomScrollRequest by mutableStateOf<PendingRoomScrollRequest?>(null)
     private var pendingThreadScrollRequest by mutableStateOf<PendingThreadScrollRequest?>(null)
     private var transientErrorMessage by mutableStateOf<String?>(null)
+    private var inAppMessageNotification by mutableStateOf<WatchMessageNotification?>(null)
     private var favoritesRequestedRoomCount by mutableIntStateOf(30)
     private var favoritesRestoredPage by mutableIntStateOf(-1)
     private val favoritesListPositions = mutableStateMapOf<String, SavedScalingListPosition>()
@@ -166,6 +170,23 @@ class WearMainActivity : ComponentActivity() {
             }
             LaunchedEffect(notificationPermissionState) {
                 requestNotificationPermissionIfNeeded()
+            }
+            LaunchedEffect(bridge) {
+                bridge.messageNotifications.collect { notification ->
+                    val route = nav.currentBackStackEntry?.destination?.route
+                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) &&
+                        isConversationOrThreadRoute(route) &&
+                        shouldShowInAppNotification(notification)
+                    ) {
+                        inAppMessageNotification = notification
+                    }
+                }
+            }
+            LaunchedEffect(inAppMessageNotification?.eventId) {
+                if (inAppMessageNotification != null) {
+                    delay(IN_APP_NOTIFICATION_DURATION_MS)
+                    inAppMessageNotification = null
+                }
             }
             LaunchedEffect(pendingDeepLink) {
                 val deepLink = pendingDeepLink ?: return@LaunchedEffect
@@ -324,6 +345,9 @@ class WearMainActivity : ComponentActivity() {
                                     },
                                     savedListPosition = roomListPositions[roomId],
                                     onListPositionChange = { roomListPositions[roomId] = it },
+                                    onPageChange = { page ->
+                                        // Optional: track page state per room if needed
+                                    },
                                     onError = { transientErrorMessage = it },
                                 )
                             }
@@ -382,13 +406,17 @@ class WearMainActivity : ComponentActivity() {
                                     eventId = eventId,
                                 )
                             }
-                            composable("reactions?roomId={roomId}&eventId={eventId}") { entry ->
+                            composable("reactions?roomId={roomId}&eventId={eventId}&threadRootId={threadRootId}") { entry ->
                                 val roomId = entry.arguments?.getString("roomId")?.let(Uri::decode) ?: return@composable
                                 val eventId = entry.arguments?.getString("eventId")?.let(Uri::decode) ?: return@composable
+                                val threadRootEventId = entry.arguments?.getString("threadRootId")
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let(Uri::decode)
                                 ReactionDetailsScreen(
                                     bridge = bridge,
                                     roomId = roomId,
                                     eventId = eventId,
+                                    threadRootEventId = threadRootEventId,
                                 )
                             }
                             composable("thread?roomId={roomId}&rootId={rootId}") { entry ->
@@ -403,6 +431,11 @@ class WearMainActivity : ComponentActivity() {
                                     activity = this@WearMainActivity,
                                     onMessageSelected = { eventId ->
                                         nav.navigate(messageRoute(roomId = roomId, eventId = eventId, threadRootEventId = rootId)) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onReactionsSelected = { eventId ->
+                                        nav.navigate(reactionDetailsRoute(roomId = roomId, eventId = eventId, threadRootEventId = rootId)) {
                                             launchSingleTop = true
                                         }
                                     },
@@ -428,6 +461,21 @@ class WearMainActivity : ComponentActivity() {
                             onOpenSettings = ::openNotificationSettings,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+
+                    inAppMessageNotification?.let { notification ->
+                        InAppMessageNotificationBanner(
+                            notification = notification,
+                            onClick = {
+                                inAppMessageNotification = null
+                                val deepLink = notification.toDeepLink()
+                                prepareDeepLinkBackStackScroll(deepLink)
+                                navigateFromRoot(nav = nav, deepLink = deepLink)
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
                         )
                     }
@@ -536,8 +584,8 @@ class WearMainActivity : ComponentActivity() {
 private const val FAVORITES_PAGE_KEY = "favorites"
 private const val RECENTS_PAGE_KEY = "recents"
 
-private fun reactionDetailsRoute(roomId: String, eventId: String): String =
-    "reactions?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}"
+private fun reactionDetailsRoute(roomId: String, eventId: String, threadRootEventId: String? = null): String =
+    "reactions?roomId=${Uri.encode(roomId)}&eventId=${Uri.encode(eventId)}&threadRootId=${Uri.encode(threadRootEventId.orEmpty())}"
 
 @Composable
 private fun WearMainActivity.rememberWearTextToSpeechProvider(): () -> WearTextToSpeech {
@@ -569,6 +617,62 @@ internal fun resolveWearNotificationPermissionState(
         sdkInt >= Build.VERSION_CODES.TIRAMISU && !permissionGranted -> WearNotificationPermissionState.NeedsRuntimePermission
         !notificationsEnabled -> WearNotificationPermissionState.DisabledInSettings
         else -> WearNotificationPermissionState.Granted
+    }
+}
+
+private const val IN_APP_NOTIFICATION_DURATION_MS = 5_000L
+private const val MAX_IN_APP_NOTIFICATION_AGE_MS = 2 * 60 * 1_000L
+
+internal fun isConversationOrThreadRoute(route: String?): Boolean =
+    route?.startsWith("room?") == true || route?.startsWith("thread?") == true
+
+internal fun shouldShowInAppNotification(
+    notification: WatchMessageNotification,
+    nowMs: Long = System.currentTimeMillis(),
+): Boolean = notification.timestampMs in (nowMs - MAX_IN_APP_NOTIFICATION_AGE_MS)..(nowMs + 10_000L)
+
+internal fun WatchMessageNotification.toDeepLink(): WearCompanionDeepLink = WearCompanionDeepLink(
+    roomId = roomId,
+    eventId = eventId,
+    threadRootEventId = threadRootEventId,
+)
+
+@Composable
+private fun InAppMessageNotificationBanner(
+    notification: WatchMessageNotification,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val title = notification.senderDisplayName
+        ?.takeIf { it.isNotBlank() }
+        ?: notification.roomDisplayName.takeIf { it.isNotBlank() }
+        ?: notification.roomId
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(14.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+        )
+        notification.bodyText?.takeIf { it.isNotBlank() }?.let { body ->
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+            )
+        }
     }
 }
 

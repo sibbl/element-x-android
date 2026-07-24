@@ -99,6 +99,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -442,6 +443,8 @@ private class MatrixRoomListWatchPort(
             canSendMessages = true,
             timelineVersion = room.syncUpdateFlow.value,
             lastSyncTsMs = System.currentTimeMillis(),
+            topic = info.topic,
+            isFavorite = info.isFavorite,
         )
     }
 
@@ -586,9 +589,11 @@ private class MatrixRoomListWatchPort(
             room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrThrow()
         }
         return try {
-            val timelineItems = withTimeoutOrNull(1_000.milliseconds) { timeline.timelineItems.first() }.orEmpty()
-            val audio = timelineItems.findPlayableAudioMessage(eventId)
-                ?: return Result.failure(NoSuchElementException("audio event not found"))
+            val audio = withTimeoutOrNull(5_000.milliseconds) {
+                timeline.timelineItems
+                    .mapNotNull { items -> items.findPlayableAudioMessage(eventId) }
+                    .first()
+            } ?: return Result.failure(NoSuchElementException("audio event not found"))
             val declaredSize = audio.info?.size
             if (declaredSize != null && declaredSize > MAX_WATCH_PLAYBACK_BYTES) {
                 return Result.failure(IllegalArgumentException("audio message is too large for watch playback"))

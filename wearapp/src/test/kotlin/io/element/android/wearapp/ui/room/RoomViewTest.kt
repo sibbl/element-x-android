@@ -11,11 +11,16 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import com.google.common.truth.Truth.assertThat
+import io.element.android.watchbridge.contract.WatchRoomKind
+import io.element.android.watchbridge.contract.WatchRoomSummary
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchTimelineItemKind
 import io.element.android.wearapp.ui.favorites.SavedScalingListPosition
@@ -32,9 +37,10 @@ class RoomViewTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun `pinned message count opens pinned overview`() {
+    fun `conversation details page shows metadata and pinned messages without opening message detail`() {
+        var selectedEventId: String? = null
         val pinnedItem = WatchTimelineItem(
-            eventId = "\$pinned:server",
+            eventId = "${'$'}pinned:server",
             roomId = "!room:server",
             senderId = "@alice:server",
             senderDisplayName = "Alice",
@@ -43,27 +49,46 @@ class RoomViewTest {
             bodyText = "Pinned content",
             isPinned = true,
         )
+        val summary = WatchRoomSummary(
+            roomId = "!room:server",
+            displayName = "Project room",
+            kind = WatchRoomKind.GROUP,
+            isEncrypted = true,
+            canSendMessages = true,
+            timelineVersion = 1L,
+            lastSyncTsMs = 2L,
+            topic = "Delivery planning",
+            isFavorite = true,
+        )
 
         rule.setContent {
             WearAppTheme {
                 RoomView(
                     state = RoomViewState(
                         timelineKey = "!room:server",
-                        displayName = "Pinned room",
+                        displayName = "Project room",
                         items = listOf(pinnedItem),
                         isLoading = false,
+                        summary = summary,
                     ),
-                    onMessageSelected = {},
+                    onMessageSelected = { selectedEventId = it },
                     onOpenThread = null,
                     onReply = {},
                     onVoice = null,
+                    enableConversationDetails = true,
                 )
             }
         }
 
-        rule.onNodeWithText("1 pinned message").performClick()
-        rule.onNodeWithText("Pinned messages").assertExists()
-        rule.onNodeWithText("Pinned content").assertExists()
+        rule.onRoot().performTouchInput { swipeLeft() }
+        rule.waitUntil(5_000L) {
+            runCatching { rule.onNodeWithText("Conversation details").fetchSemanticsNode() }.isSuccess
+        }
+        rule.onNodeWithText("Project room").assertExists()
+        rule.onNodeWithText("Delivery planning").assertExists()
+        rule.onNodeWithText("Favorite").assertExists()
+        rule.onNodeWithText("Pinned content").performClick()
+        rule.runOnIdle { assertThat(selectedEventId).isNull() }
     }
 
     @Test

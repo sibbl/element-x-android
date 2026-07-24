@@ -38,9 +38,11 @@ fun RoomScreen(
     onScrollRequestHandled: (Long) -> Unit = {},
     savedListPosition: SavedScalingListPosition? = null,
     onListPositionChange: (SavedScalingListPosition) -> Unit = {},
+    onPageChange: (Int) -> Unit = {},
     onError: (String) -> Unit = {},
 ) {
     val favoriteRooms by bridge.favorites.collectAsState()
+    val avatarImages by bridge.avatarImages.collectAsState()
     val settings by bridge.companionSettings.collectAsState()
     val roomState = rememberRoomTimelineState(
         bridge = bridge,
@@ -68,6 +70,7 @@ fun RoomScreen(
             scrollRequestId = scrollRequestId,
             scrollToEventId = scrollToEventId,
             forceScrollToBottom = forceScrollToBottom,
+            summary = roomState.summary,
         ),
         onMessageSelected = onMessageSelected,
         onReactionsSelected = onReactionsSelected,
@@ -75,7 +78,10 @@ fun RoomScreen(
         onScrollRequestHandled = onScrollRequestHandled,
         savedListPosition = savedListPosition,
         onListPositionChange = onListPositionChange,
+        onPageChange = onPageChange,
+        enableConversationDetails = true,
         mediaPreviewFlowProvider = bridge::mediaPreviewFlow,
+        avatarBytes = avatarImages[roomId],
         onRequestMediaPreview = bridge::requestMediaPreview,
         onLongPressMessage = { item ->
             when (settings.longPressMessageAction) {
