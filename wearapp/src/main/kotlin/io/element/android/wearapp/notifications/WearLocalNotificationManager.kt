@@ -12,13 +12,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import io.element.android.watchbridge.contract.WatchMessageNotification
@@ -34,12 +27,6 @@ internal class WearLocalNotificationManager(
     private val notificationManagerCompat: NotificationManagerCompat = NotificationManagerCompat.from(context),
     private val notificationsAllowedProvider: () -> Boolean = {
         defaultCanNotify(context, notificationManagerCompat)
-    },
-    private val explicitVibrationPlayer: (LongArray) -> Unit = { pattern ->
-        playExplicitNotificationVibration(context, pattern)
-    },
-    private val explicitVibrationScheduler: ((() -> Unit) -> Unit) = { action ->
-        Handler(Looper.getMainLooper()).postDelayed(action, EXPLICIT_VIBRATION_DELAY_MS)
     },
 ) {
     fun show(
@@ -70,10 +57,6 @@ internal class WearLocalNotificationManager(
             wearLocalNotificationId(notification.notificationKey),
             factory.build(notification, generatedAtMs, expiresAtMs, resolvedVibration, channelId),
         )
-        if (resolvedVibration.pattern.usesExplicitVibration()) {
-            val pattern = resolvedVibration.platformVibrationPattern()
-            explicitVibrationScheduler { explicitVibrationPlayer(pattern) }
-        }
     }
 
     fun dismiss(notificationKey: String) {
@@ -118,13 +101,10 @@ internal class WearLocalNotificationManager(
     }
 
     companion object {
-        // Pixel Watch normalizes channel waveforms to its standard haptic. Custom patterns use
-        // an alerting channel with a nominal pulse plus delayed direct playback as assistance haptics. Pixel Watch blocks
-        // app-owned notification-usage vibrations via AppOps, while normal watch haptics are allowed.
-        internal const val CHANNEL_PREFIX = "wear_companion_messages_v22_"
+        // Versioned so upgraded installs receive the complete channel-owned waveform.
+        internal const val CHANNEL_PREFIX = "wear_companion_messages_v23_"
         internal const val CHANNEL_ID = "${CHANNEL_PREFIX}generic_default"
         private const val CHANNEL_CONFIG_PREFERENCES = "wear_notification_channel_configs"
-        private const val EXPLICIT_VIBRATION_DELAY_MS = 350L
     }
 }
 
@@ -138,9 +118,6 @@ private fun NotificationChannel.configFingerprint(): String {
     val vibration = vibrationPattern?.joinToString(separator = ",") ?: if (shouldVibrate()) "system" else "off"
     return "$importance|$vibration|${sound ?: "none"}"
 }
-
-private fun WatchNotificationVibrationPattern.usesExplicitVibration(): Boolean =
-    this != WatchNotificationVibrationPattern.DEFAULT && this != WatchNotificationVibrationPattern.SILENT
 
 private fun parseCustomVibrationPattern(spec: String?): LongArray? {
     val normalized = spec
@@ -162,20 +139,6 @@ private fun parseCustomVibrationPattern(spec: String?): LongArray? {
         timings[index + 1] = durationMs
     }
     return timings
-}
-
-private fun playExplicitNotificationVibration(context: Context, pattern: LongArray) {
-    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        context.getSystemService(VibratorManager::class.java)?.defaultVibrator
-    } else {
-        @Suppress("DEPRECATION")
-        context.getSystemService(Vibrator::class.java)
-    } ?: return
-    if (!vibrator.hasVibrator()) return
-    val attributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-        .build()
-    vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1), attributes)
 }
 
 private fun defaultCanNotify(
@@ -216,11 +179,10 @@ internal fun buildWearLocalNotificationChannel(
         WatchNotificationVibrationPattern.SILENT -> enableVibration(false)
         WatchNotificationVibrationPattern.DEFAULT -> enableVibration(true)
         else -> {
-            // Wear OS suppresses the visual peek for channels classified as silent. Keep the
-            // channel nominally alerting with an imperceptible pulse; the selected waveform is
-            // played explicitly after posting because Pixel Watch normalizes channel waveforms.
+            // Keep custom channels alerting so Wear OS shows a visual peek, and let the
+            // notification channel own the complete waveform.
             enableVibration(true)
-            setVibrationPattern(longArrayOf(0L, 1L))
+            setVibrationPattern(vibration.platformVibrationPattern())
         }
     }
 }
