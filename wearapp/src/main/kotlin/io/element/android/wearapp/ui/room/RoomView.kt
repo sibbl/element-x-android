@@ -308,8 +308,8 @@ internal fun RoomView(
                 currentPage = pagerState.currentPage,
                 pageCount = pageCount,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp),
+                    .align(Alignment.TopCenter)
+                    .padding(top = 6.dp),
             )
         }
         if (pagerState.currentPage == 0) {
