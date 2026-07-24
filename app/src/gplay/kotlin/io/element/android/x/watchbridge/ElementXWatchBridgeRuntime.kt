@@ -93,6 +93,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
@@ -134,6 +135,20 @@ internal data class ThreadProjection(
     val items: List<WatchThreadItem>,
     val mediaSources: Map<String, MediaPreviewSourceRef>,
 )
+
+internal fun mergeWatchTimelineWithPinnedItems(
+    live: TimelineProjection,
+    pinned: TimelineProjection,
+): TimelineProjection {
+    val mergedItems = (live.items + pinned.items)
+        .associateBy(WatchTimelineItem::eventId)
+        .values
+        .sortedBy(WatchTimelineItem::timestampMs)
+    return TimelineProjection(
+        items = mergedItems,
+        mediaSources = live.mediaSources + pinned.mediaSources,
+    )
+}
 
 internal data class MediaPreviewSourceRef(
     val primarySource: MediaSource,
@@ -452,6 +467,7 @@ private class MatrixRoomListWatchPort(
         val room = joinedRoom(roomId) ?: return@flow
         room.subscribeToSync()
         val timeline = room.liveTimeline
+        val pinnedTimeline = room.createTimeline(CreateTimelineParams.PinnedOnly).getOrNull()
         val initiallyResolvedReactionSenderNames = room.getMembers(limit = MAX_WATCH_REACTION_MEMBERS)
             .getOrDefault(emptyList())
             .toWatchReactionSenderNames()
@@ -463,23 +479,37 @@ private class MatrixRoomListWatchPort(
                     .onFailure { Timber.d(it, "WatchBridge initial back-paginate for room=%s", roomId) }
             }
             try {
+                val timelineItems = pinnedTimeline?.let { pinned ->
+                    combine(timeline.timelineItems, pinned.timelineItems) { liveItems, pinnedItems ->
+                        liveItems to pinnedItems
+                    }
+                } ?: timeline.timelineItems.map { liveItems -> liveItems to emptyList() }
                 emitAll(
-                    timeline.timelineItems.map { items ->
+                    timelineItems.map { (liveItems, pinnedItems) ->
                         val roomInfo = room.info()
+                        val pinnedEventIds = roomInfo.pinnedEventIds.mapTo(mutableSetOf()) { it.value }
                         val reactionSenderNames = initiallyResolvedReactionSenderNames +
                             room.membersStateFlow.value.roomMembers().orEmpty().toWatchReactionSenderNames()
-                        val projection = items.toWatchTimelineProjection(
+                        val liveProjection = liveItems.toWatchTimelineProjection(
                             roomId = roomId,
                             limit = limit,
-                            pinnedEventIds = roomInfo.pinnedEventIds.mapTo(mutableSetOf()) { it.value },
+                            pinnedEventIds = pinnedEventIds,
                             reactionSenderNames = reactionSenderNames,
                         )
+                        val pinnedProjection = pinnedItems.toWatchTimelineProjection(
+                            roomId = roomId,
+                            limit = max(limit, pinnedEventIds.size),
+                            pinnedEventIds = pinnedEventIds,
+                            reactionSenderNames = reactionSenderNames,
+                        )
+                        val projection = mergeWatchTimelineWithPinnedItems(liveProjection, pinnedProjection)
                         mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
                         projection.items
                     }
                 )
             } finally {
                 paginationJob.cancel()
+                pinnedTimeline?.close()
             }
         }
     }

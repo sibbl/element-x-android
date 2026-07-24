@@ -52,6 +52,7 @@ import io.element.android.watchbridge.contract.WatchBridgeSerialization
 import io.element.android.watchbridge.contract.WatchProtocol
 import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
+import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchVoiceDraft
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.test.runTest
@@ -218,6 +219,37 @@ class ElementXWatchBridgeRuntimeTest {
 
         assertThat(item.isPinned).isTrue()
         assertThat(item.reactions.single().senders.single().displayName).isEqualTo("Bob")
+    }
+
+    @Test
+    fun `old pinned items are retained beside the limited live timeline`() {
+        val liveItem = WatchTimelineItem(
+            eventId = "\$live:server",
+            roomId = "!room:server",
+            senderId = "@alice:server",
+            senderDisplayName = "Alice",
+            timestampMs = 2_000L,
+            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.TEXT,
+            bodyText = "Recent",
+        )
+        val oldPinnedItem = WatchTimelineItem(
+            eventId = "\$pinned:server",
+            roomId = "!room:server",
+            senderId = "@bob:server",
+            senderDisplayName = "Bob",
+            timestampMs = 100L,
+            kind = io.element.android.watchbridge.contract.WatchTimelineItemKind.TEXT,
+            bodyText = "Old pinned",
+            isPinned = true,
+        )
+
+        val merged = mergeWatchTimelineWithPinnedItems(
+            live = TimelineProjection(items = listOf(liveItem), mediaSources = emptyMap()),
+            pinned = TimelineProjection(items = listOf(oldPinnedItem), mediaSources = emptyMap()),
+        )
+
+        assertThat(merged.items.map { it.eventId }).containsExactly("\$pinned:server", "\$live:server").inOrder()
+        assertThat(merged.items.first().isPinned).isTrue()
     }
 
     @Test
