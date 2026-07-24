@@ -51,8 +51,7 @@ internal class WearLocalNotificationManager(
             resolvedVibration = resolvedVibration,
             requestedChannelId = wearLocalNotificationChannelId(resolvedVibration),
         )
-        // Posting with the same ID updates the existing notification atomically. Do not cancel
-        // first: on Wear OS the asynchronous removal can race the repost and suppress its peek.
+        notificationManagerCompat.cancel(wearLocalNotificationId(notification.notificationKey))
         notificationManagerCompat.notify(
             wearLocalNotificationId(notification.notificationKey),
             factory.build(notification, generatedAtMs, expiresAtMs, resolvedVibration, channelId),
