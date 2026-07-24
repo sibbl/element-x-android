@@ -118,9 +118,9 @@ internal class WearLocalNotificationManager(
 
     companion object {
         // Pixel Watch normalizes channel waveforms to its standard haptic. Custom patterns use
-        // a silent channel plus delayed direct playback as assistance haptics. Pixel Watch blocks
+        // an alerting channel with a nominal pulse plus delayed direct playback as assistance haptics. Pixel Watch blocks
         // app-owned notification-usage vibrations via AppOps, while normal watch haptics are allowed.
-        internal const val CHANNEL_PREFIX = "wear_companion_messages_v21_"
+        internal const val CHANNEL_PREFIX = "wear_companion_messages_v22_"
         internal const val CHANNEL_ID = "${CHANNEL_PREFIX}generic_default"
         private const val CHANNEL_CONFIG_PREFERENCES = "wear_notification_channel_configs"
         private const val EXPLICIT_VIBRATION_DELAY_MS = 350L
@@ -214,7 +214,13 @@ internal fun buildWearLocalNotificationChannel(
     when (vibration.pattern) {
         WatchNotificationVibrationPattern.SILENT -> enableVibration(false)
         WatchNotificationVibrationPattern.DEFAULT -> enableVibration(true)
-        else -> enableVibration(false)
+        else -> {
+            // Wear OS suppresses the visual peek for channels classified as silent. Keep the
+            // channel nominally alerting with an imperceptible pulse; the selected waveform is
+            // played explicitly after posting because Pixel Watch normalizes channel waveforms.
+            enableVibration(true)
+            setVibrationPattern(longArrayOf(0L, 1L))
+        }
     }
 }
 

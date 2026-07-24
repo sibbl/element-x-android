@@ -7,13 +7,11 @@
 
 package io.element.android.wearapp.notifications
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchCompanionSettings
-import io.element.android.watchbridge.contract.WatchConversationVibrationOverride
 import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
@@ -63,25 +61,24 @@ class WearLocalNotificationManagerTest {
         assertThat(silentChannel.sound).isNull()
 
         assertThat(doubleChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.DOUBLE))
-        assertThat(doubleChannel.shouldVibrate()).isFalse()
-        assertThat(doubleChannel.vibrationPattern).isNull()
+        assertThat(doubleChannel.shouldVibrate()).isTrue()
+        assertThat(doubleChannel.vibrationPattern?.toList()).containsExactly(0L, 1L).inOrder()
 
         assertThat(longChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.LONG))
-        assertThat(longChannel.shouldVibrate()).isFalse()
-        assertThat(longChannel.vibrationPattern).isNull()
+        assertThat(longChannel.shouldVibrate()).isTrue()
+        assertThat(longChannel.vibrationPattern?.toList()).containsExactly(0L, 1L).inOrder()
 
         assertThat(tripleChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.TRIPLE))
-        assertThat(tripleChannel.shouldVibrate()).isFalse()
-        assertThat(tripleChannel.vibrationPattern).isNull()
+        assertThat(tripleChannel.shouldVibrate()).isTrue()
+        assertThat(tripleChannel.vibrationPattern?.toList()).containsExactly(0L, 1L).inOrder()
 
         assertThat(pulseChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.PULSE))
-        assertThat(pulseChannel.shouldVibrate()).isFalse()
-        assertThat(pulseChannel.vibrationPattern).isNull()
+        assertThat(pulseChannel.shouldVibrate()).isTrue()
+        assertThat(pulseChannel.vibrationPattern?.toList()).containsExactly(0L, 1L).inOrder()
 
         assertThat(escalatingChannel.id).isEqualTo(wearLocalNotificationChannelId(WatchNotificationVibrationPattern.ESCALATING))
-        assertThat(escalatingChannel.shouldVibrate()).isFalse()
-        assertThat(escalatingChannel.vibrationPattern).isNull()
-
+        assertThat(escalatingChannel.shouldVibrate()).isTrue()
+        assertThat(escalatingChannel.vibrationPattern?.toList()).containsExactly(0L, 1L).inOrder()
     }
 
     @Test
@@ -120,16 +117,16 @@ class WearLocalNotificationManagerTest {
         }
 
         val createdManualChannels = notificationManager.notificationChannels
-            .filter { it.id == "wear_companion_messages_v21_group_triple" }
+            .filter { it.id == "wear_companion_messages_v22_group_triple" }
 
         assertThat(createdManualChannels).hasSize(1)
-        assertThat(createdManualChannels.single().shouldVibrate()).isFalse()
-        assertThat(createdManualChannels.single().vibrationPattern).isNull()
+        assertThat(createdManualChannels.single().shouldVibrate()).isTrue()
+        assertThat(createdManualChannels.single().vibrationPattern?.toList()).containsExactly(0L, 1L).inOrder()
         assertThat(playedPatterns).containsExactlyElementsIn(
             List(5) { listOf(0L, 70L, 70L, 100L, 70L, 130L) },
         )
         assertThat(notificationManager.activeNotifications.single().notification.channelId)
-            .isEqualTo("wear_companion_messages_v21_group_triple")
+            .isEqualTo("wear_companion_messages_v22_group_triple")
     }
 
     @Test
@@ -186,8 +183,8 @@ class WearLocalNotificationManagerTest {
             .map { it.notification.channelId }
 
         assertThat(activeChannelIds).containsAtLeast(
-            "wear_companion_messages_v21_group_default",
-            "wear_companion_messages_v21_group_silent",
+            "wear_companion_messages_v22_group_default",
+            "wear_companion_messages_v22_group_silent",
         )
     }
 }
