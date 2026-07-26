@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Патерни вібрації</string>
+    <string name="screen_wear_companion_vibration_groups">Групові розмови</string>
+    <string name="screen_wear_companion_vibration_dms">Прямі повідомлення</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Улюблені групові розмови</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Улюблені прямі повідомлення</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Мовчазний</string>
+    <string name="screen_wear_companion_vibration_pattern_default">За замовчуванням</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Двомісний</string>
+    <string name="screen_wear_companion_vibration_pattern_long">довгий</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Тримісний</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Пульс</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Ескалація</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Власний</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Створіть власний шаблон вібрації (наприклад, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Показувати сповіщення без вібрації.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Використовуйте звичайну/стандартну вібрацію сповіщень системи годинника.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Два коротких гудіння.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Один довший гул.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Три коротких гудіння.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Чотири рівних імпульсу.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Короткі дзижчання, що наростають.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Патерни вібрації, характерні для розмови</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Ще не додано бесід.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Спочатку відкрийте головну програму, щоб завантажити розмови.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Жодна розмова не відповідає вашому пошуку.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Усі завантажені розмови вже мають заміну.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Виберіть розмову</string>
+    <string name="screen_wear_companion_add_conversation_title">Додати бесіду</string>
+    <string name="screen_wear_companion_add_conversation_description">Виберіть розмову та налаштуйте її власну поведінку вібрації.</string>
+    <string name="screen_wear_companion_conversation_remove_title">видалити</string>
+    <string name="screen_wear_companion_conversation_remove_description">Видалити цю вібрацію, характерну для розмови.</string>
+    <string name="screen_wear_companion_conversation_test_title">Тест</string>
+    <string name="screen_wear_companion_conversation_test_description">Перевірте вибраний шаблон вібрації для цієї розмови.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Використовувати категорію за замовчуванням</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Дотримуйтеся стандартної вібрації для цього типу розмови.</string>
+</resources>

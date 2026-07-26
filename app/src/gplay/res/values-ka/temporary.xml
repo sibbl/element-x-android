@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">ვიბრაციის ნიმუშები</string>
+    <string name="screen_wear_companion_vibration_groups">ჯგუფური საუბრები</string>
+    <string name="screen_wear_companion_vibration_dms">პირდაპირი შეტყობინებები</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">საყვარელი ჯგუფური საუბრები</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">საყვარელი პირდაპირი შეტყობინებები</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">ჩუმად</string>
+    <string name="screen_wear_companion_vibration_pattern_default">ნაგულისხმევი</string>
+    <string name="screen_wear_companion_vibration_pattern_double">ორმაგი</string>
+    <string name="screen_wear_companion_vibration_pattern_long">გრძელი</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">სამმაგი</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">პულსი</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">ესკალაცია</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">საბაჟო</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">შექმენით თქვენი საკუთარი ვიბრაციის ნიმუში (მაგ., 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">აჩვენეთ შეტყობინება ყოველგვარი ვიბრაციის გარეშე.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">გამოიყენეთ საათის სისტემის ნორმალური/ნაგულისხმევი შეტყობინებების ვიბრაცია.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">ორი მოკლე ზუზუნი.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">ერთი გრძელი ზუზუნი.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">სამი მოკლე ზუზუნი.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">ოთხი თანაბარი პულსი.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">მოკლე ზუზუნები, რომლებიც ძლიერდება.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">საუბრის სპეციფიკური ვიბრაციის ნიმუშები</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">ჯერ არ არის დამატებული მიმოწერა.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">ჯერ გახსენით მთავარი აპი საუბრების ჩასატვირთად.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">არცერთი საუბარი არ შეესაბამება თქვენს ძიებას.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">ყველა ჩატვირთულ მიმოწერას უკვე აქვს უგულებელყოფა.</string>
+    <string name="screen_wear_companion_conversation_picker_title">აირჩიეთ საუბარი</string>
+    <string name="screen_wear_companion_add_conversation_title">დაამატეთ საუბარი</string>
+    <string name="screen_wear_companion_add_conversation_description">აირჩიეთ საუბარი და დააკონფიგურირეთ საკუთარი ვიბრაციის ქცევა.</string>
+    <string name="screen_wear_companion_conversation_remove_title">ამოღება</string>
+    <string name="screen_wear_companion_conversation_remove_description">წაშალეთ ეს საუბრის სპეციფიკური ვიბრაციის ქცევა.</string>
+    <string name="screen_wear_companion_conversation_test_title">ტესტი</string>
+    <string name="screen_wear_companion_conversation_test_description">შეამოწმეთ არჩეული ვიბრაციის ნიმუში ამ საუბრისთვის.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">გამოიყენეთ კატეგორიის ნაგულისხმევი</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">მიჰყევით ნაგულისხმევ ვიბრაციას საუბრის ამ ტიპისთვის.</string>
+</resources>

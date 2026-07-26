@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Patrymau dirgryniad</string>
+    <string name="screen_wear_companion_vibration_groups">Sgyrsiau grŵp</string>
+    <string name="screen_wear_companion_vibration_dms">Negeseuon uniongyrchol</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Hoff sgyrsiau grŵp</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Hoff negeseuon uniongyrchol</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Tawel</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Diofyn</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dwbl</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Hir</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">triphlyg</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pwls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Yn cynyddu</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Personol</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Crëwch eich patrwm dirgrynu eich hun (e.e., 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Dangoswch yr hysbysiad heb unrhyw ddirgryniad.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Defnyddiwch ddirgryniad hysbysu arferol/diofyn y system wylio.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dau wefr fer.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Un wefr hirach.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tri buzz byr.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Pedwar corbys hyd yn oed.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Cyffroau byr sy\'n cynyddu mewn cryfder.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Patrymau dirgrynu sy\'n benodol i sgwrs</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Dim sgyrsiau wedi\'u hychwanegu eto.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Agorwch y prif app yn gyntaf i lwytho sgyrsiau.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Nid oes unrhyw sgyrsiau yn cyfateb i\'ch chwiliad.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Mae pob sgwrs sydd wedi\'i llwytho eisoes wedi\'i gwrthwneud.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Dewiswch sgwrs</string>
+    <string name="screen_wear_companion_add_conversation_title">Ychwanegu sgwrs</string>
+    <string name="screen_wear_companion_add_conversation_description">Dewiswch sgwrs a ffurfweddwch ei ymddygiad dirgrynu ei hun.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Dileu</string>
+    <string name="screen_wear_companion_conversation_remove_description">Dileu\'r ymddygiad dirgrynol hwn sy\'n benodol i sgwrs.</string>
+    <string name="screen_wear_companion_conversation_test_title">Prawf</string>
+    <string name="screen_wear_companion_conversation_test_description">Profwch y patrwm dirgrynu a ddewiswyd ar gyfer y sgwrs hon.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Defnyddio categori rhagosodedig</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Dilynwch y dirgryniad rhagosodedig ar gyfer y math hwn o sgwrs.</string>
+</resources>

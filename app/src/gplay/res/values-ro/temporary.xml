@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Modele de vibrații</string>
+    <string name="screen_wear_companion_vibration_groups">Conversații de grup</string>
+    <string name="screen_wear_companion_vibration_dms">Mesaje directe</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Conversații de grup preferate</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Mesaje directe preferate</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Tăcut</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Implicit</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dublu</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Lung</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Triplu</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">In escaladare</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Personalizat</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Creați-vă propriul model de vibrații (de exemplu, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Afișează notificarea fără vibrații.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Utilizați vibrația de notificare normală/implicite a sistemului de ceas.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Două bâzâituri scurte.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Un bâzâit mai lung.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Trei bâzâituri scurte.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Patru impulsuri uniforme.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Bâzâituri scurte care cresc în putere.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Modele de vibrații specifice conversației</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Nicio conversație adăugată încă.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Deschideți mai întâi aplicația principală pentru a încărca conversațiile.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Nicio conversație nu corespunde căutării tale.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Toate conversațiile încărcate au deja o modificare.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Alege conversația</string>
+    <string name="screen_wear_companion_add_conversation_title">Adăugați conversație</string>
+    <string name="screen_wear_companion_add_conversation_description">Selectați o conversație și configurați propriul comportament de vibrație.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Eliminați</string>
+    <string name="screen_wear_companion_conversation_remove_description">Ștergeți acest comportament de vibrație specific conversației.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testează</string>
+    <string name="screen_wear_companion_conversation_test_description">Testați modelul de vibrații selectat pentru această conversație.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Utilizați categoria prestabilită</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Urmați vibrația implicită pentru acest tip de conversație.</string>
+</resources>

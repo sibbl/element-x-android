@@ -45,6 +45,7 @@ sealed interface WatchCommand : WatchPayload {
         override val requestId: String,
         val roomId: String,
         val threadRootEventId: String,
+        val targetEventId: String? = null,
         val limit: Int = 20,
     ) : WatchCommand
 

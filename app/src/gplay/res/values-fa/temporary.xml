@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">الگوهای ارتعاشی</string>
+    <string name="screen_wear_companion_vibration_groups">مکالمات گروهی</string>
+    <string name="screen_wear_companion_vibration_dms">پیام های مستقیم</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">گفتگوهای گروهی مورد علاقه</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">پیام های مستقیم مورد علاقه</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">بی صدا</string>
+    <string name="screen_wear_companion_vibration_pattern_default">پیش فرض</string>
+    <string name="screen_wear_companion_vibration_pattern_double">دوبل</string>
+    <string name="screen_wear_companion_vibration_pattern_long">طولانی</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">سه گانه</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">نبض</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">در حال تشدید شدن</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">سفارشی</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">الگوی ارتعاشی خود را ایجاد کنید (به عنوان مثال، 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">اعلان را بدون هیچ لرزشی نشان دهید.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">از لرزش اعلان عادی/پیش‌فرض سیستم ساعت استفاده کنید.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">دو وزوز کوتاه</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">یک وزوز طولانی تر</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">سه وزوز کوتاه</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">چهار نبض زوج</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">وزوزهای کوتاهی که قدرت را افزایش می دهند.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">الگوهای ارتعاشی خاص مکالمه</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">هنوز مکالمه ای اضافه نشده است.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">ابتدا برنامه اصلی را باز کنید تا مکالمات بارگیری شود.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">هیچ مکالمه ای با جستجوی شما مطابقت ندارد.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">همه مکالمه‌های بارگیری‌شده از قبل یک لغو دارند.</string>
+    <string name="screen_wear_companion_conversation_picker_title">مکالمه را انتخاب کنید</string>
+    <string name="screen_wear_companion_add_conversation_title">افزودن مکالمه</string>
+    <string name="screen_wear_companion_add_conversation_description">یک مکالمه را انتخاب کنید و رفتار ارتعاشی خود را پیکربندی کنید.</string>
+    <string name="screen_wear_companion_conversation_remove_title">حذف کنید</string>
+    <string name="screen_wear_companion_conversation_remove_description">این رفتار ارتعاشی خاص مکالمه را حذف کنید.</string>
+    <string name="screen_wear_companion_conversation_test_title">تست کنید</string>
+    <string name="screen_wear_companion_conversation_test_description">الگوی ارتعاش انتخاب شده برای این مکالمه را آزمایش کنید.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">از پیش فرض دسته استفاده کنید</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">از لرزش پیش‌فرض این نوع مکالمه پیروی کنید.</string>
+</resources>

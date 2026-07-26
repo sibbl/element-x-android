@@ -131,7 +131,7 @@ internal fun WatchTimelineItem.isPendingWatchLocalEcho(): Boolean =
     eventId.startsWith(LOCAL_ECHO_EVENT_ID_PREFIX)
 
 internal fun WatchMessageNotification.toTimelineItemForOpenConversation(): WatchTimelineItem? {
-    if (threadRootEventId != null) return null
+    if (isTestNotification || threadRootEventId != null) return null
     val body = bodyText?.takeIf { it.isNotBlank() } ?: return null
     return WatchTimelineItem(
         eventId = eventId,
@@ -146,6 +146,7 @@ internal fun WatchMessageNotification.toTimelineItemForOpenConversation(): Watch
 }
 
 internal fun WatchMessageNotification.toThreadItemForOpenThread(): WatchThreadItem? {
+    if (isTestNotification) return null
     val rootEventId = threadRootEventId ?: return null
     val body = bodyText?.takeIf { it.isNotBlank() } ?: return null
     return WatchThreadItem(
@@ -366,12 +367,14 @@ class WearBridgeClient(private val context: Context) {
     suspend fun ensureThreadSubscription(
         roomId: String,
         threadRootEventId: String,
+        targetEventId: String? = null,
         limit: Int = 20,
     ) {
         val subscriptionKey = threadCacheKey(roomId, threadRootEventId)
         val hasSnapshot = hasCachedThreadSnapshot(roomId, threadRootEventId)
         val alreadyActive = !activeThreadSubscriptions.add(subscriptionKey)
-        if (alreadyActive && hasSnapshot) return
+        val targetAlreadyCached = targetEventId == null || getCachedThread(roomId, threadRootEventId).any { it.eventId == targetEventId }
+        if (alreadyActive && hasSnapshot && targetAlreadyCached) return
 
         runCatching {
             send { requestId ->
@@ -379,6 +382,7 @@ class WearBridgeClient(private val context: Context) {
                     requestId = requestId,
                     roomId = roomId,
                     threadRootEventId = threadRootEventId,
+                    targetEventId = targetEventId,
                     limit = limit,
                 )
             }
@@ -924,54 +928,56 @@ class WearBridgeClient(private val context: Context) {
             }
             is WatchSync.MessageNotification -> {
                 if (persist) _messageNotifications.tryEmit(p.notification)
-                p.notification.imagePreviewBytes?.let { imageBytes ->
-                    updateMediaPreviewState(
-                        key = mediaPreviewCacheKey(p.notification.roomId, p.notification.eventId),
-                        imageBytes = imageBytes,
-                    )
-                    if (persist) {
-                        scheduleCachePersist(
-                            envelope.copy(
-                                payload = WatchSync.MediaPreview(
-                                    roomId = p.notification.roomId,
-                                    eventId = p.notification.eventId,
-                                    imageBytes = imageBytes,
+                if (!p.notification.isTestNotification) {
+                    p.notification.imagePreviewBytes?.let { imageBytes ->
+                        updateMediaPreviewState(
+                            key = mediaPreviewCacheKey(p.notification.roomId, p.notification.eventId),
+                            imageBytes = imageBytes,
+                        )
+                        if (persist) {
+                            scheduleCachePersist(
+                                envelope.copy(
+                                    payload = WatchSync.MediaPreview(
+                                        roomId = p.notification.roomId,
+                                        eventId = p.notification.eventId,
+                                        imageBytes = imageBytes,
+                                    ),
                                 ),
-                            ),
+                            )
+                        }
+                    }
+                    val timelineDelta = p.notification.toTimelineItemForOpenConversation()?.let { item ->
+                        WatchSync.TimelineDelta(
+                            roomId = p.notification.roomId,
+                            fromTimelineVersion = p.notification.timestampMs,
+                            toTimelineVersion = p.notification.timestampMs,
+                            items = listOf(item),
                         )
                     }
-                }
-                val timelineDelta = p.notification.toTimelineItemForOpenConversation()?.let { item ->
-                    WatchSync.TimelineDelta(
-                        roomId = p.notification.roomId,
-                        fromTimelineVersion = p.notification.timestampMs,
-                        toTimelineVersion = p.notification.timestampMs,
-                        items = listOf(item),
-                    )
-                }
-                if (timelineDelta != null) {
-                    mergeTimelineDelta(timelineDelta)
-                    if (persist) {
-                        scheduleCachePersist(envelope.copy(payload = timelineDelta))
+                    if (timelineDelta != null) {
+                        mergeTimelineDelta(timelineDelta)
+                        if (persist) {
+                            scheduleCachePersist(envelope.copy(payload = timelineDelta))
+                        }
+                        if (shouldEmitNotificationTimelineDelta(p.notification.roomId)) {
+                            scope.launch { _syncEvents.emit(timelineDelta) }
+                        }
                     }
-                    if (shouldEmitNotificationTimelineDelta(p.notification.roomId)) {
-                        scope.launch { _syncEvents.emit(timelineDelta) }
+                    val threadDelta = p.notification.toThreadItemForOpenThread()?.let { item ->
+                        WatchSync.ThreadDelta(
+                            roomId = p.notification.roomId,
+                            threadRootEventId = item.threadRootEventId,
+                            items = listOf(item),
+                        )
                     }
-                }
-                val threadDelta = p.notification.toThreadItemForOpenThread()?.let { item ->
-                    WatchSync.ThreadDelta(
-                        roomId = p.notification.roomId,
-                        threadRootEventId = item.threadRootEventId,
-                        items = listOf(item),
-                    )
-                }
-                if (threadDelta != null) {
-                    mergeThreadDelta(threadDelta)
-                    if (persist) {
-                        scheduleCachePersist(envelope.copy(payload = threadDelta))
-                    }
-                    if (shouldEmitNotificationThreadDelta(threadDelta.roomId, threadDelta.threadRootEventId)) {
-                        scope.launch { _syncEvents.emit(threadDelta) }
+                    if (threadDelta != null) {
+                        mergeThreadDelta(threadDelta)
+                        if (persist) {
+                            scheduleCachePersist(envelope.copy(payload = threadDelta))
+                        }
+                        if (shouldEmitNotificationThreadDelta(threadDelta.roomId, threadDelta.threadRootEventId)) {
+                            scope.launch { _syncEvents.emit(threadDelta) }
+                        }
                     }
                 }
                 showLocalNotificationAfterCachedSettingsPrime(

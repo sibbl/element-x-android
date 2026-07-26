@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">振動パターン</string>
+    <string name="screen_wear_companion_vibration_groups">グループでの会話</string>
+    <string name="screen_wear_companion_vibration_dms">ダイレクトメッセージ</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">好きなグループ会話</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">お気に入りのダイレクトメッセージ</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">サイレント</string>
+    <string name="screen_wear_companion_vibration_pattern_default">デフォルト</string>
+    <string name="screen_wear_companion_vibration_pattern_double">ダブル</string>
+    <string name="screen_wear_companion_vibration_pattern_long">ロング</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">トリプル</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">パルス</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">エスカレートする</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">カスタム</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">独自の振動パターンを作成します (例: 120 60 180 60 240)。</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">振動なしで通知を表示します。</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">時計システムの通常/デフォルトの通知バイブレーションを使用します。</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">短いブザー音が 2 回鳴ります。</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">もう一つ長い話題。</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">短いブザー音が 3 回鳴ります。</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">4 つの偶数パルス。</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">強度が増す短いバズ音。</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">会話特有の振動パターン</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">まだ会話は追加されていません。</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">まずメインアプリを開いて会話を読み込みます。</string>
+    <string name="screen_wear_companion_conversation_picker_empty">検索に一致する会話はありません。</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">読み込まれたすべての会話にはすでにオーバーライドがあります。</string>
+    <string name="screen_wear_companion_conversation_picker_title">会話を選択</string>
+    <string name="screen_wear_companion_add_conversation_title">会話を追加する</string>
+    <string name="screen_wear_companion_add_conversation_description">会話を選択し、独自の振動動作を構成します。</string>
+    <string name="screen_wear_companion_conversation_remove_title">削除</string>
+    <string name="screen_wear_companion_conversation_remove_description">この会話固有の振動動作を削除します。</string>
+    <string name="screen_wear_companion_conversation_test_title">テスト</string>
+    <string name="screen_wear_companion_conversation_test_description">この会話に対して選択した振動パターンをテストします。</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">カテゴリのデフォルトを使用する</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">この会話タイプのデフォルトのバイブレーションに従ってください。</string>
+</resources>

@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Modèles de vibrations</string>
+    <string name="screen_wear_companion_vibration_groups">Conversations de groupe</string>
+    <string name="screen_wear_companion_vibration_dms">Messages directs</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Conversations de groupe préférées</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Messages directs favoris</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Silencieux</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Par défaut</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Deux vibrations</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Longue</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Trois vibrations</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pouls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Escalade</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Personnalisé</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Créez votre propre modèle de vibration (par exemple, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Afficher la notification sans aucune vibration.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Utilisez la vibration de notification normale/par défaut du système de montre.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Deux courts buzz.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Un buzz plus long.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Trois courts bourdonnements.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Quatre impulsions paires.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Des bourdonnements courts qui montent en puissance.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Modèles de vibrations spécifiques à la conversation</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Aucune conversation ajoutée pour l\'instant.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Ouvrez d\'abord l\'application principale pour charger les conversations.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Aucune conversation ne correspond à votre recherche.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Toutes les conversations chargées ont déjà un remplacement.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Choisissez une conversation</string>
+    <string name="screen_wear_companion_add_conversation_title">Ajouter une conversation</string>
+    <string name="screen_wear_companion_add_conversation_description">Sélectionnez une conversation et configurez son propre comportement de vibration.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Supprimer</string>
+    <string name="screen_wear_companion_conversation_remove_description">Supprimez ce comportement de vibration spécifique à la conversation.</string>
+    <string name="screen_wear_companion_conversation_test_title">Tester</string>
+    <string name="screen_wear_companion_conversation_test_description">Testez le modèle de vibration sélectionné pour cette conversation.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Utiliser la catégorie par défaut</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Suivez la vibration par défaut pour ce type de conversation.</string>
+</resources>

@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Kiểu rung</string>
+    <string name="screen_wear_companion_vibration_groups">Cuộc trò chuyện nhóm</string>
+    <string name="screen_wear_companion_vibration_dms">Tin nhắn trực tiếp</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Cuộc trò chuyện nhóm yêu thích</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Tin nhắn trực tiếp yêu thích</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Im lặng</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Mặc định</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Đôi</string>
+    <string name="screen_wear_companion_vibration_pattern_long">dài</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">gấp ba</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Xung</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Leo thang</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">tùy chỉnh</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Tạo kiểu rung của riêng bạn (ví dụ: 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Hiển thị thông báo mà không có bất kỳ rung động nào.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Sử dụng chế độ rung thông báo bình thường/mặc định của hệ thống đồng hồ.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Hai tiếng chuông ngắn.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Một buzz dài hơn.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Ba tiếng chuông ngắn.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Bốn xung chẵn.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Những tiếng vo vo ngắn tăng dần sức mạnh.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Các kiểu rung dành riêng cho cuộc trò chuyện</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Chưa có cuộc trò chuyện nào được thêm vào.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Trước tiên hãy mở ứng dụng chính để tải các cuộc trò chuyện.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Không có cuộc trò chuyện nào phù hợp với tìm kiếm của bạn.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Tất cả các cuộc trò chuyện được tải đều đã có phần ghi đè.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Chọn cuộc trò chuyện</string>
+    <string name="screen_wear_companion_add_conversation_title">Thêm cuộc trò chuyện</string>
+    <string name="screen_wear_companion_add_conversation_description">Chọn một cuộc trò chuyện và định cấu hình hành vi rung của riêng nó.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Xóa</string>
+    <string name="screen_wear_companion_conversation_remove_description">Xóa hành vi rung dành riêng cho cuộc trò chuyện này.</string>
+    <string name="screen_wear_companion_conversation_test_title">Kiểm tra</string>
+    <string name="screen_wear_companion_conversation_test_description">Kiểm tra kiểu rung đã chọn cho cuộc trò chuyện này.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Sử dụng danh mục mặc định</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Thực hiện theo chế độ rung mặc định cho loại cuộc trò chuyện này.</string>
+</resources>

@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibracijos modeliai</string>
+    <string name="screen_wear_companion_vibration_groups">Grupiniai pokalbiai</string>
+    <string name="screen_wear_companion_vibration_dms">Tiesioginės žinutės</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Mėgstamiausi grupės pokalbiai</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Mėgstamiausios tiesioginės žinutės</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Tyli</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Numatytoji</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dvigubas</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Ilgas</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Trigubas</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pulsas</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskaluojamas</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Pasirinktinis</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Sukurkite savo vibracijos modelį (pvz., 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Rodyti pranešimą be vibracijos.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Naudokite įprastą / numatytąją laikrodžio sistemos pranešimų vibraciją.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Du trumpi zvimbimai.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Vienas ilgesnis zvimbimas.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Trys trumpi zvimbimai.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Keturi tolygūs impulsai.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Trumpi zvimbimai, kurie sustiprina stiprumą.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Pokalbiui būdingi vibracijos modeliai</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Pokalbių dar nepridėta.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Pirmiausia atidarykite pagrindinę programą, kad įkeltumėte pokalbius.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Nėra pokalbių, atitinkančių jūsų paiešką.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Visi įkelti pokalbiai jau turi nepaisymą.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Pasirinkite pokalbį</string>
+    <string name="screen_wear_companion_add_conversation_title">Pridėti pokalbį</string>
+    <string name="screen_wear_companion_add_conversation_description">Pasirinkite pokalbį ir sukonfigūruokite jo vibracijos elgesį.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Pašalinti</string>
+    <string name="screen_wear_companion_conversation_remove_description">Ištrinkite šį pokalbiui būdingą vibravimo elgseną.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testas</string>
+    <string name="screen_wear_companion_conversation_test_description">Išbandykite pasirinktą šio pokalbio vibracijos modelį.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Naudoti numatytąją kategoriją</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Laikykitės šio pokalbio tipo numatytosios vibracijos.</string>
+</resources>

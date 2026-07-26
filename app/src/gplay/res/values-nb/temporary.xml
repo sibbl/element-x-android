@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibrasjonsmønstre</string>
+    <string name="screen_wear_companion_vibration_groups">Gruppesamtaler</string>
+    <string name="screen_wear_companion_vibration_dms">Direkte meldinger</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Favoritt gruppesamtaler</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Favoritt direktemeldinger</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Stille</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Standard</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dobbelt</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Lang</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Trippel</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalerende</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Egendefinert</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Lag ditt eget vibrasjonsmønster (f.eks. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Vis varselet uten vibrasjon.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Bruk klokkesystemets normale/standard varslingsvibrasjon.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">To korte summer.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">En lengre buzz.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tre korte summer.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Fire jevne pulser.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Korte summer som øker i styrke.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Samtalespesifikke vibrasjonsmønstre</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Ingen samtaler lagt til ennå.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Åpne hovedappen først for å laste inn samtaler.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Ingen samtaler samsvarer med søket ditt.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Alle innlastede samtaler har allerede en overstyring.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Velg samtale</string>
+    <string name="screen_wear_companion_add_conversation_title">Legg til samtale</string>
+    <string name="screen_wear_companion_add_conversation_description">Velg en samtale og konfigurer dens egen vibrasjonsadferd.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Fjern</string>
+    <string name="screen_wear_companion_conversation_remove_description">Slett denne samtalespesifikke vibrasjonsatferden.</string>
+    <string name="screen_wear_companion_conversation_test_title">Prøv</string>
+    <string name="screen_wear_companion_conversation_test_description">Test det valgte vibrasjonsmønsteret for denne samtalen.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Bruk kategoristandard</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Følg standardvibrasjonen for denne samtaletypen.</string>
+</resources>

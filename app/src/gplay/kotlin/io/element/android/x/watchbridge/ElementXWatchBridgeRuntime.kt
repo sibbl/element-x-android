@@ -18,6 +18,7 @@ import io.element.android.libraries.androidutils.bitmap.calculateInSampleSize
 import io.element.android.libraries.androidutils.bitmap.resizeToMax
 import io.element.android.libraries.designsystem.components.avatar.AvatarSize
 import io.element.android.libraries.di.DependencyInjectionGraphOwner
+import io.element.android.libraries.eventformatter.api.TimelineEventFormatter
 import io.element.android.libraries.matrix.api.MatrixClient
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.RoomId
@@ -40,6 +41,7 @@ import io.element.android.libraries.matrix.api.timeline.MatrixTimelineItem
 import io.element.android.libraries.matrix.api.timeline.ReceiptType
 import io.element.android.libraries.matrix.api.timeline.item.EventThreadInfo
 import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageType
+import io.element.android.libraries.matrix.api.timeline.item.event.CallNotifyContent
 import io.element.android.libraries.matrix.api.timeline.item.event.EmoteMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.EventContent
 import io.element.android.libraries.matrix.api.timeline.item.event.EventTimelineItem
@@ -51,7 +53,10 @@ import io.element.android.libraries.matrix.api.timeline.item.event.NoticeMessage
 import io.element.android.libraries.matrix.api.timeline.item.event.OtherMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.PollContent
 import io.element.android.libraries.matrix.api.timeline.item.event.ProfileDetails
+import io.element.android.libraries.matrix.api.timeline.item.event.ProfileChangeContent
 import io.element.android.libraries.matrix.api.timeline.item.event.RedactedContent
+import io.element.android.libraries.matrix.api.timeline.item.event.RoomMembershipContent
+import io.element.android.libraries.matrix.api.timeline.item.event.StateContent
 import io.element.android.libraries.matrix.api.timeline.item.event.StickerContent
 import io.element.android.libraries.matrix.api.timeline.item.event.StickerMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
@@ -382,10 +387,12 @@ object ElementXWatchBridgeRuntime {
             Timber.e("WatchBridge matrix client is null after restore")
             return null
         }
+        val timelineEventFormatter = graph.sessionGraphFactory.create(client).timelineEventFormatter
         return MatrixRoomListWatchPort(
             context = context,
             client = client,
             notificationCleaner = graph.notificationCleaner,
+            timelineEventFormatter = timelineEventFormatter,
         )
     }
 
@@ -413,6 +420,7 @@ private class MatrixRoomListWatchPort(
     private val context: Context,
     internal val client: MatrixClient,
     private val notificationCleaner: NotificationCleaner,
+    private val timelineEventFormatter: TimelineEventFormatter,
 ) : ElementXWatchPort {
     private val roomList = client.roomListService.createRoomList(
         pageSize = ROOM_LIST_PAGE_SIZE,
@@ -495,12 +503,14 @@ private class MatrixRoomListWatchPort(
                             limit = limit,
                             pinnedEventIds = pinnedEventIds,
                             reactionSenderNames = reactionSenderNames,
+                            timelineEventFormatter = timelineEventFormatter,
                         )
                         val pinnedProjection = pinnedItems.toWatchTimelineProjection(
                             roomId = roomId,
                             limit = max(limit, pinnedEventIds.size),
                             pinnedEventIds = pinnedEventIds,
                             reactionSenderNames = reactionSenderNames,
+                            timelineEventFormatter = timelineEventFormatter,
                         )
                         val projection = mergeWatchTimelineWithPinnedItems(liveProjection, pinnedProjection)
                         mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
@@ -523,7 +533,7 @@ private class MatrixRoomListWatchPort(
         )
     }
 
-    override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>> = flow {
+    override fun threadTimeline(roomId: String, threadRootEventId: String, targetEventId: String?, limit: Int): Flow<List<WatchThreadItem>> = flow {
         val room = joinedRoom(roomId) ?: return@flow
         val timeline = room.createTimeline(CreateTimelineParams.Threaded(ThreadId(threadRootEventId))).getOrNull() ?: return@flow
         val initiallyResolvedReactionSenderNames = room.getMembers(limit = MAX_WATCH_REACTION_MEMBERS)
@@ -545,6 +555,7 @@ private class MatrixRoomListWatchPort(
                                 threadRootEventId = threadRootEventId,
                                 limit = limit,
                                 reactionSenderNames = reactionSenderNames,
+                                timelineEventFormatter = timelineEventFormatter,
                             )
                             mediaSourcesForRoom(roomId).putAll(projection.mediaSources)
                             projection.items
@@ -831,6 +842,7 @@ internal fun List<MatrixTimelineItem>.toWatchTimelineProjection(
     limit: Int,
     pinnedEventIds: Set<String> = emptySet(),
     reactionSenderNames: Map<String, String> = emptyMap(),
+    timelineEventFormatter: TimelineEventFormatter? = null,
 ): TimelineProjection {
     val projectedItems = mutableListOf<WatchTimelineItem>()
     val mediaSources = mutableMapOf<String, MediaPreviewSourceRef>()
@@ -846,6 +858,7 @@ internal fun List<MatrixTimelineItem>.toWatchTimelineProjection(
                     roomId = roomId,
                     isPinned = event.eventId?.value in pinnedEventIds,
                     reactionSenderNames = reactionSenderNames,
+                    timelineEventFormatter = timelineEventFormatter,
                 ) ?: return@forEach
                 projectedItems += projected
                 latestEventIdBeforeReadMarker = projected.eventId
@@ -882,13 +895,14 @@ internal fun List<MatrixTimelineItem>.toWatchThreadProjection(
     threadRootEventId: String,
     limit: Int,
     reactionSenderNames: Map<String, String> = emptyMap(),
+    timelineEventFormatter: TimelineEventFormatter? = null,
 ): ThreadProjection {
     val projectedItems = mutableListOf<WatchThreadItem>()
     val mediaSources = mutableMapOf<String, MediaPreviewSourceRef>()
 
     forEach { item ->
         val event = (item as? MatrixTimelineItem.Event)?.event ?: return@forEach
-        val projected = event.toWatchThreadItem(roomId, threadRootEventId, reactionSenderNames) ?: return@forEach
+        val projected = event.toWatchThreadItem(roomId, threadRootEventId, reactionSenderNames, timelineEventFormatter) ?: return@forEach
         projectedItems += projected
         event.content.mediaPreviewSourceRef()?.let { mediaSources[projected.eventId] = it }
     }
@@ -908,6 +922,7 @@ private fun EventTimelineItem.toWatchThreadItem(
     roomId: String,
     threadRootEventId: String,
     reactionSenderNames: Map<String, String>,
+    timelineEventFormatter: TimelineEventFormatter?,
 ): WatchThreadItem? {
     val eventId = eventId?.value ?: return null
     return WatchThreadItem(
@@ -918,7 +933,7 @@ private fun EventTimelineItem.toWatchThreadItem(
         senderDisplayName = senderProfile.displayName(),
         timestampMs = timestamp,
         kind = content.watchKind(),
-        bodyText = content.previewText(),
+        bodyText = watchPreviewText(timelineEventFormatter),
         formattedText = (content as? MessageContent)?.type?.formattedBody(),
         isOwn = isOwn,
         reactions = watchReactions(reactionSenderNames),
@@ -931,6 +946,7 @@ private fun EventTimelineItem.toWatchTimelineItem(
     roomId: String,
     isPinned: Boolean = false,
     reactionSenderNames: Map<String, String> = emptyMap(),
+    timelineEventFormatter: TimelineEventFormatter?,
 ): WatchTimelineItem? {
     val eventId = eventId?.value ?: return null
     val threadInfo = threadInfo()
@@ -946,7 +962,7 @@ private fun EventTimelineItem.toWatchTimelineItem(
         senderDisplayName = senderProfile.displayName(),
         timestampMs = timestamp,
         kind = content.watchKind(),
-        bodyText = content.previewText(),
+        bodyText = watchPreviewText(timelineEventFormatter),
         formattedText = (content as? MessageContent)?.type?.formattedBody(),
         isOwn = isOwn,
         isEdited = (content as? MessageContent)?.isEdited == true,
@@ -1126,6 +1142,20 @@ private fun EventContent.previewText(): String? = when (this) {
     is UnableToDecryptContent -> "Unable to decrypt"
     is RedactedContent -> "Message deleted"
     else -> null
+}
+
+private fun EventTimelineItem.watchPreviewText(timelineEventFormatter: TimelineEventFormatter?): String? {
+    content.previewText()?.let { return it }
+    if (timelineEventFormatter == null || !content.usesPhoneTimelineFormatter()) return null
+    return timelineEventFormatter.format(this)?.toString()?.takeIf { it.isNotBlank() }
+}
+
+private fun EventContent.usesPhoneTimelineFormatter(): Boolean = when (this) {
+    is CallNotifyContent,
+    is ProfileChangeContent,
+    is RoomMembershipContent,
+    is StateContent -> true
+    else -> false
 }
 
 private fun io.element.android.libraries.matrix.api.timeline.item.event.MessageType.previewText(): String? = when (this) {

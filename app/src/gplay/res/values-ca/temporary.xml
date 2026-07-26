@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Patrons de vibració</string>
+    <string name="screen_wear_companion_vibration_groups">Converses en grup</string>
+    <string name="screen_wear_companion_vibration_dms">Missatges directes</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Converses de grup preferides</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Missatges directes preferits</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">En silenci</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Per defecte</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Doble</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Llarg</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Tres pulsacions</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pols</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Escalant</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Personalitzat</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Crea el teu propi patró de vibració (p. ex., 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Mostra la notificació sense cap vibració.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Utilitzeu la vibració de notificació normal/predeterminada del sistema de rellotge.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dos brunzits curts.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Un brunzit més llarg.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tres brunzits curts.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Quatre polsos parells.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Breus brunzits que augmenten de força.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Patrons de vibració específics de la conversa</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Encara no s\'ha afegit cap conversa.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Obriu primer l\'aplicació principal per carregar converses.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">No hi ha cap conversa que coincideixi amb la teva cerca.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Totes les converses carregades ja tenen una substitució.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Tria conversa</string>
+    <string name="screen_wear_companion_add_conversation_title">Afegeix una conversa</string>
+    <string name="screen_wear_companion_add_conversation_description">Seleccioneu una conversa i configureu el seu propi comportament de vibració.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Eliminar</string>
+    <string name="screen_wear_companion_conversation_remove_description">Suprimeix aquest comportament de vibració específic de la conversa.</string>
+    <string name="screen_wear_companion_conversation_test_title">Prova</string>
+    <string name="screen_wear_companion_conversation_test_description">Prova el patró de vibració seleccionat per a aquesta conversa.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Utilitza la categoria per defecte</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Seguiu la vibració predeterminada per a aquest tipus de conversa.</string>
+</resources>

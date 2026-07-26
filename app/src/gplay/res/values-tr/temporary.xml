@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Titreşim desenleri</string>
+    <string name="screen_wear_companion_vibration_groups">Grup konuşmaları</string>
+    <string name="screen_wear_companion_vibration_dms">Doğrudan mesajlar</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Favori grup konuşmaları</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Favori doğrudan mesajlar</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Sessiz</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Varsayılan</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Çift</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Uzun</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Üçlü</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Nabız</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Yükseliyor</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Özel</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Kendi titreşim düzeninizi yaratın (örn. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Bildirimi herhangi bir titreşim olmadan gösterin.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Saat sisteminin normal/varsayılan bildirim titreşimini kullanın.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">İki kısa vızıltı.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Daha uzun bir vızıltı.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Üç kısa vızıltı.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Dört eşit darbe.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Gücü artan kısa vızıltılar.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Konuşmaya özgü titreşim kalıpları</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Henüz sohbet eklenmedi.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Konuşmaları yüklemek için önce ana uygulamayı açın.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Aramanızla eşleşen konuşma yok.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Yüklenen tüm konuşmaların zaten bir geçersiz kılma işlemi var.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Konuşmayı seçin</string>
+    <string name="screen_wear_companion_add_conversation_title">Görüşme ekle</string>
+    <string name="screen_wear_companion_add_conversation_description">Bir görüşme seçin ve kendi titreşim davranışını yapılandırın.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Kaldır</string>
+    <string name="screen_wear_companion_conversation_remove_description">Bu konuşmaya özgü titreşim davranışını silin.</string>
+    <string name="screen_wear_companion_conversation_test_title">testi</string>
+    <string name="screen_wear_companion_conversation_test_description">Bu konuşma için seçilen titreşim modelini test edin.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Kategori varsayılanını kullan</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Bu konuşma türü için varsayılan titreşimi izleyin.</string>
+</resources>

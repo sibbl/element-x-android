@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Värähtelykuvioita</string>
+    <string name="screen_wear_companion_vibration_groups">Ryhmäkeskustelut</string>
+    <string name="screen_wear_companion_vibration_dms">Suorat viestit</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Suosikki ryhmäkeskustelut</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Suosikki suorat viestit</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Hiljainen</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Oletus</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Kaksinkertainen</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Pitkä</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Kolminkertainen</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pulssi</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskaloituu</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Mukautettu</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Luo oma värinäkuviosi (esim. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Näytä ilmoitus ilman tärinää.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Käytä kellojärjestelmän normaalia/oletusilmoitusvärähtelyä.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Kaksi lyhyttä surinaa.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Yksi pidempi surina.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Kolme lyhyttä surinaa.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Neljä tasaista pulssia.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Lyhyet surinat, jotka lisäävät voimaa.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Keskustelukohtaiset värinämallit</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Keskusteluja ei ole vielä lisätty.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Avaa ensin pääsovellus ladataksesi keskustelut.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Yksikään keskustelu ei vastaa hakuasi.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Kaikilla ladatuilla keskusteluilla on jo ohitus.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Valitse keskustelu</string>
+    <string name="screen_wear_companion_add_conversation_title">Lisää keskustelu</string>
+    <string name="screen_wear_companion_add_conversation_description">Valitse keskustelu ja määritä sen oma värinäkäyttäytyminen.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Poista</string>
+    <string name="screen_wear_companion_conversation_remove_description">Poista tämä keskustelukohtainen värinäkäyttäytyminen.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testaa</string>
+    <string name="screen_wear_companion_conversation_test_description">Testaa tälle keskustelulle valittu värinäkuvio.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Käytä oletusluokkaa</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Noudata tämän keskustelutyypin oletusvärähtelyä.</string>
+</resources>

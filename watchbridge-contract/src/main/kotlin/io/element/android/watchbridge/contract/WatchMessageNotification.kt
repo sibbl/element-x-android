@@ -37,4 +37,5 @@ data class WatchMessageNotification(
     val vibrationPatternOverride: WatchNotificationVibrationPattern? = null,
     val customVibrationPattern: String? = null,
     val vibrationSettingsSnapshot: WatchNotificationVibrationSettings? = null,
+    val isTestNotification: Boolean = false,
 )

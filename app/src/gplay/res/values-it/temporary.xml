@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Modelli di vibrazione</string>
+    <string name="screen_wear_companion_vibration_groups">Conversazioni di gruppo</string>
+    <string name="screen_wear_companion_vibration_dms">Messaggi diretti</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Conversazioni di gruppo preferite</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Messaggi diretti preferiti</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Silenzioso</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Predefinito</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Doppio</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Lungo</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Triplo</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Impulso</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">In aumento</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Personalizzato</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Crea il tuo modello di vibrazione (ad esempio, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Mostra la notifica senza alcuna vibrazione.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Utilizza la vibrazione di notifica normale/predefinita del sistema dell\'orologio.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Due brevi ronzii.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Un ronzio più lungo.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tre brevi ronzii.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Quattro impulsi pari.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Brevi ronzii che aumentano di forza.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Modelli di vibrazione specifici della conversazione</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Nessuna conversazione ancora aggiunta.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Apri prima l\'app principale per caricare le conversazioni.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Nessuna conversazione corrisponde alla tua ricerca.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Tutte le conversazioni caricate hanno già un override.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Scegli la conversazione</string>
+    <string name="screen_wear_companion_add_conversation_title">Aggiungi conversazione</string>
+    <string name="screen_wear_companion_add_conversation_description">Seleziona una conversazione e configura il proprio comportamento di vibrazione.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Rimuovi</string>
+    <string name="screen_wear_companion_conversation_remove_description">Elimina questo comportamento di vibrazione specifico della conversazione.</string>
+    <string name="screen_wear_companion_conversation_test_title">Prova</string>
+    <string name="screen_wear_companion_conversation_test_description">Prova il modello di vibrazione selezionato per questa conversazione.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Utilizza la categoria predefinita</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Segui la vibrazione predefinita per questo tipo di conversazione.</string>
+</resources>

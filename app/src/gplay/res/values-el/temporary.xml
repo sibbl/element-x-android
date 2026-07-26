@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Μοτίβα δόνησης</string>
+    <string name="screen_wear_companion_vibration_groups">Ομαδικές συνομιλίες</string>
+    <string name="screen_wear_companion_vibration_dms">Άμεσα μηνύματα</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Αγαπημένες ομαδικές συνομιλίες</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Αγαπημένα άμεσα μηνύματα</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Σιωπηλός</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Προεπιλογή</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Διπλό</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Μακρύς</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Τριπλό</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Παλμός</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Κλιμακούμενη</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Προσαρμοσμένο</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Δημιουργήστε το δικό σας μοτίβο δόνησης (π.χ. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Εμφάνιση της ειδοποίησης χωρίς δόνηση.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Χρησιμοποιήστε την κανονική/προεπιλεγμένη δόνηση ειδοποίησης του συστήματος ρολογιού.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Δύο σύντομα βουητά.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Ένα μεγαλύτερο βουητό.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Τρία σύντομα βουητά.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Τέσσερις ζυγοί παλμοί.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Σύντομα βουητά που αυξάνονται σε ισχύ.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Μοτίβα δόνησης ειδικά για τη συνομιλία</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Δεν έχουν προστεθεί ακόμη συνομιλίες.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Ανοίξτε πρώτα την κύρια εφαρμογή για να φορτώσετε συνομιλίες.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Καμία συνομιλία δεν αντιστοιχεί στην αναζήτησή σας.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Όλες οι φορτωμένες συνομιλίες έχουν ήδη μια παράκαμψη.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Επιλέξτε συνομιλία</string>
+    <string name="screen_wear_companion_add_conversation_title">Προσθήκη συνομιλίας</string>
+    <string name="screen_wear_companion_add_conversation_description">Επιλέξτε μια συνομιλία και διαμορφώστε τη δική της συμπεριφορά δόνησης.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Αφαίρεση</string>
+    <string name="screen_wear_companion_conversation_remove_description">Διαγράψτε αυτήν τη συμπεριφορά δόνησης για συγκεκριμένη συνομιλία.</string>
+    <string name="screen_wear_companion_conversation_test_title">Δοκιμή</string>
+    <string name="screen_wear_companion_conversation_test_description">Δοκιμάστε το επιλεγμένο μοτίβο δόνησης για αυτήν τη συνομιλία.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Χρήση προεπιλογής κατηγορίας</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Ακολουθήστε την προεπιλεγμένη δόνηση για αυτόν τον τύπο συνομιλίας.</string>
+</resources>

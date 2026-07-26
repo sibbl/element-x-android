@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">振動模式</string>
+    <string name="screen_wear_companion_vibration_groups">小組對話</string>
+    <string name="screen_wear_companion_vibration_dms">直接訊息</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">最喜歡的群組對話</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">最喜歡的私訊</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">沉默</string>
+    <string name="screen_wear_companion_vibration_pattern_default">預設</string>
+    <string name="screen_wear_companion_vibration_pattern_double">雙人間</string>
+    <string name="screen_wear_companion_vibration_pattern_long">長</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">三重</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">脈衝</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">不斷升級</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">客製化</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">創建您自己的振動模式（例如，120 60 180 60 240）。</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">在沒有任何振動的情況下顯示通知。</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">使用手錶系統的正常/預設通知振動。</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">兩聲短促的嗡嗡聲。</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">更長的嗡嗡聲。</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">三聲短促的嗡嗡聲。</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">四個偶數脈衝。</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">短暫的嗡嗡聲強度逐漸增強。</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">特定於對話的振動模式</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">尚未添加任何對話。</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">首先打開主應用程式以載入對話。</string>
+    <string name="screen_wear_companion_conversation_picker_empty">沒有對話符合您的搜尋。</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">所有載入的對話都已具有覆蓋。</string>
+    <string name="screen_wear_companion_conversation_picker_title">選擇對話</string>
+    <string name="screen_wear_companion_add_conversation_title">新增對話</string>
+    <string name="screen_wear_companion_add_conversation_description">選擇一個對話並配置自己的振動行為。</string>
+    <string name="screen_wear_companion_conversation_remove_title">刪除</string>
+    <string name="screen_wear_companion_conversation_remove_description">刪除此對話特定的振動行為。</string>
+    <string name="screen_wear_companion_conversation_test_title">測試</string>
+    <string name="screen_wear_companion_conversation_test_description">測試為本次對話選擇的振動模式。</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">使用預設類別</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">遵循此對話類型的預設振動。</string>
+</resources>

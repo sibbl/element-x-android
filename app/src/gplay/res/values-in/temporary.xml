@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Pola getaran</string>
+    <string name="screen_wear_companion_vibration_groups">Percakapan kelompok</string>
+    <string name="screen_wear_companion_vibration_dms">Pesan langsung</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Percakapan grup favorit</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Pesan langsung favorit</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Diam</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Bawaan</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Ganda</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Panjang</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Tiga kali lipat</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Denyut nadi</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Meningkat</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Adat</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Buat pola getaran Anda sendiri (mis., 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Tampilkan notifikasi tanpa getaran apa pun.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Gunakan getaran notifikasi normal/default sistem jam tangan.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dua desas-desus singkat.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Satu desas-desus lagi.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tiga dengungan singkat.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Empat pulsa genap.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Buzz singkat yang meningkatkan kekuatan.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Pola getaran khusus percakapan</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Belum ada percakapan yang ditambahkan.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Buka aplikasi utama terlebih dahulu untuk memuat percakapan.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Tidak ada percakapan yang cocok dengan penelusuran Anda.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Semua percakapan yang dimuat telah ditimpa.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Pilih percakapan</string>
+    <string name="screen_wear_companion_add_conversation_title">Tambahkan percakapan</string>
+    <string name="screen_wear_companion_add_conversation_description">Pilih percakapan dan konfigurasikan perilaku getarannya sendiri.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Hapus</string>
+    <string name="screen_wear_companion_conversation_remove_description">Hapus perilaku getaran khusus percakapan ini.</string>
+    <string name="screen_wear_companion_conversation_test_title">Tes</string>
+    <string name="screen_wear_companion_conversation_test_description">Uji pola getaran yang dipilih untuk percakapan ini.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Gunakan kategori default</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Ikuti getaran default untuk jenis percakapan ini.</string>
+</resources>

@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Uzorci vibracija</string>
+    <string name="screen_wear_companion_vibration_groups">Grupni razgovori</string>
+    <string name="screen_wear_companion_vibration_dms">Izravne poruke</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Omiljeni grupni razgovori</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Omiljene izravne poruke</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Tiho</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Zadano</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Duplo</string>
+    <string name="screen_wear_companion_vibration_pattern_long">dugo</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Trostruki</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalacija</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Prilagođeno</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Napravite vlastiti uzorak vibracije (npr. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Prikaži obavijest bez ikakve vibracije.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Koristite normalnu/zadanu vibraciju obavijesti sustava sata.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dva kratka zujanja.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Jedno duže zujanje.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tri kratka zujanja.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Četiri jednaka pulsa.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Kratka zujanja koja se pojačavaju.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Obrasci vibracija specifični za razgovor</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Još nema dodanih razgovora.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Prvo otvorite glavnu aplikaciju za učitavanje razgovora.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Nijedan razgovor ne odgovara vašem pretraživanju.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Svi učitani razgovori već imaju nadjačavanje.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Odaberite razgovor</string>
+    <string name="screen_wear_companion_add_conversation_title">Dodaj razgovor</string>
+    <string name="screen_wear_companion_add_conversation_description">Odaberite razgovor i konfigurirajte vlastito ponašanje vibracije.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Ukloniti</string>
+    <string name="screen_wear_companion_conversation_remove_description">Izbrišite ovo ponašanje vibracije specifično za razgovor.</string>
+    <string name="screen_wear_companion_conversation_test_title">test</string>
+    <string name="screen_wear_companion_conversation_test_description">Testirajte odabrani uzorak vibracije za ovaj razgovor.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Koristi zadanu kategoriju</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Slijedite zadanu vibraciju za ovu vrstu razgovora.</string>
+</resources>

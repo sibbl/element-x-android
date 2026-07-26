@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibrační vzory</string>
+    <string name="screen_wear_companion_vibration_groups">Skupinové konverzace</string>
+    <string name="screen_wear_companion_vibration_dms">Přímé zprávy</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Oblíbené skupinové konverzace</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Oblíbené přímé zprávy</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Tichý</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Výchozí</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dvojité</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Dlouhé</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Trojitý</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalace</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Vlastní</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Vytvořte si vlastní vibrační vzor (např. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Zobrazit oznámení bez vibrací.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Použijte normální/výchozí upozorňovací vibrace systému hodinek.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dvě krátké bzučení.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Jeden delší bzukot.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tři krátké bzučení.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Čtyři sudé pulzy.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Krátké bzučení, které nabírá na síle.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Vzorce vibrací specifické pro konverzaci</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Zatím nebyly přidány žádné konverzace.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Nejprve otevřete hlavní aplikaci a načtěte konverzace.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Vašemu vyhledávání neodpovídají žádné konverzace.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Všechny načtené konverzace již mají přepsání.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Vyberte konverzaci</string>
+    <string name="screen_wear_companion_add_conversation_title">Přidat konverzaci</string>
+    <string name="screen_wear_companion_add_conversation_description">Vyberte konverzaci a nakonfigurujte její vlastní vibrační chování.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Odebrat</string>
+    <string name="screen_wear_companion_conversation_remove_description">Smazat toto vibrační chování specifické pro konverzaci.</string>
+    <string name="screen_wear_companion_conversation_test_title">Vyzkoušet</string>
+    <string name="screen_wear_companion_conversation_test_description">Vyzkoušejte vybraný vzor vibrací pro tuto konverzaci.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Použít výchozí kategorii</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Postupujte podle výchozích vibrací pro tento typ konverzace.</string>
+</resources>

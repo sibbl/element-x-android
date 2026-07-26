@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Модели на вибрации</string>
+    <string name="screen_wear_companion_vibration_groups">Групови разговори</string>
+    <string name="screen_wear_companion_vibration_dms">Директни съобщения</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Любими групови разговори</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Любими директни съобщения</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Безшумен</string>
+    <string name="screen_wear_companion_vibration_pattern_default">По подразбиране</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Двойна</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Дълги</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Тройна</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Пулс</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Ескалира</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">По поръчка</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Създайте свой собствен модел на вибрация (напр. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Показване на известието без никаква вибрация.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Използвайте нормалната/по подразбиране вибрация за уведомяване на часовниковата система.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Две кратки бръмчения.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Едно по-дълго бръмчене.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Три кратки бръмчания.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Четири равни импулса.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Кратко жужене, което се усилва.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Вибрационни модели, специфични за разговор</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Все още няма добавени разговори.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Първо отворете основното приложение, за да заредите разговори.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Няма разговори, които отговарят на вашето търсене.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Всички заредени разговори вече имат отмяна.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Изберете разговор</string>
+    <string name="screen_wear_companion_add_conversation_title">Добавете разговор</string>
+    <string name="screen_wear_companion_add_conversation_description">Изберете разговор и конфигурирайте собственото му поведение на вибрация.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Премахнете</string>
+    <string name="screen_wear_companion_conversation_remove_description">Изтрийте това специфично за разговор поведение на вибрация.</string>
+    <string name="screen_wear_companion_conversation_test_title">Тест</string>
+    <string name="screen_wear_companion_conversation_test_description">Тествайте избрания модел на вибрация за този разговор.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Използване на категория по подразбиране</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Следвайте стандартната вибрация за този тип разговор.</string>
+</resources>

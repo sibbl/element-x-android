@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibratsioonimustrid</string>
+    <string name="screen_wear_companion_vibration_groups">Grupivestlused</string>
+    <string name="screen_wear_companion_vibration_dms">Otsesed sõnumid</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Lemmikgrupivestlused</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Lemmik otsesõnumid</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Vaikne</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Vaikimisi</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Kahekordne</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Pikk</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Kolmekordne</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pulss</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskaleerumine</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Kohandatud</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Looge oma vibratsioonimuster (nt 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Kuvage märguanne ilma vibratsioonita.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Kasutage kellasüsteemi tavalist/vaikemärguannete vibratsiooni.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Kaks lühikest surinat.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Üks pikem sumin.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Kolm lühikest surinat.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Neli ühtlast pulssi.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Lühikesed suminad, mis suurendavad jõudu.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Vestlusele omased vibratsioonimustrid</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Ühtegi vestlust pole veel lisatud.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Vestluste laadimiseks avage esmalt põhirakendus.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Ükski vestlus ei vasta teie otsingule.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Kõigil laaditud vestlustel on juba alistamine.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Valige vestlus</string>
+    <string name="screen_wear_companion_add_conversation_title">Lisa vestlus</string>
+    <string name="screen_wear_companion_add_conversation_description">Valige vestlus ja seadistage selle vibratsiooni käitumine.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Eemalda</string>
+    <string name="screen_wear_companion_conversation_remove_description">Kustutage see vestlusespetsiifiline vibratsioonikäitumine.</string>
+    <string name="screen_wear_companion_conversation_test_title">Proovi</string>
+    <string name="screen_wear_companion_conversation_test_description">Testige selle vestluse jaoks valitud vibratsioonimustrit.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Kasuta kategooria vaikeseadet</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Järgige selle vestlustüübi vaikevibratsiooni.</string>
+</resources>

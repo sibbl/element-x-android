@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibratsiyali naqshlar</string>
+    <string name="screen_wear_companion_vibration_groups">Guruh suhbatlari</string>
+    <string name="screen_wear_companion_vibration_dms">To\'g\'ridan-to\'g\'ri xabarlar</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Sevimli guruh suhbatlari</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Sevimli to\'g\'ridan-to\'g\'ri xabarlar</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Jim</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Standart</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Ikki marta</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Uzoq</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Uchlik</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalatsiya</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Maxsus</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">O\'zingizning tebranish namunangizni yarating (masalan, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Bildirishnomani tebranishsiz ko\'rsating.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Soat tizimining oddiy/standart bildirishnoma tebranishidan foydalaning.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Ikki qisqa shovqin.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Yana bir shovqin.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Uchta qisqa shovqin.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">To\'rtta teng zarba.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Quvvatini oshiruvchi qisqa shovqinlar.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Suhbatga xos tebranish naqshlari</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Hali hech qanday suhbat qo\'shilmagan.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Suhbatlarni yuklash uchun avval asosiy ilovani oching.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Qidiruvingizga mos keladigan suhbat topilmadi.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Barcha yuklangan suhbatlar allaqachon bekor qilingan.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Suhbatni tanlang</string>
+    <string name="screen_wear_companion_add_conversation_title">Suhbat qo\'shing</string>
+    <string name="screen_wear_companion_add_conversation_description">Suhbatni tanlang va uning tebranish harakatini sozlang.</string>
+    <string name="screen_wear_companion_conversation_remove_title">O\'chirish</string>
+    <string name="screen_wear_companion_conversation_remove_description">Bu suhbatga xos tebranish harakatini oʻchirib tashlang.</string>
+    <string name="screen_wear_companion_conversation_test_title">Sinov</string>
+    <string name="screen_wear_companion_conversation_test_description">Ushbu suhbat uchun tanlangan tebranish namunasini sinab ko\'ring.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Standart kategoriyadan foydalaning</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Ushbu suhbat turi uchun standart vibratsiyaga amal qiling.</string>
+</resources>

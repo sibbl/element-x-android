@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">کمپن پیٹرن</string>
+    <string name="screen_wear_companion_vibration_groups">گروپ گفتگو</string>
+    <string name="screen_wear_companion_vibration_dms">براہ راست پیغامات</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">پسندیدہ گروپ گفتگو</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">پسندیدہ براہ راست پیغامات</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">خاموش</string>
+    <string name="screen_wear_companion_vibration_pattern_default">طے شدہ</string>
+    <string name="screen_wear_companion_vibration_pattern_double">ڈبل</string>
+    <string name="screen_wear_companion_vibration_pattern_long">لمبی</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">ٹرپل</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">نبض</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">بڑھتی ہوئی</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">حسب ضرورت</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">اپنا کمپن پیٹرن بنائیں (جیسے، 120 60 180 60 240)۔</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">بغیر کسی وائبریشن کے نوٹیفکیشن دکھائیں۔</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">واچ سسٹم کی نارمل/ڈیفالٹ نوٹیفکیشن وائبریشن استعمال کریں۔</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">دو مختصر آوازیں</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">ایک طویل گونج۔</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">تین مختصر آوازیں</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">چار برابر دالیں۔</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">مختصر آوازیں جو طاقت میں اضافہ کرتی ہیں۔</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">گفتگو کے لیے مخصوص کمپن پیٹرن</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">ابھی تک کوئی گفتگو شامل نہیں کی گئی۔</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">مکالمات کو لوڈ کرنے کے لیے پہلے مرکزی ایپ کھولیں۔</string>
+    <string name="screen_wear_companion_conversation_picker_empty">کوئی بات چیت آپ کی تلاش سے مماثل نہیں ہے۔</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">تمام بھری ہوئی بات چیت میں پہلے سے ہی ایک اوور رائڈ ہے۔</string>
+    <string name="screen_wear_companion_conversation_picker_title">گفتگو کا انتخاب کریں۔</string>
+    <string name="screen_wear_companion_add_conversation_title">گفتگو شامل کریں۔</string>
+    <string name="screen_wear_companion_add_conversation_description">ایک گفتگو کا انتخاب کریں اور اس کے اپنے کمپن رویے کو ترتیب دیں۔</string>
+    <string name="screen_wear_companion_conversation_remove_title">ہٹا دیں۔</string>
+    <string name="screen_wear_companion_conversation_remove_description">اس گفتگو کے مخصوص وائبریشن رویے کو حذف کریں۔</string>
+    <string name="screen_wear_companion_conversation_test_title">ٹیسٹ</string>
+    <string name="screen_wear_companion_conversation_test_description">اس گفتگو کے لیے منتخب کمپن پیٹرن کی جانچ کریں۔</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">زمرہ ڈیفالٹ استعمال کریں۔</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">گفتگو کی اس قسم کے لیے پہلے سے طے شدہ وائبریشن پر عمل کریں۔</string>
+</resources>

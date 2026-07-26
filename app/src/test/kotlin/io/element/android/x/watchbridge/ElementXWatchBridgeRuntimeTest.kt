@@ -14,6 +14,11 @@ import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import io.element.android.libraries.architecture.AsyncData
+import io.element.android.libraries.eventformatter.api.TimelineEventFormatter
+import io.element.android.libraries.eventformatter.impl.DefaultTimelineEventFormatter
+import io.element.android.libraries.eventformatter.impl.ProfileChangeContentFormatter
+import io.element.android.libraries.eventformatter.impl.RoomMembershipContentFormatter
+import io.element.android.libraries.eventformatter.impl.StateContentFormatter
 import io.element.android.libraries.matrix.api.core.EventId
 import io.element.android.libraries.matrix.api.core.ThreadId
 import io.element.android.libraries.matrix.api.core.UniqueId
@@ -30,15 +35,22 @@ import io.element.android.libraries.matrix.api.timeline.item.event.AudioMessageT
 import io.element.android.libraries.matrix.api.timeline.item.event.EventOrTransactionId
 import io.element.android.libraries.matrix.api.timeline.item.event.EventReaction
 import io.element.android.libraries.matrix.api.timeline.item.event.FormattedBody
+import io.element.android.libraries.matrix.api.timeline.item.event.MembershipChange
 import io.element.android.libraries.matrix.api.timeline.item.event.MessageFormat
+import io.element.android.libraries.matrix.api.timeline.item.event.OtherState
 import io.element.android.libraries.matrix.api.timeline.item.event.ReactionSender
+import io.element.android.libraries.matrix.api.timeline.item.event.RoomMembershipContent
+import io.element.android.libraries.matrix.api.timeline.item.event.StateContent
 import io.element.android.libraries.matrix.api.timeline.item.event.TextMessageType
 import io.element.android.libraries.matrix.api.timeline.item.event.VoiceMessageType
 import io.element.android.libraries.matrix.api.user.MatrixUser
 import io.element.android.libraries.matrix.test.AN_AVATAR_URL
 import io.element.android.libraries.matrix.test.A_ROOM_ID
 import io.element.android.libraries.matrix.test.A_USER_ID
+import io.element.android.libraries.matrix.test.A_USER_ID_2
 import io.element.android.libraries.matrix.test.A_USER_NAME
+import io.element.android.libraries.matrix.test.FakeMatrixClient
+import io.element.android.libraries.matrix.test.core.aBuildMeta
 import io.element.android.libraries.matrix.test.media.aMediaSource
 import io.element.android.libraries.matrix.test.room.FakeBaseRoom
 import io.element.android.libraries.matrix.test.room.FakeJoinedRoom
@@ -54,6 +66,7 @@ import io.element.android.watchbridge.contract.WatchSync
 import io.element.android.watchbridge.contract.WatchSyncEnvelope
 import io.element.android.watchbridge.contract.WatchTimelineItem
 import io.element.android.watchbridge.contract.WatchVoiceDraft
+import io.element.android.services.toolbox.impl.strings.AndroidStringProvider
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -219,6 +232,80 @@ class ElementXWatchBridgeRuntimeTest {
 
         assertThat(item.isPinned).isTrue()
         assertThat(item.reactions.single().senders.single().displayName).isEqualTo("Bob")
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "de")
+    fun `timeline projection uses phone localized wording for pinned event changes`() {
+        val formatter = aTimelineEventFormatter()
+        val events = OtherState.RoomPinnedEvents.Change.entries.mapIndexed { index, change ->
+            MatrixTimelineItem.Event(
+                uniqueId = UniqueId("pin-$change"),
+                event = anEventTimelineItem(
+                    eventId = EventId("\$pin-$index:server"),
+                    sender = A_USER_ID_2,
+                    senderProfile = aProfileDetails(displayName = "Bob"),
+                    timestamp = index.toLong(),
+                    content = StateContent("", OtherState.RoomPinnedEvents(change)),
+                ),
+            )
+        }
+
+        val projection = events.toWatchTimelineProjection(
+            roomId = "!room:server",
+            limit = 20,
+            timelineEventFormatter = formatter,
+        )
+
+        assertThat(projection.items.map { it.bodyText }).containsExactly(
+            "Bob fixierte eine Nachricht",
+            "Bob löste eine Nachricht",
+            "Bob hat die fixierten Nachrichten geändert",
+        ).inOrder()
+    }
+
+    @Test
+    @Config(sdk = [33], qualifiers = "de")
+    fun `timeline projection uses phone wording for room name and membership state events`() {
+        val formatter = aTimelineEventFormatter()
+        val events = listOf(
+            MatrixTimelineItem.Event(
+                uniqueId = UniqueId("room-name"),
+                event = anEventTimelineItem(
+                    eventId = EventId("\$room-name:server"),
+                    sender = A_USER_ID_2,
+                    senderProfile = aProfileDetails(displayName = "Bob"),
+                    timestamp = 1L,
+                    content = StateContent("", OtherState.RoomName("Kaffeerunde")),
+                ),
+            ),
+            MatrixTimelineItem.Event(
+                uniqueId = UniqueId("member-joined"),
+                event = anEventTimelineItem(
+                    eventId = EventId("\$member-joined:server"),
+                    sender = A_USER_ID_2,
+                    senderProfile = aProfileDetails(displayName = "Bob"),
+                    timestamp = 2L,
+                    content = RoomMembershipContent(
+                        userId = A_USER_ID_2,
+                        userDisplayName = "Bob",
+                        change = MembershipChange.JOINED,
+                        reason = null,
+                    ),
+                ),
+            ),
+        )
+
+        val projection = events.toWatchTimelineProjection(
+            roomId = "!room:server",
+            limit = 20,
+            timelineEventFormatter = formatter,
+        )
+
+        assertThat(projection.items.map { it.bodyText }).containsExactly(
+            "Bob hat den Chat-Namen geändert in: Kaffeerunde",
+            "Bob ist dem Chat beigetreten",
+        ).inOrder()
     }
 
     @Test
@@ -546,6 +633,18 @@ class ElementXWatchBridgeRuntimeTest {
         sizeBytes = 4L,
         waveform = listOf(25, 50, 75),
     )
+
+    private fun aTimelineEventFormatter(): TimelineEventFormatter {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val stringProvider = AndroidStringProvider(context.resources)
+        return DefaultTimelineEventFormatter(
+            sp = stringProvider,
+            buildMeta = aBuildMeta(isDebuggable = false),
+            roomMembershipContentFormatter = RoomMembershipContentFormatter(FakeMatrixClient(), stringProvider),
+            profileChangeContentFormatter = ProfileChangeContentFormatter(stringProvider),
+            stateContentFormatter = StateContentFormatter(stringProvider),
+        )
+    }
 
     private class RecordingMediaUploadHandler(
         val file: File,

@@ -52,6 +52,15 @@ class WearBridgeClientNotificationProjectionTest {
     }
 
     @Test
+    fun `test notifications are never projected into conversation history`() {
+        val notification = aMessageNotification()
+            .copy(isTestNotification = true)
+
+        assertThat(notification.toTimelineItemForOpenConversation()).isNull()
+        assertThat(notification.copy(threadRootEventId = "\$root:server").toThreadItemForOpenThread()).isNull()
+    }
+
+    @Test
     fun `incoming settings are dispatched before message notifications from the same batch`() {
         val notificationEnvelope = WatchSyncEnvelope(
             generatedAtMs = 1L,

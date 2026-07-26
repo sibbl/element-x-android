@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Bibrazio ereduak</string>
+    <string name="screen_wear_companion_vibration_groups">Taldeko elkarrizketak</string>
+    <string name="screen_wear_companion_vibration_dms">Mezu zuzenak</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Taldeko elkarrizketa gogokoenak</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Zuzeneko mezu gogokoenak</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Isilik</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Lehenetsia</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Bikoitza</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Luzea</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Hirukoitza</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pultsua</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalatzen</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Pertsonalizatua</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Sortu zure bibrazio eredua (adibidez, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Erakutsi jakinarazpena bibraziorik gabe.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Erabili erloju-sistemaren jakinarazpen-bibrazio normala/lehenetsia.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Bi burrunba labur.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Burrunba luze bat.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Hiru burrunba labur.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Lau pultsu parekoak.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Indarra areagotzen duten burrunba laburrak.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Elkarrizketarako berariazko bibrazio-ereduak</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Ez dago elkarrizketarik gehitu oraindik.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Ireki aplikazio nagusia lehenengo elkarrizketak kargatzeko.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Ez dago zure bilaketarekin bat datorren elkarrizketarik.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Kargatutako elkarrizketa guztiek baliogabetze bat dute dagoeneko.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Aukeratu elkarrizketa</string>
+    <string name="screen_wear_companion_add_conversation_title">Gehitu elkarrizketa</string>
+    <string name="screen_wear_companion_add_conversation_description">Hautatu elkarrizketa bat eta konfiguratu bere bibrazio portaera.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Kendu</string>
+    <string name="screen_wear_companion_conversation_remove_description">Ezabatu elkarrizketaren berariazko bibrazio portaera hau.</string>
+    <string name="screen_wear_companion_conversation_test_title">Proba</string>
+    <string name="screen_wear_companion_conversation_test_description">Probatu elkarrizketa honetarako hautatutako bibrazio-eredua.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Erabili kategoria lehenetsia</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Jarraitu elkarrizketa mota honen lehenetsitako dardara.</string>
+</resources>

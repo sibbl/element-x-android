@@ -209,6 +209,7 @@ private fun WearCompanionTestNotificationSample.toNotification(
         vibrationPatternOverride = vibrationPatternOverride,
         customVibrationPattern = customVibrationPattern,
         vibrationSettingsSnapshot = vibrationSettingsSnapshot,
+        isTestNotification = true,
     )
 }
 

@@ -40,7 +40,7 @@ interface ElementXWatchPort {
     suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> = Result.success(null)
 
     /** Thread read access (root context + recent replies). */
-    fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int): Flow<List<WatchThreadItem>>
+    fun threadTimeline(roomId: String, threadRootEventId: String, targetEventId: String?, limit: Int): Flow<List<WatchThreadItem>>
 
     /** Text / thread reply sending. Returns the matrix eventId once known. */
     suspend fun sendText(

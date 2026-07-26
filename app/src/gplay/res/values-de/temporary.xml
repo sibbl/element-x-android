@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibrationsmuster</string>
+    <string name="screen_wear_companion_vibration_groups">Gruppengespräche</string>
+    <string name="screen_wear_companion_vibration_dms">Direktnachrichten</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Lieblingsgruppengespräche</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Bevorzugte Direktnachrichten</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Still</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Standard</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Doppelt</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Lange</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Dreifach</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskaliert</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Benutzerdefiniert</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Erstellen Sie Ihr eigenes Vibrationsmuster (z. B. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Zeigen Sie die Benachrichtigung ohne Vibration an.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Verwenden Sie die normale/standardmäßige Benachrichtigungsvibration des Uhrensystems.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Zwei kurze Summtöne.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Ein längeres Summen.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Drei kurze Töne.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Vier gleichmäßige Impulse.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Kurzes Summen, das an Stärke zunimmt.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Gesprächsspezifische Vibrationsmuster</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Es wurden noch keine Gespräche hinzugefügt.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Öffnen Sie zuerst die Haupt-App, um Konversationen zu laden.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Keine Konversationen entsprechen Ihrer Suche.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Alle geladenen Konversationen verfügen bereits über eine Überschreibung.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Wählen Sie Konversation</string>
+    <string name="screen_wear_companion_add_conversation_title">Konversation hinzufügen</string>
+    <string name="screen_wear_companion_add_conversation_description">Wählen Sie ein Gespräch aus und konfigurieren Sie dessen eigenes Vibrationsverhalten.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Entfernen</string>
+    <string name="screen_wear_companion_conversation_remove_description">Löschen Sie dieses gesprächsspezifische Vibrationsverhalten.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testen</string>
+    <string name="screen_wear_companion_conversation_test_description">Testen Sie das ausgewählte Vibrationsmuster für dieses Gespräch.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Kategoriestandard verwenden</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Befolgen Sie die Standardvibration für diesen Konversationstyp.</string>
+</resources>

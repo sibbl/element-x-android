@@ -80,7 +80,7 @@ class WatchBridgeDispatcherTest {
         }
         override suspend fun roomSummary(roomId: String): WatchRoomSummary? = summary
         override fun roomTimeline(roomId: String, limit: Int): Flow<List<WatchTimelineItem>> = timelineFlow ?: flowOf(timeline)
-        override fun threadTimeline(roomId: String, threadRootEventId: String, limit: Int) = threadFlow ?: flowOf(thread)
+        override fun threadTimeline(roomId: String, threadRootEventId: String, targetEventId: String?, limit: Int) = threadFlow ?: flowOf(thread)
         override suspend fun roomMediaPreview(roomId: String, eventId: String): Result<ByteArray?> =
             if (roomMediaPreviewResults.isEmpty()) {
                 roomMediaPreviewCalls += roomId to eventId

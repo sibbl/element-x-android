@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Wzory wibracji</string>
+    <string name="screen_wear_companion_vibration_groups">Rozmowy grupowe</string>
+    <string name="screen_wear_companion_vibration_dms">Wiadomości bezpośrednie</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Ulubione rozmowy grupowe</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Ulubione wiadomości bezpośrednie</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Cichy</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Domyślne</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Podwójne</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Długie</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Potrójny</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalacja</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Niestandardowe</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Stwórz własny wzór wibracji (np. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Pokaż powiadomienie bez wibracji.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Użyj normalnych/domyślnych wibracji powiadomień systemu zegarka.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dwa krótkie sygnały.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Jeden dłuższy szum.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Trzy krótkie dźwięki.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Cztery równe impulsy.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Krótkie dźwięki, które rosną w siłę.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Wzory wibracji specyficzne dla rozmowy</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Nie dodano jeszcze żadnych rozmów.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Najpierw otwórz aplikację główną, aby załadować rozmowy.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Żadne rozmowy nie pasują do Twojego wyszukiwania.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Wszystkie załadowane rozmowy mają już zastąpienie.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Wybierz rozmowę</string>
+    <string name="screen_wear_companion_add_conversation_title">Dodaj rozmowę</string>
+    <string name="screen_wear_companion_add_conversation_description">Wybierz rozmowę i skonfiguruj jej własne zachowanie wibracji.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Usuń</string>
+    <string name="screen_wear_companion_conversation_remove_description">Usuń to zachowanie wibracji specyficzne dla rozmowy.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testuj</string>
+    <string name="screen_wear_companion_conversation_test_description">Przetestuj wybrany wzór wibracji dla tej rozmowy.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Użyj kategorii domyślnej</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Postępuj zgodnie z domyślną wibracją dla tego typu rozmowy.</string>
+</resources>

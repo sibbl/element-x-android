@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibration patterns</string>
+    <string name="screen_wear_companion_vibration_groups">Group conversations</string>
+    <string name="screen_wear_companion_vibration_dms">Direct messages</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Favorite group conversations</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Favorite direct messages</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Silent</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Default</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Double</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Long</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Triple</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pulse</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Escalating</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Custom</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Create your own vibration pattern (e.g., 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Show the notification without any vibration.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Use the watch system\'s normal/default notification vibration.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Two short buzzes.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">One longer buzz.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Three short buzzes.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Four even pulses.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Short buzzes that ramp up in strength.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Conversation-specific vibration patterns</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">No conversations added yet.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Open the main app first to load conversations.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">No conversations match your search.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">All loaded conversations already have an override.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Choose conversation</string>
+    <string name="screen_wear_companion_add_conversation_title">Add conversation</string>
+    <string name="screen_wear_companion_add_conversation_description">Select a conversation and configure its own vibration behavior.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Remove</string>
+    <string name="screen_wear_companion_conversation_remove_description">Delete this conversation-specific vibration behavior.</string>
+    <string name="screen_wear_companion_conversation_test_title">Test</string>
+    <string name="screen_wear_companion_conversation_test_description">Test the selected vibration pattern for this conversation.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Use category default</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Follow the default vibration for this conversation type.</string>
+</resources>

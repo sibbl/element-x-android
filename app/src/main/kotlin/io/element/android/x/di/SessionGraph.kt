@@ -12,11 +12,13 @@ import dev.zacsweers.metro.GraphExtension
 import dev.zacsweers.metro.Provides
 import io.element.android.libraries.architecture.NodeFactoriesBindings
 import io.element.android.libraries.di.SessionScope
+import io.element.android.libraries.eventformatter.api.TimelineEventFormatter
 import io.element.android.libraries.matrix.api.MatrixClient
 
 @GraphExtension(SessionScope::class)
 interface SessionGraph : NodeFactoriesBindings {
     val roomGraphFactory: RoomGraph.Factory
+    val timelineEventFormatter: TimelineEventFormatter
 
     @GraphExtension.Factory
     interface Factory {

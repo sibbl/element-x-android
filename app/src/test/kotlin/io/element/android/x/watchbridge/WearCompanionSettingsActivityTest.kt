@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -151,6 +152,26 @@ class WearCompanionSettingsActivityTest {
 
         assertThat(updatedSettings.notificationVibrations.conversationOverrides)
             .containsExactly(WatchConversationVibrationOverride(roomId = roomId))
+    }
+
+    @Test
+    fun `conversation row shows only localized selected pattern and accessible actions`() {
+        val room = aRoom(roomId = "!room:server", displayName = "Team Wear", kind = WatchRoomKind.GROUP)
+        setWearContent(
+            initialSettings = WatchCompanionSettings(
+                notificationVibrations = WatchNotificationVibrationSettings(
+                    conversationOverrides = listOf(
+                        WatchConversationVibrationOverride(room.roomId, WatchNotificationVibrationPattern.CUSTOM, "0,120"),
+                    ),
+                ),
+            ),
+            availableRooms = listOf(room),
+        )
+
+        composeRule.onNodeWithText("Custom").performScrollTo().assertExists()
+        composeRule.onNodeWithText("Custom vibration pattern (e.g., \"100, 100, 200\")").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Test the selected vibration pattern for this conversation.").assertExists()
+        composeRule.onNodeWithContentDescription("Delete this conversation-specific vibration behavior.").assertExists()
     }
 
     @Test
@@ -293,6 +314,8 @@ class WearCompanionSettingsActivityTest {
             addConversationDescription = "Select a conversation and configure its own vibration behavior.",
             conversationRemoveLabel = "Remove",
             conversationRemoveDescription = "Delete this conversation-specific vibration behavior.",
+            conversationTestLabel = "Test",
+            conversationTestDescription = "Test the selected vibration pattern for this conversation.",
             inheritLabel = "Use category default",
             inheritDescription = "Follow the default vibration for this conversation type.",
             groupsLabel = "Group conversations",

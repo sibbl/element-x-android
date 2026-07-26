@@ -395,7 +395,7 @@ class WatchBridgeDispatcher(
             runCatching {
                 ack(WatchAck.Sent(cmd.requestId))
                 var lastPublishedEventIds = emptySet<String>()
-                port.threadTimeline(cmd.roomId, cmd.threadRootEventId, cmd.limit).collectLatest { items ->
+                port.threadTimeline(cmd.roomId, cmd.threadRootEventId, cmd.targetEventId, cmd.limit).collectLatest { items ->
                     if (items.isEmpty()) {
                         transport.publishSync(
                             path = WatchDataPaths.thread(cmd.roomId, cmd.threadRootEventId),

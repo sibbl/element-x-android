@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Padrões de vibração</string>
+    <string name="screen_wear_companion_vibration_groups">Conversas em grupo</string>
+    <string name="screen_wear_companion_vibration_dms">Mensagens diretas</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Conversas em grupo favoritas</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Mensagens diretas favoritas</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Silencioso</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Padrão</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Duplo</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Longo</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Triplo</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pulso</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Escalando</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Personalizado</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Crie seu próprio padrão vibratório (por exemplo, 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Mostre a notificação sem qualquer vibração.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Use a vibração de notificação normal/padrão do sistema de relógio.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Dois zumbidos curtos.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Mais um zumbido.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Três zumbidos curtos.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Quatro pulsos pares.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Zumbidos curtos que aumentam de força.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Padrões de vibração específicos de conversa</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Nenhuma conversa adicionada ainda.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Abra primeiro o aplicativo principal para carregar as conversas.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Nenhuma conversa corresponde à sua pesquisa.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Todas as conversas carregadas já possuem uma substituição.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Escolha conversa</string>
+    <string name="screen_wear_companion_add_conversation_title">Adicionar conversa</string>
+    <string name="screen_wear_companion_add_conversation_description">Selecione uma conversa e configure seu próprio comportamento de vibração.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Remover</string>
+    <string name="screen_wear_companion_conversation_remove_description">Exclua este comportamento de vibração específico da conversa.</string>
+    <string name="screen_wear_companion_conversation_test_title">Teste</string>
+    <string name="screen_wear_companion_conversation_test_description">Teste o padrão de vibração selecionado para esta conversa.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Usar categoria padrão</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Siga a vibração padrão para este tipo de conversa.</string>
+</resources>

@@ -11,7 +11,6 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -31,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -44,6 +45,8 @@ import io.element.android.libraries.designsystem.components.preferences.Preferen
 import io.element.android.libraries.designsystem.components.preferences.PreferencePage
 import io.element.android.libraries.designsystem.theme.components.ListItem
 import io.element.android.libraries.designsystem.theme.components.ListItemStyle
+import io.element.android.libraries.designsystem.theme.components.TextButton
+import io.element.android.libraries.designsystem.theme.components.ButtonSize
 import io.element.android.libraries.designsystem.theme.components.Text
 import io.element.android.libraries.ui.strings.CommonStrings
 import io.element.android.watchbridge.contract.WatchCompanionSettings
@@ -204,6 +207,8 @@ internal data class WearCompanionVibrationSectionStrings(
     val addConversationDescription: String,
     val conversationRemoveLabel: String,
     val conversationRemoveDescription: String,
+    val conversationTestLabel: String,
+    val conversationTestDescription: String,
     val inheritLabel: String,
     val inheritDescription: String,
     val groupsLabel: String,
@@ -435,7 +440,8 @@ internal fun WearCompanionSettingsScreen(
                         },
                         actions = listOf(
                             WearCompanionRowAction(
-                                label = "Test",
+                                label = resolvedVibrationStrings.conversationTestLabel,
+                                contentDescription = resolvedVibrationStrings.conversationTestDescription,
                                 tag = wearCompanionConversationTestTag(conversation.roomId),
                                 onClick = {
                                     knownRoomsById[conversation.roomId]?.let { room ->
@@ -451,6 +457,7 @@ internal fun WearCompanionSettingsScreen(
                             ),
                             WearCompanionRowAction(
                                 label = resolvedVibrationStrings.conversationRemoveLabel,
+                                contentDescription = resolvedVibrationStrings.conversationRemoveDescription,
                                 tag = wearCompanionConversationRemoveTag(conversation.roomId),
                                 critical = true,
                                 onClick = {
@@ -701,6 +708,7 @@ internal fun WearCompanionSettingsScreen(
 
 private data class WearCompanionRowAction(
     val label: String,
+    val contentDescription: String,
     val tag: String,
     val critical: Boolean = false,
     val onClick: () -> Unit,
@@ -719,23 +727,26 @@ private fun WearCompanionSelectionRow(
             .fillMaxWidth()
             .testTag(selectorTag),
         headlineContent = { Text(title) },
-        supportingContent = selectedOption.description?.let { description ->
-            { Text(description) }
+        supportingContent = if (actions.isEmpty()) {
+            selectedOption.description?.let { description -> { Text(description) } }
+        } else {
+            { Text(selectedOption.label) }
         },
         trailingContent = if (actions.isEmpty()) {
             ListItemContent.Text(selectedOption.label)
         } else {
             ListItemContent.Custom {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(selectedOption.label)
                     actions.forEach { action ->
-                        Text(
+                        TextButton(
                             text = action.label,
+                            onClick = action.onClick,
                             modifier = Modifier
-                                .padding(start = 12.dp)
+                                .padding(start = 4.dp)
                                 .testTag(action.tag)
-                                .clickable(onClick = action.onClick),
-                            color = if (action.critical) ElementTheme.colors.textCriticalPrimary else ElementTheme.colors.textActionPrimary,
+                                .semantics { contentDescription = action.contentDescription },
+                            size = ButtonSize.Small,
+                            destructive = action.critical,
                         )
                     }
                 }
@@ -1012,6 +1023,8 @@ private fun rememberWearCompanionVibrationSectionStrings(): WearCompanionVibrati
         addConversationDescription = stringResource(R.string.screen_wear_companion_add_conversation_description),
         conversationRemoveLabel = stringResource(R.string.screen_wear_companion_conversation_remove_title),
         conversationRemoveDescription = stringResource(R.string.screen_wear_companion_conversation_remove_description),
+        conversationTestLabel = stringResource(R.string.screen_wear_companion_conversation_test_title),
+        conversationTestDescription = stringResource(R.string.screen_wear_companion_conversation_test_description),
         inheritLabel = stringResource(R.string.screen_wear_companion_conversation_vibration_inherit),
         inheritDescription = stringResource(R.string.screen_wear_companion_conversation_vibration_inherit_description),
         groupsLabel = stringResource(R.string.screen_wear_companion_vibration_groups),

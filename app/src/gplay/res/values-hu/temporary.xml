@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Rezgésminták</string>
+    <string name="screen_wear_companion_vibration_groups">Csoportos beszélgetések</string>
+    <string name="screen_wear_companion_vibration_dms">Közvetlen üzenetek</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Kedvenc csoportos beszélgetések</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Kedvenc közvetlen üzenetek</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Néma</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Alapértelmezett</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dupla</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Hosszú</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Háromszoros</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Pulzus</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eszkalálódik</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Egyedi</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Készítse el saját rezgésmintáját (pl. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Az értesítés megjelenítése rezgés nélkül.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Használja az órarendszer normál/alapértelmezett értesítési rezgését.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Két rövid zümmögés.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Egy hosszabb zümmögés.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Három rövid zümmögés.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Négy egyenletes pulzus.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Rövid zümmögések, amelyek erősödnek.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Beszélgetés-specifikus rezgésminták</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Még nincsenek hozzáadott beszélgetések.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">A beszélgetések betöltéséhez először nyissa meg a fő alkalmazást.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Egyetlen beszélgetés sem felel meg a keresésnek.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Az összes betöltött beszélgetésnek már van felülírása.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Válassza a beszélgetést</string>
+    <string name="screen_wear_companion_add_conversation_title">Beszélgetés hozzáadása</string>
+    <string name="screen_wear_companion_add_conversation_description">Válasszon ki egy beszélgetést, és állítsa be saját rezgési viselkedését.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Távolítsa el</string>
+    <string name="screen_wear_companion_conversation_remove_description">Törölje ezt a beszélgetésre jellemző rezgési viselkedést.</string>
+    <string name="screen_wear_companion_conversation_test_title">Teszt</string>
+    <string name="screen_wear_companion_conversation_test_description">Tesztelje a kiválasztott rezgésmintát ehhez a beszélgetéshez.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Az alapértelmezett kategória használata</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Kövesse az ehhez a beszélgetéstípushoz tartozó alapértelmezett rezgést.</string>
+</resources>

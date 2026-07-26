@@ -73,6 +73,7 @@ class WearCompanionTestNotificationSenderTest {
             .isEqualTo(WatchDataPaths.notification("wear-companion-test:groups"))
         assertThat(publication.second.expiresAtMs).isEqualTo(1_234L + 45_000L)
         assertThat(payload.notification.roomKind).isEqualTo(WatchRoomKind.GROUP)
+        assertThat(payload.notification.isTestNotification).isTrue()
         assertThat(payload.notification.vibrationPatternOverride)
             .isEqualTo(WatchNotificationVibrationPattern.TRIPLE)
         assertThat(payload.notification.notificationKey)

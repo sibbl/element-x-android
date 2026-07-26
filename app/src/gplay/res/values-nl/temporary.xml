@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Trillingspatronen</string>
+    <string name="screen_wear_companion_vibration_groups">Groepsgesprekken</string>
+    <string name="screen_wear_companion_vibration_dms">Directe berichten</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Favoriete groepsgesprekken</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Favoriete directe berichten</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Stil</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Standaard</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dubbel</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Lang</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Drievoudig</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Escalerend</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Aangepast</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Creëer uw eigen trilpatroon (bijvoorbeeld 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Toon de melding trillingsvrij.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Gebruik de normale/standaard meldingstrilling van het horlogesysteem.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Twee korte zoemgeluiden.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Nog een langere buzz.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Drie korte zoemgeluiden.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Vier gelijkmatige pulsen.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Korte zoemgeluiden die in kracht toenemen.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Gespreksspecifieke trillingspatronen</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Er zijn nog geen gesprekken toegevoegd.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Open eerst de hoofdapp om gesprekken te laden.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Er zijn geen gesprekken die overeenkomen met uw zoekopdracht.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Alle geladen gesprekken hebben al een overschrijving.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Kies een gesprek</string>
+    <string name="screen_wear_companion_add_conversation_title">Gesprek toevoegen</string>
+    <string name="screen_wear_companion_add_conversation_description">Selecteer een gesprek en configureer het eigen trilgedrag.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Verwijderen</string>
+    <string name="screen_wear_companion_conversation_remove_description">Verwijder dit gespreksspecifieke trilgedrag.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testen</string>
+    <string name="screen_wear_companion_conversation_test_description">Test het geselecteerde trilpatroon voor dit gesprek.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Gebruik categoriestandaard</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Volg de standaardtrilling voor dit gesprekstype.</string>
+</resources>

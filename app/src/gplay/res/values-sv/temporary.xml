@@ -1,0 +1,37 @@
+<resources>
+    <string name="screen_wear_companion_vibration_section_title">Vibrationsmönster</string>
+    <string name="screen_wear_companion_vibration_groups">Gruppsamtal</string>
+    <string name="screen_wear_companion_vibration_dms">Direktmeddelanden</string>
+    <string name="screen_wear_companion_vibration_favorite_groups">Favoritgruppkonversationer</string>
+    <string name="screen_wear_companion_vibration_favorite_dms">Favorit direktmeddelanden</string>
+    <string name="screen_wear_companion_vibration_pattern_silent">Tyst</string>
+    <string name="screen_wear_companion_vibration_pattern_default">Standard</string>
+    <string name="screen_wear_companion_vibration_pattern_double">Dubbel</string>
+    <string name="screen_wear_companion_vibration_pattern_long">Lång</string>
+    <string name="screen_wear_companion_vibration_pattern_triple">Trippel</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse">Puls</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating">Eskalerande</string>
+    <string name="screen_wear_companion_vibration_pattern_custom">Anpassad</string>
+    <string name="screen_wear_companion_vibration_pattern_custom_description">Skapa ditt eget vibrationsmönster (t.ex. 120 60 180 60 240).</string>
+    <string name="screen_wear_companion_vibration_pattern_silent_description">Visa meddelandet utan vibrationer.</string>
+    <string name="screen_wear_companion_vibration_pattern_default_description">Använd klocksystemets normala/standardaviseringsvibration.</string>
+    <string name="screen_wear_companion_vibration_pattern_double_description">Två korta surr.</string>
+    <string name="screen_wear_companion_vibration_pattern_long_description">Ett längre surr.</string>
+    <string name="screen_wear_companion_vibration_pattern_triple_description">Tre korta ljud.</string>
+    <string name="screen_wear_companion_vibration_pattern_pulse_description">Fyra jämna pulser.</string>
+    <string name="screen_wear_companion_vibration_pattern_escalating_description">Korta surrar som ökar i styrka.</string>
+    <string name="screen_wear_companion_conversation_vibration_section_title">Konversationsspecifika vibrationsmönster</string>
+    <string name="screen_wear_companion_conversation_vibration_empty">Inga konversationer har lagts till ännu.</string>
+    <string name="screen_wear_companion_conversation_picker_no_rooms">Öppna huvudappen först för att ladda konversationer.</string>
+    <string name="screen_wear_companion_conversation_picker_empty">Inga konversationer matchar din sökning.</string>
+    <string name="screen_wear_companion_conversation_picker_all_added">Alla inlästa konversationer har redan en åsidosättning.</string>
+    <string name="screen_wear_companion_conversation_picker_title">Välj konversation</string>
+    <string name="screen_wear_companion_add_conversation_title">Lägg till konversation</string>
+    <string name="screen_wear_companion_add_conversation_description">Välj en konversation och konfigurera dess eget vibrationsbeteende.</string>
+    <string name="screen_wear_companion_conversation_remove_title">Ta bort</string>
+    <string name="screen_wear_companion_conversation_remove_description">Ta bort detta konversationsspecifika vibrationsbeteende.</string>
+    <string name="screen_wear_companion_conversation_test_title">Testa</string>
+    <string name="screen_wear_companion_conversation_test_description">Testa det valda vibrationsmönstret för denna konversation.</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit">Använd kategoristandard</string>
+    <string name="screen_wear_companion_conversation_vibration_inherit_description">Följ standardvibrationen för den här konversationstypen.</string>
+</resources>
