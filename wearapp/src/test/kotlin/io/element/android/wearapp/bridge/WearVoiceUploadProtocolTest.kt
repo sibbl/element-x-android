@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WearVoiceUploadProtocolTest {
@@ -64,5 +66,76 @@ class WearVoiceUploadProtocolTest {
         val failure = upload.await().exceptionOrNull()
         assertThat(failure).isInstanceOf(WatchCommandException::class.java)
         assertThat(uploaded).isFalse()
+    }
+
+    @Test
+    fun `voice byte transfer closes stream before channel`() = runTest {
+        val audioFile = File.createTempFile("wear-voice-transfer", ".ogg").apply {
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+        }
+        val actions = mutableListOf<String>()
+        val output = object : ByteArrayOutputStream() {
+            override fun close() {
+                actions += "stream-closed"
+                super.close()
+            }
+        }
+
+        try {
+            transferVoiceDraftBytes(
+                audioFile = audioFile,
+                openChannel = {
+                    actions += "channel-opened"
+                    "channel"
+                },
+                getOutputStream = {
+                    actions += "stream-opened"
+                    output
+                },
+                closeChannel = {
+                    actions += "channel-closed"
+                },
+            )
+        } finally {
+            audioFile.delete()
+        }
+
+        assertThat(output.toByteArray().toList()).containsExactly(1.toByte(), 2.toByte(), 3.toByte(), 4.toByte()).inOrder()
+        assertThat(actions).containsExactly(
+            "channel-opened",
+            "stream-opened",
+            "stream-closed",
+            "channel-closed",
+        ).inOrder()
+    }
+
+    @Test
+    fun `voice byte transfer closes channel when writing fails`() = runTest {
+        val audioFile = File.createTempFile("wear-voice-transfer", ".ogg").apply {
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+        }
+        var channelClosed = false
+
+        try {
+            val result = runCatching {
+                transferVoiceDraftBytes(
+                    audioFile = audioFile,
+                    openChannel = { "channel" },
+                    getOutputStream = {
+                        object : ByteArrayOutputStream() {
+                            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                                throw java.io.IOException("transfer failed")
+                            }
+                        }
+                    },
+                    closeChannel = { channelClosed = true },
+                )
+            }
+
+            assertThat(result.exceptionOrNull()).isInstanceOf(java.io.IOException::class.java)
+            assertThat(channelClosed).isTrue()
+        } finally {
+            audioFile.delete()
+        }
     }
 }

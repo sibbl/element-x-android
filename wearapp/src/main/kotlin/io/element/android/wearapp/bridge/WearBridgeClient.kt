@@ -65,6 +65,7 @@ import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -120,6 +121,23 @@ internal suspend fun performVoiceDraftUpload(
 
 private fun WatchAck.isVoiceUploadTerminal(): Boolean =
     this is WatchAck.Sent || this is WatchAck.Failed || this is WatchAck.Unsupported
+
+internal suspend fun <Channel> transferVoiceDraftBytes(
+    audioFile: File,
+    openChannel: suspend () -> Channel,
+    getOutputStream: suspend (Channel) -> OutputStream,
+    closeChannel: suspend (Channel) -> Unit,
+) {
+    val channel = openChannel()
+    try {
+        getOutputStream(channel).use { output ->
+            audioFile.inputStream().use { input -> input.copyTo(output) }
+            output.flush()
+        }
+    } finally {
+        closeChannel(channel)
+    }
+}
 
 private infix fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean = when {
     this == null -> other == null
@@ -675,11 +693,14 @@ class WearBridgeClient(private val context: Context) {
         audioFile: File,
     ) = withContext(Dispatchers.IO) {
         val node = resolvePhoneNode() ?: error("phone not reachable")
-        val channel = channelClient.openChannel(node.id, WatchDataPaths.voiceDraftChannel(context.packageName, draftId)).await()
-        channelClient.getOutputStream(channel).await().use { output ->
-            audioFile.inputStream().use { input -> input.copyTo(output) }
-            output.flush()
-        }
+        transferVoiceDraftBytes(
+            audioFile = audioFile,
+            openChannel = {
+                channelClient.openChannel(node.id, WatchDataPaths.voiceDraftChannel(context.packageName, draftId)).await()
+            },
+            getOutputStream = { channel -> channelClient.getOutputStream(channel).await() },
+            closeChannel = { channel -> channelClient.close(channel).await() },
+        )
     }
 
     private fun appendLocalTextEcho(

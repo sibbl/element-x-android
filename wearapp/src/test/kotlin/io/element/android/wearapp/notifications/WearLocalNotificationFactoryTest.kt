@@ -24,6 +24,8 @@ import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.wearapp.R
+import io.element.android.wearapp.ui.EXTRA_VOICE_IN_REPLY_TO_EVENT_ID
+import io.element.android.wearapp.ui.EXTRA_VOICE_ROOM_ID
 import io.element.android.wearapp.ui.voice.VoiceRecorderActivity.Companion.EXTRA_RETURN_TO_EVENT_ID
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -114,10 +116,14 @@ class WearLocalNotificationFactoryTest {
 
         val threadIntent = shadowOf(notification.actions.orEmpty()[2].actionIntent as PendingIntent).savedIntent
         val threadDeepLink = parseWearCompanionDeepLink(threadIntent.data)
+        val voiceIntent = shadowOf(notification.actions.orEmpty()[1].actionIntent as PendingIntent).savedIntent
 
         assertThat(notification.actions.orEmpty()[2].title.toString()).isEqualTo(context.getString(R.string.screen_message_detail_start_thread))
         assertThat(threadDeepLink?.roomId).isEqualTo("!room:server")
         assertThat(threadDeepLink?.threadRootEventId).isEqualTo("\$event:server")
+        assertThat(voiceIntent.getStringExtra(EXTRA_VOICE_ROOM_ID)).isEqualTo("!room:server")
+        assertThat(voiceIntent.getStringExtra(EXTRA_VOICE_IN_REPLY_TO_EVENT_ID)).isEqualTo("\$event:server")
+        assertThat(voiceIntent.getStringExtra(EXTRA_RETURN_TO_EVENT_ID)).isEqualTo("\$event:server")
     }
 
     @Test
@@ -223,7 +229,7 @@ class WearLocalNotificationFactoryTest {
 
         val notification = factory.build(model, generatedAtMs = 100L, expiresAtMs = null)
 
-        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v21_group_default")
+        assertThat(notification.channelId).isEqualTo("wear_companion_messages_v23_group_default")
     }
 
     @Test
@@ -287,13 +293,13 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(groupNotification.channelId)
-            .isEqualTo("wear_companion_messages_v21_group_triple")
+            .isEqualTo("wear_companion_messages_v23_group_triple")
         assertThat(dmNotification.channelId)
-            .isEqualTo("wear_companion_messages_v21_dm_pulse")
+            .isEqualTo("wear_companion_messages_v23_dm_pulse")
         assertThat(favoriteGroupNotification.channelId)
-            .isEqualTo("wear_companion_messages_v21_favorite_group_escalating")
+            .isEqualTo("wear_companion_messages_v23_favorite_group_escalating")
         assertThat(favoriteDmNotification.channelId)
-            .isEqualTo("wear_companion_messages_v21_favorite_dm_long")
+            .isEqualTo("wear_companion_messages_v23_favorite_dm_long")
     }
 
     @Test
@@ -315,7 +321,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v21_group_custom_fd0a5f89")
+            .isEqualTo("wear_companion_messages_v23_group_custom_fd0a5f89")
     }
 
     @Test
@@ -336,7 +342,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v21_group_triple")
+            .isEqualTo("wear_companion_messages_v23_group_triple")
         assertThat(notification.flags and Notification.FLAG_ONLY_ALERT_ONCE).isEqualTo(0)
         assertThat(notification.group).isNotEqualTo("silent")
         assertThat(notification.groupAlertBehavior).isNotEqualTo(Notification.GROUP_ALERT_SUMMARY)
@@ -363,7 +369,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v21_notification_override_escalating")
+            .isEqualTo("wear_companion_messages_v23_notification_override_escalating")
     }
 
     @Test
@@ -391,7 +397,7 @@ class WearLocalNotificationFactoryTest {
         )
 
         assertThat(notification.channelId)
-            .isEqualTo("wear_companion_messages_v21_room_${"!dm:server".stableShortHash()}_escalating")
+            .isEqualTo("wear_companion_messages_v23_room_${"!dm:server".stableShortHash()}_escalating")
     }
 
     @Test
@@ -463,7 +469,7 @@ class WearLocalNotificationFactoryTest {
             expiresAtMs = null,
         )
 
-        assertThat(notification.channelId).startsWith("wear_companion_messages_v21_notification_override_triple")
+        assertThat(notification.channelId).startsWith("wear_companion_messages_v23_notification_override_triple")
     }
 
     @Test
