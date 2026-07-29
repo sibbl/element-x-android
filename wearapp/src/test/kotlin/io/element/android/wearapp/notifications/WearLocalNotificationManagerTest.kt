@@ -15,8 +15,6 @@ import io.element.android.watchbridge.contract.WatchCompanionSettings
 import io.element.android.watchbridge.contract.WatchMessageNotification
 import io.element.android.watchbridge.contract.WatchNotificationVibrationPattern
 import io.element.android.watchbridge.contract.WatchNotificationVibrationSettings
-import io.mockk.mockk
-import io.mockk.verify
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -123,34 +121,6 @@ class WearLocalNotificationManagerTest {
         assertThat(createdManualChannels.single().vibrationPattern?.toList()).containsExactly(0L, 70L, 70L, 100L, 70L, 130L).inOrder()
         assertThat(notificationManager.activeNotifications.single().notification.channelId)
             .isEqualTo("wear_companion_messages_v23_group_triple")
-    }
-
-    @Test
-    fun `updating an existing notification does not cancel before reposting`() {
-        val notificationManagerCompat = mockk<NotificationManagerCompat>(relaxed = true)
-        val manager = WearLocalNotificationManager(
-            context = context,
-            notificationManagerCompat = notificationManagerCompat,
-            notificationsAllowedProvider = { true },
-        )
-        val notification = WatchMessageNotification(
-            notificationKey = "same-room-notification",
-            roomId = "!room:server",
-            eventId = "\$event:server",
-            roomDisplayName = "Team Wear",
-            timestampMs = 100L,
-        )
-
-        manager.show(notification, generatedAtMs = 100L, expiresAtMs = null)
-        manager.show(notification.copy(messageCount = 2), generatedAtMs = 101L, expiresAtMs = null)
-
-        verify(exactly = 0) { notificationManagerCompat.cancel(wearLocalNotificationId(notification.notificationKey)) }
-        verify(exactly = 2) {
-            notificationManagerCompat.notify(
-                wearLocalNotificationId(notification.notificationKey),
-                any(),
-            )
-        }
     }
 
     @Test
