@@ -370,7 +370,7 @@ private fun ColumnScope.Footer(
 @Composable
 private fun WatchCompanionSettingsEntry(onOpenWatchSettings: () -> Unit) {
     ListItem(
-        headlineContent = { Text("Wear OS Companion") },
+        content = { Text("Wear OS Companion") },
         leadingContent = ListItemContent.Icon(IconSource.Vector(CompoundIcons.Devices())),
         onClick = onOpenWatchSettings,
     )
