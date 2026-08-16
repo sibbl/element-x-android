@@ -413,7 +413,7 @@ internal fun WearCompanionSettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_ADD_CONVERSATION_BUTTON_TAG),
-                headlineContent = { Text(resolvedVibrationStrings.addConversationLabel) },
+                content = { Text(resolvedVibrationStrings.addConversationLabel) },
                 supportingContent = { Text(addConversationDescription) },
                 style = ListItemStyle.Primary,
                 enabled = addableRooms.isNotEmpty(),
@@ -423,7 +423,7 @@ internal fun WearCompanionSettingsScreen(
             if (managedConversations.isEmpty()) {
                 ListItem(
                     modifier = Modifier.fillMaxWidth(),
-                    headlineContent = { Text(resolvedVibrationStrings.conversationOverridesEmpty) },
+                    content = { Text(resolvedVibrationStrings.conversationOverridesEmpty) },
                     enabled = false,
                 )
             } else {
@@ -483,7 +483,7 @@ internal fun WearCompanionSettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(wearCompanionTestNotificationTag(category)),
-                    headlineContent = { Text(category.displayLabel(resolvedVibrationStrings)) },
+                    content = { Text(category.displayLabel(resolvedVibrationStrings)) },
                     supportingContent = {
                         Text(
                             resolvedNotificationStrings.actionDescriptionFormat.format(
@@ -726,7 +726,7 @@ private fun WearCompanionSelectionRow(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(selectorTag),
-        headlineContent = { Text(title) },
+        content = { Text(title) },
         supportingContent = if (actions.isEmpty()) {
             selectedOption.description?.let { description -> { Text(description) } }
         } else {
@@ -786,7 +786,7 @@ private fun <T> WearCompanionSettingsSelectionDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag(option.tag),
-                            headlineContent = { Text(option.label) },
+                            content = { Text(option.label) },
                             supportingContent = option.description?.let { description ->
                                 { Text(description) }
                             },
@@ -810,7 +810,7 @@ private fun <T> WearCompanionSettingsSelectionDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(option.tag),
-                    headlineContent = { Text(option.label) },
+                    content = { Text(option.label) },
                     supportingContent = option.description?.let { description ->
                         { Text(description) }
                     },
@@ -829,7 +829,7 @@ private fun <T> WearCompanionSettingsSelectionDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_DIALOG_CANCEL_TAG),
-                headlineContent = { Text(commonStrings.cancelLabel) },
+                content = { Text(commonStrings.cancelLabel) },
                 onClick = onDismissRequest,
             )
             PreferenceDivider()
@@ -837,7 +837,7 @@ private fun <T> WearCompanionSettingsSelectionDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_DIALOG_SAVE_TAG),
-                headlineContent = { Text(commonStrings.saveLabel) },
+                content = { Text(commonStrings.saveLabel) },
                 onClick = { onSubmit(selectedValue) },
             )
         }
@@ -886,7 +886,7 @@ private fun WearCompanionAddConversationDialog(
                     item {
                         ListItem(
                             modifier = Modifier.fillMaxWidth(),
-                            headlineContent = { Text(strings.conversationPickerNoRooms) },
+                            content = { Text(strings.conversationPickerNoRooms) },
                             enabled = false,
                         )
                     }
@@ -894,7 +894,7 @@ private fun WearCompanionAddConversationDialog(
                     item {
                         ListItem(
                             modifier = Modifier.fillMaxWidth(),
-                            headlineContent = { Text(strings.conversationPickerEmpty) },
+                            content = { Text(strings.conversationPickerEmpty) },
                             enabled = false,
                         )
                     }
@@ -907,7 +907,7 @@ private fun WearCompanionAddConversationDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag(wearCompanionAddConversationOptionTag(room.roomId)),
-                            headlineContent = { Text(room.displayNameOrRoomId()) },
+                            content = { Text(room.displayNameOrRoomId()) },
                             trailingContent = ListItemContent.RadioButton(
                                 selected = selectedRoomId == room.roomId,
                                 compact = true,
@@ -932,13 +932,13 @@ private fun WearCompanionAddConversationDialog(
             if (rooms.isEmpty()) {
                 ListItem(
                     modifier = Modifier.fillMaxWidth(),
-                    headlineContent = { Text(strings.conversationPickerNoRooms) },
+                    content = { Text(strings.conversationPickerNoRooms) },
                     enabled = false,
                 )
             } else if (filteredRooms.isEmpty()) {
                 ListItem(
                     modifier = Modifier.fillMaxWidth(),
-                    headlineContent = { Text(strings.conversationPickerEmpty) },
+                    content = { Text(strings.conversationPickerEmpty) },
                     enabled = false,
                 )
             } else {
@@ -947,7 +947,7 @@ private fun WearCompanionAddConversationDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(wearCompanionAddConversationOptionTag(room.roomId)),
-                        headlineContent = { Text(room.displayNameOrRoomId()) },
+                        content = { Text(room.displayNameOrRoomId()) },
                         trailingContent = ListItemContent.RadioButton(
                             selected = selectedRoomId == room.roomId,
                             compact = true,
@@ -964,7 +964,7 @@ private fun WearCompanionAddConversationDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_DIALOG_CANCEL_TAG),
-                headlineContent = { Text(commonStrings.cancelLabel) },
+                content = { Text(commonStrings.cancelLabel) },
                 onClick = onDismissRequest,
             )
             PreferenceDivider()
@@ -972,7 +972,7 @@ private fun WearCompanionAddConversationDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_DIALOG_SAVE_TAG),
-                headlineContent = { Text(commonStrings.saveLabel) },
+                content = { Text(commonStrings.saveLabel) },
                 enabled = selectedRoomId != null,
                 onClick = {
                     val selectedRoom = rooms.firstOrNull { it.roomId == selectedRoomId } ?: return@ListItem
@@ -1414,7 +1414,7 @@ private fun WearCompanionCustomPatternDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag(WEAR_COMPANION_CUSTOM_PATTERN_TEST_TAG),
-                        headlineContent = { Text(strings.customPatternTestLabel) },
+                        content = { Text(strings.customPatternTestLabel) },
                         supportingContent = { Text(strings.customPatternTestDescription) },
                         style = ListItemStyle.Primary,
                         enabled = canSendTest && isValidPattern,
@@ -1443,7 +1443,7 @@ private fun WearCompanionCustomPatternDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_CUSTOM_PATTERN_TEST_TAG),
-                headlineContent = { Text(strings.customPatternTestLabel) },
+                content = { Text(strings.customPatternTestLabel) },
                 supportingContent = { Text(strings.customPatternTestDescription) },
                 style = ListItemStyle.Primary,
                 enabled = canSendTest && isValidPattern,
@@ -1454,7 +1454,7 @@ private fun WearCompanionCustomPatternDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_DIALOG_CANCEL_TAG),
-                headlineContent = { Text(commonStrings.cancelLabel) },
+                content = { Text(commonStrings.cancelLabel) },
                 onClick = onDismissRequest,
             )
             PreferenceDivider()
@@ -1462,7 +1462,7 @@ private fun WearCompanionCustomPatternDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(WEAR_COMPANION_DIALOG_SAVE_TAG),
-                headlineContent = { Text(commonStrings.saveLabel) },
+                content = { Text(commonStrings.saveLabel) },
                 enabled = isValidPattern,
                 onClick = { onSubmit(trimmedPattern) },
             )
