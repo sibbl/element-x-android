@@ -9,15 +9,20 @@ package io.element.android.wearapp.ui.room
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.navigation.SwipeDismissableNavHost
+import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.google.common.truth.Truth.assertThat
 import io.element.android.watchbridge.contract.WatchRoomKind
 import io.element.android.watchbridge.contract.WatchRoomSummary
@@ -35,6 +40,46 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class RoomViewTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun `edge swipe from conversation returns to conversation list`() {
+        lateinit var navigateToRoom: () -> Unit
+        rule.setContent {
+            WearAppTheme {
+                val navController = rememberSwipeDismissableNavController()
+                navigateToRoom = remember(navController) { { navController.navigate("room") } }
+                SwipeDismissableNavHost(
+                    navController = navController,
+                    startDestination = "list",
+                ) {
+                    composable("list") {
+                        androidx.wear.compose.material3.Text("Conversation list")
+                    }
+                    composable("room") {
+                        RoomView(
+                            state = RoomViewState(
+                                timelineKey = "!room:server",
+                                displayName = "Project room",
+                                items = emptyList(),
+                                isLoading = false,
+                            ),
+                            onMessageSelected = {},
+                            onOpenThread = null,
+                            onReply = {},
+                            onVoice = null,
+                            enableConversationDetails = true,
+                        )
+                    }
+                }
+            }
+        }
+        rule.runOnIdle { navigateToRoom() }
+        rule.onNodeWithText("Project room").assertExists()
+
+        rule.onRoot().performTouchInput { swipeRight() }
+
+        rule.onNodeWithText("Conversation list").assertExists()
+    }
 
     @Test
     fun `conversation details page shows metadata and pinned messages without opening message detail`() {
